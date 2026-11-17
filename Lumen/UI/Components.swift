@@ -23,6 +23,61 @@ struct RemoteImage: View {
     }
 }
 
+/// Artwork scaled to fit, never cropped.
+struct FitImage: View {
+    let url: URL?
+
+    var body: some View {
+        AsyncImage(url: url, transaction: Transaction(animation: .easeOut(duration: 0.3))) { phase in
+            if case .success(let image) = phase {
+                image.resizable().scaledToFit()
+            } else {
+                Color.clear
+            }
+        }
+    }
+}
+
+/// Full, uncropped backdrop. Fills the width on phones; on wide screens (iPad, landscape)
+/// it's capped in height and centered, with the ambient glow filling the sides.
+struct ArtHeader: View {
+    let url: URL?
+    let width: CGFloat
+    let maxHeight: CGFloat
+
+    private var height: CGFloat { max(1, min(width * 9 / 16, maxHeight)) }
+
+    var body: some View {
+        FitImage(url: url)
+            .frame(width: width, height: height)
+            .mask(
+                LinearGradient(stops: [
+                    .init(color: .black, location: 0),
+                    .init(color: .black, location: 0.9),
+                    .init(color: .black.opacity(0), location: 1),
+                ], startPoint: .top, endPoint: .bottom)
+            )
+            .shadow(color: .black.opacity(0.35), radius: 20, y: 10)
+    }
+}
+
+/// A soft, blurred wash of the artwork behind the page, so its colors bleed into the UI.
+struct AmbientGlow: View {
+    let url: URL?
+    let size: CGSize
+
+    var body: some View {
+        RemoteImage(url: url)
+            .frame(width: size.width, height: size.height * 0.8)
+            .blur(radius: 70)
+            .opacity(0.5)
+            .clipped()
+            .mask(LinearGradient(colors: [.black, .black.opacity(0)], startPoint: .top, endPoint: .bottom))
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+    }
+}
+
 /// Shows a title logo when the server has one, otherwise falls back to text.
 struct LogoOrTitle: View {
     let url: URL?

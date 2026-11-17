@@ -18,34 +18,41 @@ struct ItemDetailView: View {
     private var shown: BaseItem? { item ?? preview }
 
     var body: some View {
-        ScrollView {
-            if let it = shown {
-                VStack(alignment: .leading, spacing: 0) {
-                    header(it)
-                    VStack(alignment: .leading, spacing: 18) {
-                        metaLine(it)
-                        if let src = it.mediaSources?.first, !src.badges.isEmpty {
-                            HStack(spacing: 6) { ForEach(src.badges, id: \.self) { Badge(text: $0) } }
+        GeometryReader { geo in
+            ScrollView {
+                if let it = shown {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ArtHeader(url: app.client?.backdropURL(for: it, width: 1920),
+                                  width: geo.size.width, maxHeight: geo.size.height * 0.55)
+                        VStack(alignment: .leading, spacing: 18) {
+                            titleBlock(it)
+                            metaLine(it)
+                            if let src = it.mediaSources?.first, !src.badges.isEmpty {
+                                HStack(spacing: 6) { ForEach(src.badges, id: \.self) { Badge(text: $0) } }
+                            }
+                            actions(it)
+                            if let error { Text(error).font(.footnote).foregroundStyle(.red) }
+                            if let overview = it.overview {
+                                Text(overview).font(.callout).foregroundStyle(.white.opacity(0.85))
+                            }
+                            if let genres = it.genres, !genres.isEmpty {
+                                Text(genres.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+                            }
+                            if it.isSeries { seasonSection }
+                            if let src = it.mediaSources?.first, it.isPlayable { TechSpecs(source: src) }
                         }
-                        actions(it)
-                        if let error { Text(error).font(.footnote).foregroundStyle(.red) }
-                        if let overview = it.overview {
-                            Text(overview).font(.callout).foregroundStyle(.white.opacity(0.85))
-                        }
-                        if let genres = it.genres, !genres.isEmpty {
-                            Text(genres.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
-                        }
-                        if it.isSeries { seasonSection }
-                        if let src = it.mediaSources?.first, it.isPlayable { TechSpecs(source: src) }
+                        .padding()
+                        .frame(maxWidth: 900, alignment: .leading)
                     }
-                    .padding()
-                    .frame(maxWidth: 900, alignment: .leading)
+                } else {
+                    ProgressView().padding(.top, 200).frame(maxWidth: .infinity)
                 }
-            } else {
-                ProgressView().padding(.top, 200).frame(maxWidth: .infinity)
+            }
+            .background(alignment: .top) {
+                AmbientGlow(url: shown.flatMap { app.client?.backdropURL(for: $0, width: 600) },
+                            size: geo.size)
             }
         }
-        .ignoresSafeArea(edges: .top)
         .background(Theme.background)
         .toolbarBackground(.hidden, for: .navigationBar)
         .navigationBarTitleDisplayMode(.inline)
@@ -55,22 +62,12 @@ struct ItemDetailView: View {
 
     // MARK: Sections
 
-    private func header(_ it: BaseItem) -> some View {
-        ZStack(alignment: .bottomLeading) {
-            Color.clear
-                .frame(height: sizeClass == .regular ? 520 : 400)
-                .overlay { RemoteImage(url: app.client?.backdropURL(for: it)) }
-                .clipped()
-            LinearGradient(stops: [
-                .init(color: .clear, location: 0.3),
-                .init(color: Theme.background, location: 1),
-            ], startPoint: .top, endPoint: .bottom)
-            VStack(alignment: .leading, spacing: 6) {
-                LogoOrTitle(url: app.client?.logoURL(for: it), title: it.displayTitle)
-                if let ep = it.episodeLabel { Text(ep).font(.headline).foregroundStyle(.secondary) }
-            }
-            .padding(.horizontal)
+    private func titleBlock(_ it: BaseItem) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            LogoOrTitle(url: app.client?.logoURL(for: it), title: it.displayTitle)
+            if let ep = it.episodeLabel { Text(ep).font(.headline).foregroundStyle(.secondary) }
         }
+        .padding(.top, 4)
     }
 
     private func metaLine(_ it: BaseItem) -> some View {
