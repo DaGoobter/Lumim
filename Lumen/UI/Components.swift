@@ -1,0 +1,217 @@
+import SwiftUI
+
+enum Theme {
+    static let accent = Color(red: 0.58, green: 0.45, blue: 1.0)
+    static let accent2 = Color(red: 0.25, green: 0.78, blue: 0.98)
+    static let background = Color(red: 0.035, green: 0.035, blue: 0.06)
+    static let card = Color.white.opacity(0.06)
+    static let gradient = LinearGradient(colors: [accent, accent2], startPoint: .topLeading, endPoint: .bottomTrailing)
+}
+
+// MARK: - Images
+
+struct RemoteImage: View {
+    let url: URL?
+
+    var body: some View {
+        AsyncImage(url: url, transaction: Transaction(animation: .easeOut(duration: 0.25))) { phase in
+            switch phase {
+            case .success(let image): image.resizable().scaledToFill()
+            default: Rectangle().fill(Theme.card)
+            }
+        }
+    }
+}
+
+/// Shows a title logo when the server has one, otherwise falls back to text.
+struct LogoOrTitle: View {
+    let url: URL?
+    let title: String
+    var maxHeight: CGFloat = 90
+
+    var body: some View {
+        if let url {
+            AsyncImage(url: url) { phase in
+                if case .success(let image) = phase {
+                    image.resizable().scaledToFit()
+                        .frame(maxWidth: 300, maxHeight: maxHeight, alignment: .leading)
+                        .shadow(color: .black.opacity(0.5), radius: 10)
+                } else {
+                    titleText
+                }
+            }
+        } else {
+            titleText
+        }
+    }
+
+    private var titleText: some View {
+        Text(title).font(.system(size: 34, weight: .heavy, design: .rounded)).lineLimit(2)
+            .shadow(color: .black.opacity(0.5), radius: 8)
+    }
+}
+
+// MARK: - Cards
+
+struct PosterCard: View {
+    @Environment(AppState.self) private var app
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    let item: BaseItem
+    /// When false the card fills its grid cell.
+    var fixedWidth = true
+
+    var body: some View {
+        let width: CGFloat = sizeClass == .regular ? 160 : 118
+        VStack(alignment: .leading, spacing: 6) {
+            Color.clear
+                .aspectRatio(2 / 3, contentMode: .fit)
+                .overlay { RemoteImage(url: app.client?.posterURL(for: item)) }
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(alignment: .topTrailing) { WatchedBadge(item: item) }
+                .shadow(color: .black.opacity(0.45), radius: 8, y: 4)
+            Text(item.displayTitle).font(.caption.weight(.semibold)).lineLimit(1)
+            Text(item.productionYear.map(String.init) ?? " ").font(.caption2).foregroundStyle(.secondary)
+        }
+        .frame(width: fixedWidth ? width : nil)
+    }
+}
+
+struct LandscapeCard: View {
+    @Environment(AppState.self) private var app
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    let item: BaseItem
+
+    var body: some View {
+        let width: CGFloat = sizeClass == .regular ? 340 : 260
+        VStack(alignment: .leading, spacing: 6) {
+            Color.clear
+                .aspectRatio(16 / 9, contentMode: .fit)
+                .overlay { RemoteImage(url: app.client?.landscapeURL(for: item)) }
+                .overlay(alignment: .bottom) {
+                    if let p = item.progress { ProgressBar(value: p).padding(10) }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .shadow(color: .black.opacity(0.45), radius: 8, y: 4)
+            Text(item.displayTitle).font(.subheadline.weight(.semibold)).lineLimit(1)
+            if let ep = item.episodeLabel {
+                Text(ep).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+        }
+        .frame(width: width)
+    }
+}
+
+struct ProgressBar: View {
+    let value: Double
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(.white.opacity(0.25))
+                Capsule().fill(Theme.gradient).frame(width: geo.size.width * value)
+            }
+        }
+        .frame(height: 4)
+    }
+}
+
+struct WatchedBadge: View {
+    let item: BaseItem
+    var body: some View {
+        if item.userData?.played == true {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 18)).foregroundStyle(.white, Theme.accent)
+                .padding(6)
+        } else if let n = item.userData?.unplayedItemCount, n > 0 {
+            Text("\(n)").font(.caption2.bold()).padding(.horizontal, 7).padding(.vertical, 3)
+                .background(Theme.accent, in: Capsule()).padding(6)
+        }
+    }
+}
+
+struct Badge: View {
+    let text: String
+    var body: some View {
+        let special = text == "Dolby Vision" || text == "Atmos"
+        Text(text)
+            .font(.caption2.weight(.bold))
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(special ? AnyShapeStyle(Theme.gradient) : AnyShapeStyle(Color.white.opacity(0.14)),
+                        in: RoundedRectangle(cornerRadius: 6))
+    }
+}
+
+// MARK: - Layout
+
+struct Shelf<Content: View>: View {
+    let title: String
+    let content: Content
+
+    init(_ title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title).font(.title3.weight(.bold)).padding(.horizontal)
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(alignment: .top, spacing: 14) { content }
+                    .padding(.horizontal)
+            }
+        }
+    }
+}
+
+struct ErrorBanner: View {
+    let message: String
+    var retry: (() -> Void)?
+    var body: some View {
+        VStack(spacing: 10) {
+            Label(message, systemImage: "wifi.exclamationmark").font(.footnote)
+            if let retry { Button("Try again", action: retry).buttonStyle(SecondaryButtonStyle()) }
+        }
+        .frame(maxWidth: .infinity)
+        .padding()
+        .background(Theme.card, in: RoundedRectangle(cornerRadius: 14))
+        .padding(.horizontal)
+    }
+}
+
+// MARK: - Buttons
+
+struct PrimaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .padding(.horizontal, 22).padding(.vertical, 12)
+            .background(Theme.gradient, in: Capsule())
+            .foregroundStyle(.white)
+            .scaleEffect(configuration.isPressed ? 0.95 : 1)
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: configuration.isPressed)
+    }
+}
+
+struct SecondaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .padding(.horizontal, 18).padding(.vertical, 12)
+            .background(.ultraThinMaterial, in: Capsule())
+            .foregroundStyle(.white)
+            .scaleEffect(configuration.isPressed ? 0.95 : 1)
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: configuration.isPressed)
+    }
+}
+
+/// Decides where tapping an item goes.
+struct ItemRouter: View {
+    let item: BaseItem
+    var body: some View {
+        switch item.type ?? "" {
+        case "CollectionFolder", "Folder", "BoxSet", "UserView", "Playlist":
+            LibraryGridView(parent: item)
+        default:
+            ItemDetailView(itemId: item.id, preview: item)
+        }
+    }
+}
