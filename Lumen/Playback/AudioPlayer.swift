@@ -3,22 +3,45 @@ import MediaPlayer
 import Observation
 import UIKit
 
-/// Background music & audiobook playback with a queue, lock-screen controls and server progress reporting.
+/// One slot in the queue (the same song can appear twice).
+struct QueueEntry: Identifiable, Equatable {
+    let id = UUID()
+    let item: BaseItem
+    /// Spoken by the DJ before this track starts.
+    var intro: String? = nil
+
+    static func == (a: QueueEntry, b: QueueEntry) -> Bool { a.id == b.id }
+}
+
+/// An endless source of music (DJ, genre radio, artist radio…). Refills the queue as it runs low.
+struct Station {
+    let name: String
+    /// Returns more entries to append; gets the ids already queued/played so it can avoid repeats.
+    let refill: @MainActor (JellyfinClient, Set<String>) async -> [QueueEntry]
+}
+
+/// Background music & audiobook playback with a queue, stations, DJ voice, lock-screen controls and
+/// server progress reporting.
 @MainActor @Observable
 final class AudioPlayer {
     static let shared = AudioPlayer()
 
-    private(set) var queue: [BaseItem] = []
+    private(set) var queue: [QueueEntry] = []
     private(set) var index = 0
     private(set) var isPlaying = false
     private(set) var currentTime: Double = 0
     private(set) var duration: Double = 0
     private(set) var rate: Float = 1
+    private(set) var station: Station?
+    /// What the DJ said for the current set (shown on Now Playing).
+    private(set) var djLine: String?
     var showNowPlaying = false
+    var djVoiceEnabled: Bool = UserDefaults.standard.object(forKey: "lumen.djVoice") as? Bool ?? true
 
-    var current: BaseItem? { queue.indices.contains(index) ? queue[index] : nil }
+    var current: BaseItem? { queue.indices.contains(index) ? queue[index].item : nil }
+    var upcoming: [QueueEntry] { queue.indices.contains(index + 1) ? Array(queue[(index + 1)...]) : [] }
     var isAudiobook: Bool { current?.isAudiobook == true }
-    var hasNext: Bool { index + 1 < queue.count }
+    var hasNext: Bool { index + 1 < queue.count || station != nil }
 
     @ObservationIgnored private let player = AVPlayer()
     @ObservationIgnored private var client: JellyfinClient?
@@ -27,9 +50,14 @@ final class AudioPlayer {
     @ObservationIgnored private var lastReport = Date.distantPast
     @ObservationIgnored private var artwork: MPMediaItemArtwork?
     @ObservationIgnored private var commandsInstalled = false
+    @ObservationIgnored private var playedIds = Set<String>()
+    @ObservationIgnored private var refilling = false
+    @ObservationIgnored private let speech = AVSpeechSynthesizer()
+    @ObservationIgnored private let speechDelegate = SpeechDelegate()
 
     private init() {
         player.automaticallyWaitsToMinimizeStalling = true
+        speech.delegate = speechDelegate
         timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.5, preferredTimescale: 600),
                                                       queue: .main) { [weak self] _ in
             Task { @MainActor [weak self] in self?.tick() }
@@ -40,33 +68,96 @@ final class AudioPlayer {
             Task { @MainActor [weak self] in
                 guard let self, item === self.player.currentItem else { return }
                 await self.report(stopped: true)
-                if self.hasNext { self.index += 1; self.loadCurrent(startAt: 0) } else { self.isPlaying = false }
+                await self.advance()
             }
         }
     }
 
-    // MARK: Control
+    func setDJVoice(_ on: Bool) {
+        djVoiceEnabled = on
+        UserDefaults.standard.set(on, forKey: "lumen.djVoice")
+    }
+
+    // MARK: Starting playback
 
     func play(_ items: [BaseItem], startAt start: Int = 0, shuffle: Bool = false, client: JellyfinClient?) {
-        guard !items.isEmpty else { return }
+        play(entries: items.filter(\.isAudio).map { QueueEntry(item: $0) }, startAt: start, shuffle: shuffle,
+             station: nil, client: client)
+    }
+
+    func play(station: Station, client: JellyfinClient) async {
+        self.client = client
+        stopSpeech()
+        let first = await station.refill(client, [])
+        guard !first.isEmpty else { return }
+        play(entries: first, startAt: 0, shuffle: false, station: station, client: client)
+    }
+
+    private func play(entries: [QueueEntry], startAt start: Int, shuffle: Bool, station: Station?, client: JellyfinClient?) {
+        guard !entries.isEmpty else { return }
         if let client { self.client = client }
-        var list = items.filter(\.isAudio)
-        guard !list.isEmpty else { return }
+        var list = entries
         var startIndex = min(max(0, start), list.count - 1)
-        if shuffle {
-            list.shuffle()
-            startIndex = 0
-        }
+        if shuffle { list.shuffle(); startIndex = 0 }
         if current != nil { Task { await report(stopped: true) } }
+        stopSpeech()
+        self.station = station
+        playedIds = []
         queue = list
         index = startIndex
         installCommands()
         try? AVAudioSession.sharedInstance().setActive(true)
-        let resume = list[startIndex].isAudiobook ? list[startIndex].resumeTicks : 0
-        loadCurrent(startAt: Double(resume) / 10_000_000)
+        let first = list[startIndex].item
+        loadCurrent(startAt: first.isAudiobook ? Double(first.resumeTicks) / 10_000_000 : 0)
     }
 
+    // MARK: Building the queue
+
+    /// Insert right after the current song.
+    func playNext(_ items: [BaseItem], client: JellyfinClient?) {
+        let entries = items.filter(\.isAudio).map { QueueEntry(item: $0) }
+        guard !entries.isEmpty else { return }
+        if current == nil { play(entries: entries, startAt: 0, shuffle: false, station: nil, client: client); return }
+        queue.insert(contentsOf: entries, at: index + 1)
+    }
+
+    /// Add to the end of what's queued.
+    func addToQueue(_ items: [BaseItem], client: JellyfinClient?) {
+        let entries = items.filter(\.isAudio).map { QueueEntry(item: $0) }
+        guard !entries.isEmpty else { return }
+        if current == nil { play(entries: entries, startAt: 0, shuffle: false, station: nil, client: client); return }
+        queue.append(contentsOf: entries)
+    }
+
+    /// Remove upcoming entries (offsets are within `upcoming`).
+    func removeUpcoming(at offsets: IndexSet) {
+        queue.remove(atOffsets: IndexSet(offsets.map { $0 + index + 1 }))
+    }
+
+    /// Reorder upcoming entries (offsets are within `upcoming`).
+    func moveUpcoming(from source: IndexSet, to destination: Int) {
+        var up = upcoming
+        up.move(fromOffsets: source, toOffset: destination)
+        queue = Array(queue[...index]) + up
+    }
+
+    func clearUpcoming() {
+        guard queue.indices.contains(index) else { return }
+        queue = Array(queue[...index])
+        station = nil
+    }
+
+    func endStation() { station = nil }
+
+    // MARK: Transport
+
     func togglePlay() {
+        if speech.isSpeaking {
+            stopSpeech()
+            player.playImmediately(atRate: rate)
+            tick()
+            return
+        }
         if player.timeControlStatus == .paused { player.playImmediately(atRate: rate) } else { player.pause() }
         tick()
         Task { await report() }
@@ -78,24 +169,27 @@ final class AudioPlayer {
     }
 
     func next() {
-        guard hasNext else { return }
-        Task { await report(stopped: true) }
-        index += 1
-        loadCurrent(startAt: 0)
+        Task {
+            await report(stopped: true)
+            stopSpeech()
+            await advance()
+        }
     }
 
     func previous() {
         if currentTime > 4 || index == 0 { seek(to: 0); return }
         Task { await report(stopped: true) }
+        stopSpeech()
         index -= 1
-        loadCurrent(startAt: 0)
+        loadCurrent(startAt: 0, allowIntro: false)
     }
 
-    func jump(to i: Int) {
-        guard queue.indices.contains(i) else { return }
+    func jump(to entry: QueueEntry) {
+        guard let i = queue.firstIndex(of: entry) else { return }
         Task { await report(stopped: true) }
+        stopSpeech()
         index = i
-        loadCurrent(startAt: 0)
+        loadCurrent(startAt: 0, allowIntro: false)
     }
 
     func skip(by seconds: Double) { seek(to: max(0, min(duration, currentTime + seconds))) }
@@ -115,10 +209,13 @@ final class AudioPlayer {
     func stop() {
         guard current != nil else { return }
         Task { await report(stopped: true) }
+        stopSpeech()
         player.pause()
         player.replaceCurrentItem(with: nil)
         queue = []
         index = 0
+        station = nil
+        djLine = nil
         isPlaying = false
         showNowPlaying = false
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
@@ -127,8 +224,32 @@ final class AudioPlayer {
 
     // MARK: Internals
 
-    private func loadCurrent(startAt seconds: Double) {
-        guard let item = current else { return }
+    private func advance() async {
+        await refillIfNeeded()
+        if index + 1 < queue.count {
+            index += 1
+            loadCurrent(startAt: 0)
+        } else {
+            player.pause()
+            tick()
+        }
+    }
+
+    /// Keep stations endless: top up when only a few songs are left.
+    private func refillIfNeeded() async {
+        guard let station, let client, !refilling, queue.count - index <= 3 else { return }
+        refilling = true
+        defer { refilling = false }
+        let exclude = playedIds.union(queue.map(\.item.id))
+        let more = await station.refill(client, exclude)
+        queue.append(contentsOf: more)
+    }
+
+    private func loadCurrent(startAt seconds: Double, allowIntro: Bool = true) {
+        guard queue.indices.contains(index) else { return }
+        let entry = queue[index]
+        let item = entry.item
+        playedIds.insert(item.id)
         let asset: AVURLAsset
         if let local = DownloadManager.shared.localFile(for: item.id) {
             asset = AVURLAsset(url: local)                       // downloaded: plays offline
@@ -145,19 +266,49 @@ final class AudioPlayer {
         if seconds > 1 { player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600)) }
         currentTime = seconds
         duration = item.runTimeTicks.map { Double($0) / 10_000_000 } ?? 0
-        player.playImmediately(atRate: rate)
         artwork = nil
         if commandsInstalled { refreshCommandAvailability() }
         loadArtwork(for: item)
         Task { await report(started: true) }
+
+        if let intro = entry.intro { djLine = intro }
+        if allowIntro, djVoiceEnabled, let intro = entry.intro {
+            speak(intro) { [weak self] in
+                guard let self, self.current?.id == item.id else { return }
+                self.player.playImmediately(atRate: self.rate)
+                self.tick()
+            }
+        } else {
+            player.playImmediately(atRate: rate)
+        }
         tick()
+        Task { await refillIfNeeded() }
+    }
+
+    // MARK: DJ voice
+
+    private func speak(_ text: String, then done: @escaping @MainActor () -> Void) {
+        player.pause()
+        let utterance = AVSpeechUtterance(string: text)
+        let voices = AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix("en") }
+        utterance.voice = voices.first { $0.quality == .premium } ?? voices.first { $0.quality == .enhanced }
+            ?? AVSpeechSynthesisVoice(language: "en-US")
+        utterance.rate = 0.5
+        utterance.postUtteranceDelay = 0.2
+        speechDelegate.onFinish = { Task { @MainActor in done() } }
+        speech.speak(utterance)
+    }
+
+    private func stopSpeech() {
+        speechDelegate.onFinish = nil
+        if speech.isSpeaking { speech.stopSpeaking(at: .immediate) }
     }
 
     private func tick() {
         let t = player.currentTime().seconds
         if t.isFinite { currentTime = t }
         if let d = player.currentItem?.duration.seconds, d.isFinite, d > 0 { duration = d }
-        isPlaying = player.timeControlStatus != .paused
+        isPlaying = player.timeControlStatus != .paused || speech.isSpeaking
         updateNowPlaying()
         if Date().timeIntervalSince(lastReport) > 10, isPlaying { Task { await report() } }
     }
@@ -199,7 +350,7 @@ final class AudioPlayer {
             MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue,
         ]
         if let artist = item.artistLine { info[MPMediaItemPropertyArtist] = artist }
-        if let album = item.album { info[MPMediaItemPropertyAlbumTitle] = album }
+        if let album = item.album ?? station?.name { info[MPMediaItemPropertyAlbumTitle] = album }
         if let artwork { info[MPMediaItemPropertyArtwork] = artwork }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
@@ -229,7 +380,6 @@ final class AudioPlayer {
 
     private func refreshCommandAvailability() {
         let c = MPRemoteCommandCenter.shared()
-        // Audiobooks get ±seconds on the lock screen; music gets next/previous track.
         c.skipForwardCommand.isEnabled = isAudiobook
         c.skipBackwardCommand.isEnabled = isAudiobook
         c.nextTrackCommand.isEnabled = !isAudiobook
@@ -243,5 +393,14 @@ final class AudioPlayer {
             cmd.removeTarget(nil)
         }
         commandsInstalled = false
+    }
+}
+
+final class SpeechDelegate: NSObject, AVSpeechSynthesizerDelegate {
+    var onFinish: (() -> Void)?
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        let f = onFinish
+        onFinish = nil
+        f?()
     }
 }

@@ -170,6 +170,29 @@ final class JellyfinClient {
         ]).items
     }
 
+    /// Jellyfin's "Instant Mix": songs similar to a song, album, artist, genre or playlist.
+    func instantMix(_ itemId: String, limit: Int = 50) async throws -> [BaseItem] {
+        let r: ItemsResult = try await get("Items/\(itemId)/InstantMix", query: [
+            "userId": userId, "limit": String(limit), "fields": Self.listFields,
+        ])
+        return r.items
+    }
+
+    func musicGenres(parentId: String?) async throws -> [BaseItem] {
+        let r: ItemsResult = try await get("MusicGenres", query: [
+            "userId": userId, "parentId": parentId, "sortBy": "SortName", "limit": "60",
+        ])
+        return r.items
+    }
+
+    func songs(parentId: String?, sortBy: String, sortOrder: String = "Descending", filters: String? = nil,
+               limit: Int = 40) async -> [BaseItem] {
+        (try? await browse([
+            "parentId": parentId, "includeItemTypes": "Audio", "recursive": "true",
+            "sortBy": sortBy, "sortOrder": sortOrder, "filters": filters, "limit": String(limit),
+        ]).items) ?? []
+    }
+
     func playlistItems(_ playlistId: String) async throws -> [BaseItem] {
         let r: ItemsResult = try await get("Playlists/\(playlistId)/Items", query: [
             "userId": userId, "fields": Self.listFields,

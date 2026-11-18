@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(AppState.self) private var app
+    @Environment(AudioPlayer.self) private var audio
 
     private struct BitrateOption: Hashable {
         let label: String
@@ -107,6 +108,8 @@ struct SettingsView: View {
             Section {
                 Toggle("Brightness slider (left side)", isOn: $app.showBrightnessSlider)
                 Toggle("Volume slider (right side)", isOn: $app.showVolumeSlider)
+                Toggle("DJ voice between music sets", isOn: Binding(get: { audio.djVoiceEnabled },
+                                                                    set: { audio.setDJVoice($0) }))
             } header: {
                 Text("Player")
             } footer: {

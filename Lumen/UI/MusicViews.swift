@@ -8,11 +8,11 @@ struct MusicLibraryView: View {
     let library: BaseItem
 
     enum MusicSection: String, CaseIterable, Identifiable {
-        case albums = "Albums", artists = "Artists", songs = "Songs", playlists = "Playlists"
+        case forYou = "For You", albums = "Albums", artists = "Artists", songs = "Songs", playlists = "Playlists"
         var id: String { rawValue }
     }
 
-    @State private var section: MusicSection = .albums
+    @State private var section: MusicSection = .forYou
     @State private var items: [BaseItem] = []
     @State private var total = Int.max
     @State private var loading = false
@@ -30,6 +30,8 @@ struct MusicLibraryView: View {
             if let error { ErrorBanner(message: error) { Task { await reload() } } }
 
             switch section {
+            case .forYou:
+                ForYouView(library: library)
             case .songs:
                 LazyVStack(spacing: 0) {
                     if !items.isEmpty {
@@ -92,6 +94,8 @@ struct MusicLibraryView: View {
         do {
             let r: ItemsResult
             switch section {
+            case .forYou:
+                return
             case .albums:
                 r = try await client.browse(["parentId": library.id, "includeItemTypes": "MusicAlbum", "recursive": "true",
                                              "sortBy": "SortName", "startIndex": String(items.count), "limit": "100"])
@@ -123,6 +127,10 @@ struct AlbumCard: View {
     let album: BaseItem
 
     var body: some View {
+        card.contextMenu { MusicItemMenuItems(item: album) }
+    }
+
+    private var card: some View {
         VStack(alignment: .leading, spacing: 6) {
             Color.clear
                 .aspectRatio(1, contentMode: .fit)
@@ -147,6 +155,10 @@ struct ArtistCard: View {
     let artist: BaseItem
 
     var body: some View {
+        card.contextMenu { MusicItemMenuItems(item: artist) }
+    }
+
+    private var card: some View {
         VStack(spacing: 8) {
             Color.clear
                 .aspectRatio(1, contentMode: .fit)
@@ -202,6 +214,7 @@ struct TrackRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .contextMenu { MusicItemMenuItems(item: track) }
     }
 }
 
@@ -445,7 +458,7 @@ struct NowPlayingView: View {
                                 .clipped()
                                 .mask(LinearGradient(stops: [
                                     .init(color: .black, location: 0),
-                                    .init(color: .black, location: 0.72),
+                                    .init(color: .black, location: 0.85),
                                     .init(color: .clear, location: 1),
                                 ], startPoint: .top, endPoint: .bottom))
                                 .scaleEffect(audio.isPlaying ? 1 : 0.94, anchor: .top)
@@ -453,7 +466,7 @@ struct NowPlayingView: View {
                                 .onTapGesture { dismiss() }
                             titleRow(item: item)
                                 .padding(.horizontal, 28)
-                                .padding(.top, -24)
+                                .padding(.top, -8)
                         }
 
                         Spacer(minLength: 12)
@@ -477,12 +490,25 @@ struct NowPlayingView: View {
     }
 
     private func titleRow(item: BaseItem) -> some View {
-        HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.name ?? "").font(.title3.weight(.bold)).lineLimit(1)
-                Text(item.artistLine ?? item.album ?? "").font(.title3).foregroundStyle(.white.opacity(0.65)).lineLimit(1)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.name ?? "").font(.title3.weight(.bold)).lineLimit(1)
+                    Text(item.artistLine ?? item.album ?? "").font(.title3).foregroundStyle(.white.opacity(0.65)).lineLimit(1)
+                }
+                Spacer()
+                MusicItemMenu(item: item, compact: true)
             }
-            Spacer()
+            if let station = audio.station {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: station.name == "Lumen DJ" ? "waveform.and.mic" : "dot.radiowaves.left.and.right")
+                    Text(audio.djLine ?? station.name).lineLimit(2)
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.75))
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+            }
         }
     }
 
@@ -586,21 +612,42 @@ struct NowPlayingView: View {
     }
 
     private var queueList: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("Up Next").font(.headline).padding(.horizontal).padding(.top, 18).padding(.bottom, 6)
-                    LazyVStack(spacing: 0) {
-                        ForEach(Array(audio.queue.enumerated()), id: \.offset) { i, t in
-                            TrackRow(track: t, number: nil, showArt: true) { audio.jump(to: i) }
-                                .id(i)
-                                .opacity(i < audio.index ? 0.45 : 1)
+        List {
+            if let station = audio.station {
+                Section {
+                    HStack(spacing: 10) {
+                        Image(systemName: "dot.radiowaves.left.and.right").foregroundStyle(Theme.accent)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Playing from \(station.name)").font(.subheadline.weight(.semibold))
+                            Text("Keeps going with more music automatically").font(.caption).foregroundStyle(.white.opacity(0.6))
                         }
+                        Spacer()
+                        Button("Stop") { audio.endStation() }.font(.caption.weight(.bold))
                     }
+                    .listRowBackground(Color.white.opacity(0.08))
                 }
             }
-            .onAppear { proxy.scrollTo(audio.index, anchor: .top) }
+            Section {
+                ForEach(audio.upcoming) { entry in
+                    Button { audio.jump(to: entry) } label: { QueueRow(entry: entry) }
+                        .listRowBackground(Color.clear)
+                }
+                .onMove { audio.moveUpcoming(from: $0, to: $1) }
+                .onDelete { audio.removeUpcoming(at: $0) }
+            } header: {
+                HStack {
+                    Text("Up Next").font(.headline).foregroundStyle(.white)
+                    Spacer()
+                    if !audio.upcoming.isEmpty {
+                        Button("Clear") { audio.clearUpcoming() }.font(.subheadline)
+                    }
+                }
+                .textCase(nil)
+            }
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .environment(\.editMode, .constant(.active))
     }
 }
 
@@ -647,6 +694,8 @@ struct MiniPlayerInset: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            // Pushed screens (album pages etc.) also need room so the last rows aren't hidden.
+            .contentMargins(.bottom, audio.current == nil ? 0 : 76, for: .scrollContent)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 MiniPlayer().animation(.spring(response: 0.4, dampingFraction: 0.85), value: audio.current?.id)
             }

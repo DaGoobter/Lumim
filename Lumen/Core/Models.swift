@@ -53,6 +53,11 @@ struct ItemsResult: Codable {
     let totalRecordCount: Int?
 }
 
+struct NameId: Codable, Hashable {
+    let name: String?
+    let id: String
+}
+
 struct ProgramsResult: Codable {
     let items: [ProgramInfo]
 }
@@ -217,6 +222,7 @@ struct BaseItem: Codable, Identifiable, Hashable {
     let albumArtist: String?
     let artists: [String]?
     let albumPrimaryImageTag: String?
+    let artistItems: [NameId]?
     let childCount: Int?
     // Live TV
     let channelNumber: String?
