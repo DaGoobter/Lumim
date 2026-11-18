@@ -15,6 +15,9 @@ struct PlayerScreen: View {
     @State private var controlsVisible = true
     @State private var hideTask: Task<Void, Never>?
     @State private var surface = VideoSurfaceHandle()
+    @State private var volume = SystemVolume()
+    @State private var brightness: Double = Double(UIScreen.main.brightness)
+    @State private var originalBrightness: CGFloat?
 
     // Zoom: 1 = whole picture visible. "Fill" crops to cover the screen.
     @State private var zoom: CGFloat = 1
@@ -65,6 +68,11 @@ struct PlayerScreen: View {
                         .animation(.easeInOut(duration: 0.25), value: controlsVisible)
                 }
 
+                // Hosts the system volume control (also hides the big system volume overlay while watching).
+                if app.showVolumeSlider {
+                    SystemVolumeHost(volume: volume).frame(width: 1, height: 1).opacity(0.01)
+                }
+
                 if let zoomHUD {
                     Text(zoomHUD)
                         .font(.headline.monospacedDigit())
@@ -84,7 +92,10 @@ struct PlayerScreen: View {
             await m.start()
             scheduleHide()
         }
-        .onDisappear { Task { await model?.stop() } }
+        .onDisappear {
+            Task { await model?.stop() }
+            if let originalBrightness { UIScreen.main.brightness = originalBrightness }
+        }
         .onChange(of: model?.isPlaying) { _, playing in if playing == true { scheduleHide() } }
         .onChange(of: showInfo) { _, shown in if !shown { scheduleHide() } }
         .onChange(of: showSubtitleSearch) { _, shown in if !shown { scheduleHide() } }
@@ -111,6 +122,23 @@ struct PlayerScreen: View {
             }
             .ignoresSafeArea()
             .allowsHitTesting(false)
+
+            // Brightness (left) and volume (right), like the iOS video apps people know.
+            HStack {
+                if app.showBrightnessSlider {
+                    VerticalSlider(value: Binding(get: { brightness }, set: { setBrightness($0) }),
+                                   systemImage: brightness < 0.4 ? "sun.min.fill" : "sun.max.fill",
+                                   label: "Brightness")
+                }
+                Spacer()
+                if app.showVolumeSlider {
+                    VerticalSlider(value: Binding(get: { Double(volume.level) }, set: { volume.set(Float($0)) }),
+                                   systemImage: volume.level == 0 ? "speaker.slash.fill"
+                                       : (volume.level < 0.5 ? "speaker.wave.1.fill" : "speaker.wave.3.fill"),
+                                   label: "Volume")
+                }
+            }
+            .padding(.horizontal, 22)
 
             VStack(spacing: 0) {
                 // Top bar
@@ -225,6 +253,13 @@ struct PlayerScreen: View {
         }
         .foregroundStyle(.white)
         .accessibilityLabel(label)
+    }
+
+    private func setBrightness(_ value: Double) {
+        if originalBrightness == nil { originalBrightness = UIScreen.main.brightness }
+        brightness = value
+        UIScreen.main.brightness = CGFloat(value)
+        scheduleHide()
     }
 
     // MARK: Zoom
@@ -524,6 +559,73 @@ struct VideoSurface: UIViewRepresentable {
             video.transform = CGAffineTransform(scaleX: zoom, y: zoom)
         }
     }
+}
+
+/// Tall rounded slider used for brightness and volume.
+struct VerticalSlider: View {
+    @Binding var value: Double
+    let systemImage: String
+    let label: String
+    @State private var dragStart: Double?
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .bottom) {
+                Capsule().fill(.ultraThinMaterial)
+                Capsule().fill(.white.opacity(0.9))
+                    .frame(height: max(0, geo.size.height * value))
+                Image(systemName: systemImage)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(value > 0.12 ? .black : .white)
+                    .padding(.bottom, 10)
+            }
+            .clipShape(Capsule())
+            .contentShape(Capsule())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { g in
+                        let start = dragStart ?? value
+                        if dragStart == nil { dragStart = value }
+                        value = min(1, max(0, start - g.translation.height / geo.size.height))
+                    }
+                    .onEnded { _ in dragStart = nil }
+            )
+        }
+        .frame(width: 40, height: 150)
+        .accessibilityElement()
+        .accessibilityLabel(label)
+        .accessibilityValue("\(Int(value * 100)) percent")
+        .accessibilityAdjustableAction { dir in
+            value = min(1, max(0, value + (dir == .increment ? 0.1 : -0.1)))
+        }
+    }
+}
+
+/// Reads and sets the system volume (via a hidden MPVolumeView, the only supported way).
+@Observable
+final class SystemVolume {
+    var level: Float = AVAudioSession.sharedInstance().outputVolume
+    @ObservationIgnored let view = MPVolumeView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
+    @ObservationIgnored private var observation: NSKeyValueObservation?
+
+    init() {
+        observation = AVAudioSession.sharedInstance().observe(\.outputVolume, options: [.new]) { [weak self] session, _ in
+            let v = session.outputVolume
+            DispatchQueue.main.async { self?.level = v }
+        }
+    }
+
+    func set(_ value: Float) {
+        level = value
+        let slider = view.subviews.compactMap { $0 as? UISlider }.first
+        DispatchQueue.main.async { slider?.value = value }
+    }
+}
+
+struct SystemVolumeHost: UIViewRepresentable {
+    let volume: SystemVolume
+    func makeUIView(context: Context) -> MPVolumeView { volume.view }
+    func updateUIView(_ uiView: MPVolumeView, context: Context) {}
 }
 
 /// AirPlay button.

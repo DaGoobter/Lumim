@@ -23,6 +23,12 @@ final class AppState {
     private(set) var session: StoredSession? = nil
     private(set) var client: JellyfinClient? = nil
     private(set) var route: Route = .remote
+    /// Why the home address is or isn't being used (shown in Settings).
+    private(set) var localStatus: String = "Checking…"
+
+    /// Player overlays.
+    var showBrightnessSlider: Bool = true
+    var showVolumeSlider: Bool = true
 
     /// Bits per second. High by default so the server prefers untouched (direct) playback.
     var maxBitrate: Int = 200_000_000
@@ -33,16 +39,25 @@ final class AppState {
 
     @ObservationIgnored private let monitor = NWPathMonitor()
     @ObservationIgnored private var routeTask: Task<Void, Never>?
+    @ObservationIgnored private var retriedAfterPrompt = false
 
     func persistSettings() {
         UserDefaults.standard.set(maxBitrate, forKey: "lumen.maxBitrate")
         UserDefaults.standard.set(preferLocal, forKey: "lumen.preferLocal")
+        UserDefaults.standard.set(showBrightnessSlider, forKey: "lumen.showBrightness")
+        UserDefaults.standard.set(showVolumeSlider, forKey: "lumen.showVolume")
         trackPrefs.save()
     }
 
     init() {
         let saved = UserDefaults.standard.integer(forKey: "lumen.maxBitrate")
         if saved > 0 { maxBitrate = saved }
+        if UserDefaults.standard.object(forKey: "lumen.showBrightness") != nil {
+            showBrightnessSlider = UserDefaults.standard.bool(forKey: "lumen.showBrightness")
+        }
+        if UserDefaults.standard.object(forKey: "lumen.showVolume") != nil {
+            showVolumeSlider = UserDefaults.standard.bool(forKey: "lumen.showVolume")
+        }
         if UserDefaults.standard.object(forKey: "lumen.preferLocal") != nil {
             preferLocal = UserDefaults.standard.bool(forKey: "lumen.preferLocal")
         }
@@ -82,30 +97,88 @@ final class AppState {
 
         var target = remote
         var newRoute = Route.remote
-        if preferLocal, let l = s.localURL, let localURL = URL(string: l), localURL != remote,
-           await Self.probe(localURL, serverId: s.serverId) {
-            target = localURL
-            newRoute = .local
+        if !preferLocal {
+            localStatus = "Off"
+        } else if let l = s.localURL, let localURL = URL(string: l) {
+            // If no port was typed, also try Jellyfin's default 8096.
+            var candidates = [localURL]
+            if localURL.port == nil, var comps = URLComponents(url: localURL, resolvingAgainstBaseURL: false) {
+                comps.port = 8096
+                if let withPort = comps.url { candidates.append(withPort) }
+            }
+            var lastProblem = "Not reachable"
+            for candidate in candidates where candidate != remote {
+                if let problem = await Self.probe(candidate, serverId: s.serverId) {
+                    lastProblem = problem
+                } else {
+                    target = candidate
+                    newRoute = .local
+                    if candidate.absoluteString != l {
+                        s.localURL = candidate.absoluteString
+                        save(s)
+                    }
+                    break
+                }
+            }
+            localStatus = newRoute == .local ? "Connected" : lastProblem
+        } else {
+            localStatus = "No home address yet"
         }
+
         route = newRoute
         if client?.baseURL != target {
             client = JellyfinClient(baseURL: target, deviceName: UIDevice.current.name, token: s.token, userId: s.userId)
         }
         // Back online: resume queued downloads and push any offline watch progress.
         if let client { DownloadManager.shared.attach(client: client) }
+
+        // The first local connection triggers iOS's "Local Network" permission prompt and may time out
+        // while it's on screen, so check once more shortly after.
+        if newRoute == .remote, preferLocal, s.localURL != nil, !retriedAfterPrompt {
+            retriedAfterPrompt = true
+            Task {
+                try? await Task.sleep(for: .seconds(5))
+                await refreshRoute()
+            }
+        }
     }
 
     /// Quick reachability check that also confirms it's the same server (not some other device on this Wi-Fi).
-    static func probe(_ url: URL, serverId: String?) async -> Bool {
+    /// Returns nil when reachable, otherwise a short, human explanation.
+    static func probe(_ url: URL, serverId: String?) async -> String? {
         var req = URLRequest(url: url.appendingPathComponent("System/Info/Public"))
-        req.timeoutInterval = 2.5
+        req.timeoutInterval = 3
         let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 2.5
+        config.timeoutIntervalForRequest = 3
         config.waitsForConnectivity = false
-        guard let result = try? await URLSession(configuration: config).data(for: req),
-              (result.1 as? HTTPURLResponse)?.statusCode == 200,
-              let info = try? JSONDecoder.jellyfin.decode(PublicSystemInfo.self, from: result.0) else { return false }
-        return serverId == nil || info.id == serverId
+        do {
+            let (data, response) = try await URLSession(configuration: config).data(for: req)
+            guard (response as? HTTPURLResponse)?.statusCode == 200,
+                  let info = try? JSONDecoder.jellyfin.decode(PublicSystemInfo.self, from: data) else {
+                return "Something answered at \(url.host ?? "that address"), but it isn't Jellyfin"
+            }
+            if let serverId, let id = info.id, id != serverId {
+                return "A different Jellyfin server answered at that address"
+            }
+            return nil
+        } catch let error as URLError {
+            switch error.code {
+            case .timedOut:
+                return "Timed out. Check the address and port, and that Local Network access is on for Lumen (iPhone Settings → Privacy & Security → Local Network)"
+            case .cannotConnectToHost:
+                return "Connection refused at \(url.host ?? "")\(url.port.map { ":\($0)" } ?? ""). Wrong port? Jellyfin's default is 8096"
+            case .notConnectedToInternet, .networkConnectionLost:
+                return "Can't reach the home network. Are you on your home Wi‑Fi, and is Local Network access on for Lumen (iPhone Settings → Privacy & Security → Local Network)?"
+            case .cannotFindHost, .dnsLookupFailed:
+                return "Couldn't find \(url.host ?? "that host"). Try the server's IP address instead"
+            case .appTransportSecurityRequiresSecureConnection:
+                return "Blocked by iOS security for plain http"
+            default:
+                return error.localizedDescription
+            }
+        } catch {
+            return error.localizedDescription
+        }
     }
 
     /// Edit addresses from Settings. Empty local = auto-detect again.
@@ -121,6 +194,14 @@ final class AppState {
             s.localURLIsManual = true
         }
         save(s)
+        retriedAfterPrompt = false
+        localStatus = "Checking…"
+        await refreshRoute()
+    }
+
+    func recheckConnection() async {
+        retriedAfterPrompt = false
+        localStatus = "Checking…"
         await refreshRoute()
     }
 

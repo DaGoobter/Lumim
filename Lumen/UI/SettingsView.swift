@@ -34,6 +34,13 @@ struct SettingsView: View {
                               systemImage: app.route == .local ? "house.fill" : "globe")
                             .foregroundStyle(app.route == .local ? Theme.accent : .secondary)
                     }
+                    if app.route == .remote, app.preferLocal {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Home address check").font(.caption).foregroundStyle(.secondary)
+                            Text(app.localStatus).font(.footnote)
+                        }
+                    }
+                    Button("Check connection now") { Task { await app.recheckConnection() } }
                 }
 
                 Section {
@@ -97,6 +104,15 @@ struct SettingsView: View {
                 Text("Applied automatically when something starts playing; change tracks anytime with the captions button in the player. Picture-based subtitles (PGS, VobSub) are only used when you pick them yourself, because they force the server to re-encode the video and Dolby Vision is lost. To search OpenSubtitles from the player, install the Open Subtitles plugin on your Jellyfin server (Dashboard → Plugins → Catalog) and sign in with your opensubtitles.com account.")
             }
 
+            Section {
+                Toggle("Brightness slider (left side)", isOn: $app.showBrightnessSlider)
+                Toggle("Volume slider (right side)", isOn: $app.showVolumeSlider)
+            } header: {
+                Text("Player")
+            } footer: {
+                Text("Pinch the video to zoom, or double-tap to switch between Fit and Fill.")
+            }
+
             Section("This device") {
                 capability("Dolby Vision", DeviceCapabilities.dolbyVision)
                 capability("HDR10", DeviceCapabilities.hdr10)
@@ -120,6 +136,8 @@ struct SettingsView: View {
             app.scheduleRouteCheck()
         }
         .onChange(of: app.trackPrefs) { app.persistSettings() }
+        .onChange(of: app.showBrightnessSlider) { app.persistSettings() }
+        .onChange(of: app.showVolumeSlider) { app.persistSettings() }
         .onAppear { loadFields() }
     }
 

@@ -28,7 +28,6 @@ targets:
         NSLocalNetworkUsageDescription: Lumen connects to Jellyfin servers on your local network.
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
-          NSAllowsLocalNetworking: true
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft
