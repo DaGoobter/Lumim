@@ -32,6 +32,11 @@ struct PublicSystemInfo: Codable {
     let id: String?
 }
 
+struct SystemInfo: Codable {
+    let localAddress: String?
+    let id: String?
+}
+
 struct UserDto: Codable {
     let id: String
     let name: String

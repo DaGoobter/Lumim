@@ -40,6 +40,11 @@ struct PlayerScreen: View {
                 HStack {
                     overlayButton("xmark") { close() }
                     Spacer()
+                    if let model, !model.isOffline, let source = model.source,
+                       !(source.audioStreams.count <= 1 && source.subtitleStreams.isEmpty) {
+                        TrackMenu(model: model, source: source, onOpen: { hideTask?.cancel() },
+                                  onPick: { scheduleHide() })
+                    }
                     overlayButton("info.circle") { showInfo = true }
                 }
                 .padding(.horizontal, 16)
@@ -99,6 +104,68 @@ struct PlayerScreen: View {
     }
 }
 
+/// Audio language and subtitle picker.
+struct TrackMenu: View {
+    let model: PlayerModel
+    let source: MediaSource
+    let onOpen: () -> Void
+    let onPick: () -> Void
+
+    var body: some View {
+        Menu {
+            if source.audioStreams.count > 1 {
+                Section("Audio") {
+                    ForEach(source.audioStreams, id: \.index) { stream in
+                        Button {
+                            pick(audio: stream.index, subtitle: model.subtitleIndex)
+                        } label: {
+                            item(stream.displayTitle ?? stream.language ?? "Track \(stream.index ?? 0)",
+                                 selected: (model.audioIndex ?? source.defaultAudioStreamIndex) == stream.index)
+                        }
+                    }
+                }
+            }
+            Section("Subtitles") {
+                Button {
+                    pick(audio: model.audioIndex, subtitle: -1)
+                } label: {
+                    item("Off", selected: model.subtitleIndex == -1)
+                }
+                ForEach(source.subtitleStreams, id: \.index) { stream in
+                    Button {
+                        pick(audio: model.audioIndex, subtitle: stream.index ?? -1)
+                    } label: {
+                        let name = stream.displayTitle ?? stream.language ?? "Subtitle"
+                        item(stream.isImageSubtitle ? name + " · re-encodes video" : name,
+                             selected: model.subtitleIndex == stream.index)
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "captions.bubble")
+                .font(.system(size: 16, weight: .semibold))
+                .frame(width: 38, height: 38)
+                .background(.ultraThinMaterial, in: Circle())
+                .foregroundStyle(.white)
+        }
+        .accessibilityLabel("Audio and subtitles")
+    }
+
+    @ViewBuilder
+    private func item(_ title: String, selected: Bool) -> some View {
+        if selected {
+            Label(title, systemImage: "checkmark")
+        } else {
+            Text(title)
+        }
+    }
+
+    private func pick(audio: Int?, subtitle: Int) {
+        onPick()
+        Task { await model.selectTracks(audio: audio, subtitle: subtitle) }
+    }
+}
+
 struct VideoPlayerController: UIViewControllerRepresentable {
     let player: AVPlayer
     var onTap: () -> Void = {}
@@ -143,6 +210,8 @@ struct StreamInfoView: View {
                     row("Server video", diagnostics.serverVideo)
                     row("Server audio", diagnostics.serverAudio)
                     row("Decoder sees", diagnostics.decodedFormat)
+                    row("Subtitles", diagnostics.subtitles)
+                    row("Connection", diagnostics.connection)
                     row("Server reasons", diagnostics.transcodeReasons)
                 }
                 Section("Source file") {

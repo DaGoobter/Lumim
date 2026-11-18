@@ -43,6 +43,7 @@ struct LumenApp: App {
 
 struct RootView: View {
     @Environment(AppState.self) private var app
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         Group {
@@ -53,6 +54,9 @@ struct RootView: View {
             }
         }
         .animation(.easeInOut(duration: 0.35), value: app.client != nil)
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { app.scheduleRouteCheck() }
+        }
     }
 }
 

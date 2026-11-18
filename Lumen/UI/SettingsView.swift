@@ -18,14 +18,55 @@ struct SettingsView: View {
         .init(label: "4 Mbps", value: 4_000_000),
     ]
 
+    @State private var remoteField = ""
+    @State private var localField = ""
+    @State private var savingAddresses = false
+
     var body: some View {
         @Bindable var app = app
         Form {
             if let s = app.session {
                 Section("Server") {
                     LabeledContent("Name", value: s.serverName ?? "Jellyfin")
-                    LabeledContent("Address", value: s.serverURL)
                     LabeledContent("User", value: s.userName)
+                    LabeledContent("Connected via") {
+                        Label(app.route == .local ? "Home network" : "Remote",
+                              systemImage: app.route == .local ? "house.fill" : "globe")
+                            .foregroundStyle(app.route == .local ? Theme.accent : .secondary)
+                    }
+                }
+
+                Section {
+                    Toggle("Use home network when available", isOn: $app.preferLocal)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Remote address").font(.caption).foregroundStyle(.secondary)
+                        TextField("https://example.duckdns.org", text: $remoteField)
+                            .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Home network address").font(.caption).foregroundStyle(.secondary)
+                        TextField(app.session?.localURL.map { "Auto: \($0)" } ?? "Auto-detect (e.g. 192.168.1.20:8096)",
+                                  text: $localField)
+                            .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    }
+                    Button {
+                        savingAddresses = true
+                        Task {
+                            await app.updateAddresses(remote: remoteField, local: localField)
+                            loadFields()
+                            savingAddresses = false
+                        }
+                    } label: {
+                        HStack {
+                            Text("Save & reconnect")
+                            if savingAddresses { Spacer(); ProgressView() }
+                        }
+                    }
+                    .disabled(savingAddresses || remoteField.isEmpty)
+                } header: {
+                    Text("Connection")
+                } footer: {
+                    Text("At home Lumen talks to your server directly over Wi‑Fi (faster, full quality, no internet needed); everywhere else it uses your remote address. It switches automatically. Leave the home address empty to auto-detect it.")
                 }
             }
 
@@ -57,6 +98,16 @@ struct SettingsView: View {
         .background(Theme.background)
         .navigationTitle("Settings")
         .onChange(of: app.maxBitrate) { app.persistSettings() }
+        .onChange(of: app.preferLocal) {
+            app.persistSettings()
+            app.scheduleRouteCheck()
+        }
+        .onAppear { loadFields() }
+    }
+
+    private func loadFields() {
+        remoteField = app.session?.serverURL ?? ""
+        localField = app.session?.localURLIsManual == true ? (app.session?.localURL ?? "") : ""
     }
 
     private func capability(_ name: String, _ supported: Bool) -> some View {

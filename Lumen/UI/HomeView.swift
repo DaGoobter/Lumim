@@ -20,10 +20,11 @@ struct HomeView: View {
     private var hero: BaseItem? { resume.first ?? nextUp.first ?? latest.first?.items.first }
 
     var body: some View {
+        GeometryReader { geo in
         ScrollView {
             VStack(alignment: .leading, spacing: 30) {
                 if let hero {
-                    HeroView(item: hero, height: sizeClass == .regular ? 600 : 500) { play(hero) }
+                    HeroView(item: hero, width: geo.size.width, maxHeight: geo.size.height * 0.5) { play(hero) }
                 } else {
                     Spacer(minLength: 100)
                 }
@@ -58,7 +59,10 @@ struct HomeView: View {
             }
             .padding(.bottom, 40)
         }
-        .ignoresSafeArea(edges: .top)
+        .background(alignment: .top) {
+            AmbientGlow(url: hero.flatMap { app.client?.backdropURL(for: $0, width: 600) }, size: geo.size)
+        }
+        }
         .background(Theme.background)
         .toolbar(.hidden, for: .navigationBar)
         .refreshable { await load() }
@@ -111,20 +115,17 @@ struct HomeView: View {
 struct HeroView: View {
     @Environment(AppState.self) private var app
     let item: BaseItem
-    let height: CGFloat
+    let width: CGFloat
+    let maxHeight: CGFloat
     let onPlay: () -> Void
 
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            Color.clear
-                .frame(height: height)
-                .overlay { RemoteImage(url: app.client?.backdropURL(for: item)) }
-                .clipped()
-            LinearGradient(stops: [
-                .init(color: .clear, location: 0.35),
-                .init(color: Theme.background.opacity(0.75), location: 0.75),
-                .init(color: Theme.background, location: 1),
-            ], startPoint: .top, endPoint: .bottom)
+        VStack(alignment: .leading, spacing: 14) {
+            // Full, uncropped artwork; tap it for details.
+            NavigationLink(value: item) {
+                ArtHeader(url: app.client?.backdropURL(for: item, width: 1920), width: width, maxHeight: maxHeight)
+            }
+            .buttonStyle(.plain)
 
             VStack(alignment: .leading, spacing: 12) {
                 LogoOrTitle(url: app.client?.logoURL(for: item), title: item.displayTitle)
@@ -146,7 +147,6 @@ struct HeroView: View {
                 }
             }
             .padding(.horizontal)
-            .padding(.bottom, 8)
         }
     }
 }

@@ -19,12 +19,14 @@ struct StreamDiagnostics {
     var dolbyVisionProfile = "—"
     var bitrate = "—"
     var audio = "—"
+    var subtitles = "Off"
     var transcodeReasons = "—"
     var decodedFormat = "—"
     var serverVideo = "—"
     var serverAudio = "—"
+    var connection = "—"
 
-    static func from(source: MediaSource, usingHLS: Bool) -> StreamDiagnostics {
+    static func from(source: MediaSource, usingHLS: Bool, audioIndex: Int?, subtitleIndex: Int) -> StreamDiagnostics {
         var d = StreamDiagnostics()
         d.container = source.container ?? "—"
         if let v = source.videoStream {
@@ -34,8 +36,12 @@ struct StreamDiagnostics {
             if let p = v.dvProfile { d.dolbyVisionProfile = "Profile \(p)" }
         }
         if let b = source.bitrate { d.bitrate = String(format: "%.1f Mbps", Double(b) / 1_000_000) }
-        let audio = source.audioStreams.first { $0.index == source.defaultAudioStreamIndex } ?? source.audioStreams.first
+        let wantedAudio = audioIndex ?? source.defaultAudioStreamIndex
+        let audio = source.audioStreams.first { $0.index == wantedAudio } ?? source.audioStreams.first
         if let audio { d.audio = audio.displayTitle ?? audio.codec ?? "—" }
+        if subtitleIndex >= 0, let sub = source.subtitleStreams.first(where: { $0.index == subtitleIndex }) {
+            d.subtitles = sub.displayTitle ?? sub.language ?? "On"
+        }
 
         if usingHLS {
             let reasons = source.transcodingUrl
@@ -47,8 +53,18 @@ struct StreamDiagnostics {
             d.serverAudio = "Checking…"
         } else {
             d.playMethod = "Direct Play (original file)"
+            d.serverVideo = "Original file"
+            d.serverAudio = "Original file"
         }
         return d
+    }
+}
+
+extension MediaStream {
+    /// Picture-based subtitles can't be sent as text; the server has to burn them into the video.
+    var isImageSubtitle: Bool {
+        ["pgssub", "pgs", "hdmv_pgs_subtitle", "dvdsub", "dvd_subtitle", "vobsub", "dvbsub", "dvb_subtitle"]
+            .contains((codec ?? "").lowercased())
     }
 }
 
@@ -59,6 +75,15 @@ final class PlayerModel {
     var errorMessage: String?
     var diagnostics = StreamDiagnostics()
 
+    /// The file being played (for the track picker).
+    private(set) var source: MediaSource?
+    /// nil = server default.
+    private(set) var audioIndex: Int?
+    /// -1 = subtitles off.
+    private(set) var subtitleIndex: Int = -1
+
+    var isOffline: Bool { request.localDownload != nil }
+
     @ObservationIgnored private let request: PlaybackRequest
     @ObservationIgnored private let client: JellyfinClient?
     @ObservationIgnored private let maxBitrate: Int
@@ -67,8 +92,11 @@ final class PlayerModel {
     @ObservationIgnored private var reportedMethod = "DirectPlay"
     @ObservationIgnored private var timeObserver: Any?
     @ObservationIgnored private var statusCancellable: AnyCancellable?
-    @ObservationIgnored private var started = false
+    @ObservationIgnored private var pendingSeekTicks: Int64 = 0
+    @ObservationIgnored private var itemReady = false
+    @ObservationIgnored private var reportedStart = false
     @ObservationIgnored private var stopped = false
+    @ObservationIgnored private var loadGeneration = 0
 
     init(request: PlaybackRequest, client: JellyfinClient?, maxBitrate: Int) {
         self.request = request
@@ -77,74 +105,115 @@ final class PlayerModel {
     }
 
     func start() async {
-        do {
-            try? AVAudioSession.sharedInstance().setActive(true)
-            let asset: AVURLAsset
+        try? AVAudioSession.sharedInstance().setActive(true)
+        timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 10, preferredTimescale: 1),
+                                                      queue: .main) { [weak self] _ in
+            Task { @MainActor [weak self] in await self?.report(.progress) }
+        }
+        await load(startTicks: request.startTicks)
+    }
 
+    /// Switch audio and/or subtitle track. Reloads the stream at the current position.
+    func selectTracks(audio: Int?, subtitle: Int) async {
+        guard audio != audioIndex || subtitle != subtitleIndex else { return }
+        audioIndex = audio
+        subtitleIndex = subtitle
+        let seconds = player.currentTime().seconds
+        let ticks = seconds.isFinite ? Int64(seconds * 10_000_000) : request.startTicks
+        if let old = playSessionId, let client { await client.stopEncoding(playSessionId: old) }
+        await load(startTicks: ticks)
+    }
+
+    private func load(startTicks: Int64) async {
+        loadGeneration += 1
+        let generation = loadGeneration
+        isLoading = true
+        errorMessage = nil
+        itemReady = false
+        pendingSeekTicks = startTicks
+        do {
+            let asset: AVURLAsset
             if let local = request.localDownload, let url = local.localURL {
                 asset = AVURLAsset(url: url)
                 mediaSourceId = local.mediaSourceId
                 if let src = local.item.mediaSources?.first {
-                    diagnostics = StreamDiagnostics.from(source: src, usingHLS: false)
+                    source = src
+                    diagnostics = StreamDiagnostics.from(source: src, usingHLS: false, audioIndex: nil, subtitleIndex: -1)
                 }
                 diagnostics.playMethod = "Offline · \(local.kind.label)"
+                diagnostics.connection = "Offline (on this device)"
             } else {
                 guard let client else { throw JellyfinError.noMediaSource }
+                // A non-default track needs the server's stream, which carries exactly the chosen tracks.
+                // The video is still copied, so Dolby Vision/HDR is kept.
+                let customTracks = subtitleIndex >= 0 || audioIndex != nil
                 let info = try await client.playbackInfo(itemId: request.item.id, maxBitrate: maxBitrate,
-                                                         startTicks: request.startTicks)
+                                                         startTicks: startTicks, audioStreamIndex: audioIndex,
+                                                         subtitleStreamIndex: subtitleIndex,
+                                                         enableDirectPlay: !customTracks)
+                guard generation == loadGeneration else { return }
                 guard let src = info.mediaSources.first else { throw JellyfinError.noMediaSource }
+                source = src
                 mediaSourceId = src.id
                 playSessionId = info.playSessionId
 
                 let url: URL
-                if src.supportsDirectPlay == true {
+                if src.supportsDirectPlay == true && !customTracks {
                     url = client.directPlayURL(itemId: request.item.id, mediaSourceId: src.id, container: src.container)
                     reportedMethod = "DirectPlay"
-                    diagnostics = StreamDiagnostics.from(source: src, usingHLS: false)
-                } else if let t = src.transcodingUrl, let u = client.absoluteURL(serverRelative: t) {
+                    diagnostics = StreamDiagnostics.from(source: src, usingHLS: false,
+                                                         audioIndex: audioIndex, subtitleIndex: subtitleIndex)
+                } else if let t = src.transcodingUrl,
+                          let u = client.absoluteURL(serverRelative: t, allowSubtitleBurnIn: subtitleIndex >= 0) {
                     url = u
                     reportedMethod = "Transcode"
-                    diagnostics = StreamDiagnostics.from(source: src, usingHLS: true)
+                    diagnostics = StreamDiagnostics.from(source: src, usingHLS: true,
+                                                         audioIndex: audioIndex, subtitleIndex: subtitleIndex)
                 } else {
                     throw JellyfinError.noMediaSource
                 }
+                diagnostics.connection = client.baseURL.host ?? client.baseURL.absoluteString
                 asset = AVURLAsset(url: url, options: [
                     "AVURLAssetHTTPHeaderFieldsKey": ["Authorization": client.authorizationHeader],
                 ])
             }
 
             let item = AVPlayerItem(asset: asset)
-            observe(item)
+            observe(item, generation: generation)
             player.replaceCurrentItem(with: item)
         } catch {
+            guard generation == loadGeneration else { return }
             errorMessage = error.localizedDescription
             isLoading = false
         }
     }
 
-    private func observe(_ item: AVPlayerItem) {
+    private func observe(_ item: AVPlayerItem, generation: Int) {
         statusCancellable = item.publisher(for: \.status)
             .sink { [weak self] status in
-                Task { @MainActor [weak self] in self?.handle(status: status, item: item) }
+                Task { @MainActor [weak self] in
+                    guard let self, generation == self.loadGeneration else { return }
+                    self.handle(status: status, item: item)
+                }
             }
-        timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 10, preferredTimescale: 1),
-                                                      queue: .main) { [weak self] _ in
-            Task { @MainActor [weak self] in await self?.report(.progress) }
-        }
     }
 
     private func handle(status: AVPlayerItem.Status, item: AVPlayerItem) {
         switch status {
         case .readyToPlay:
-            guard !started else { return }
-            started = true
+            guard !itemReady else { return }
+            itemReady = true
             isLoading = false
-            if request.startTicks > 0 {
-                let t = CMTime(seconds: Double(request.startTicks) / 10_000_000, preferredTimescale: 600)
+            if pendingSeekTicks > 0 {
+                let t = CMTime(seconds: Double(pendingSeekTicks) / 10_000_000, preferredTimescale: 600)
                 player.seek(to: t, toleranceBefore: .zero, toleranceAfter: .positiveInfinity)
             }
             player.play()
-            Task { await report(.start) }
+            if !reportedStart {
+                reportedStart = true
+                Task { await report(.start) }
+            }
+            Task { await applySubtitleSelection(item) }
             Task { await inspectDecodedFormat(item) }
             if reportedMethod == "Transcode" { Task { await checkServerSession() } }
         case .failed:
@@ -152,6 +221,17 @@ final class PlayerModel {
             isLoading = false
         default:
             break
+        }
+    }
+
+    /// The server's stream carries only the chosen subtitle; make sure the player shows (or hides) it.
+    private func applySubtitleSelection(_ item: AVPlayerItem) async {
+        guard let group = try? await item.asset.loadMediaSelectionGroup(for: .legible) else { return }
+        if subtitleIndex >= 0 {
+            let option = group.options.first { !$0.hasMediaCharacteristic(.containsOnlyForcedSubtitles) } ?? group.options.first
+            item.select(option, in: group)
+        } else {
+            item.select(nil, in: group)
         }
     }
 
@@ -171,9 +251,10 @@ final class PlayerModel {
     /// Asks the server what it is actually doing (copying vs re-encoding) instead of guessing.
     private func checkServerSession() async {
         guard let client else { return }
+        let generation = loadGeneration
         for delay in [3.0, 6.0, 10.0] {
             try? await Task.sleep(for: .seconds(delay))
-            guard !stopped else { return }
+            guard !stopped, generation == loadGeneration else { return }
             guard let info = try? await client.currentSession()?.transcodingInfo else { continue }
             let videoDirect = info.isVideoDirect == true
             let audioDirect = info.isAudioDirect == true
@@ -211,6 +292,8 @@ final class PlayerModel {
         ]
         if let mediaSourceId { body["MediaSourceId"] = mediaSourceId }
         if let playSessionId { body["PlaySessionId"] = playSessionId }
+        if let audioIndex { body["AudioStreamIndex"] = audioIndex }
+        body["SubtitleStreamIndex"] = subtitleIndex
         let path: String
         switch kind {
         case .start: path = "Sessions/Playing"
@@ -227,7 +310,7 @@ final class PlayerModel {
         timeObserver = nil
         statusCancellable = nil
         player.pause()
-        if started { await report(.stop) }
+        if reportedStart { await report(.stop) }
         player.replaceCurrentItem(with: nil)
         if let playSessionId, let client { await client.stopEncoding(playSessionId: playSessionId) }
     }

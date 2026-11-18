@@ -98,6 +98,12 @@ final class JellyfinClient {
         try await get("System/Info/Public")
     }
 
+    /// The server's own LAN address (e.g. http://192.168.1.20:8096), for switching to local when at home.
+    func localAddress() async -> String? {
+        let info: SystemInfo? = try? await get("System/Info")
+        return info?.localAddress
+    }
+
     func authenticate(username: String, password: String) async throws -> AuthResult {
         try await post("Users/AuthenticateByName", body: ["Username": username, "Pw": password])
     }
@@ -161,13 +167,14 @@ final class JellyfinClient {
     // MARK: Playback
 
     func playbackInfo(itemId: String, maxBitrate: Int, startTicks: Int64 = 0,
-                      audioStreamIndex: Int? = nil, subtitleStreamIndex: Int? = -1) async throws -> PlaybackInfoResponse {
+                      audioStreamIndex: Int? = nil, subtitleStreamIndex: Int? = -1,
+                      enableDirectPlay: Bool = true) async throws -> PlaybackInfoResponse {
         var body: [String: Any] = [
             "UserId": userId ?? "",
             "DeviceProfile": DeviceCapabilities.deviceProfile(maxBitrate: maxBitrate),
             "MaxStreamingBitrate": maxBitrate,
             "StartTimeTicks": startTicks,
-            "EnableDirectPlay": true,
+            "EnableDirectPlay": enableDirectPlay,
             "EnableDirectStream": true,
             "EnableTranscoding": true,
             "AllowVideoStreamCopy": true,
@@ -206,8 +213,8 @@ final class JellyfinClient {
     }
 
     /// Server-returned paths (like TranscodingUrl) are relative to the server root.
-    func absoluteURL(serverRelative rawPath: String) -> URL? {
-        let path = Self.removingSubtitleBurnIn(rawPath)
+    func absoluteURL(serverRelative rawPath: String, allowSubtitleBurnIn: Bool = false) -> URL? {
+        let path = allowSubtitleBurnIn ? rawPath : Self.removingSubtitleBurnIn(rawPath)
         var base = baseURL.absoluteString
         if base.hasSuffix("/") { base.removeLast() }
         var full = base + (path.hasPrefix("/") ? path : "/" + path)
