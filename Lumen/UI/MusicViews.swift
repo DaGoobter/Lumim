@@ -356,6 +356,7 @@ struct CollectionDownloadButton: View {
 
 // MARK: - Mini player & Now Playing
 
+/// Apple Music–style floating mini player.
 struct MiniPlayer: View {
     @Environment(AppState.self) private var app
     @Environment(AudioPlayer.self) private var audio
@@ -364,173 +365,279 @@ struct MiniPlayer: View {
         if let item = audio.current {
             HStack(spacing: 12) {
                 RemoteImage(url: app.client?.albumArtURL(for: item, width: 120))
-                    .frame(width: 44, height: 44)
+                    .frame(width: 40, height: 40)
                     .clipped()
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                VStack(alignment: .leading, spacing: 2) {
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+                VStack(alignment: .leading, spacing: 1) {
                     Text(item.name ?? "").font(.subheadline.weight(.semibold)).lineLimit(1)
-                    Text(item.artistLine ?? item.album ?? "").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    if let artist = item.artistLine {
+                        Text(artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
                 }
-                Spacer()
+                Spacer(minLength: 4)
                 Button { audio.togglePlay() } label: {
-                    Image(systemName: audio.isPlaying ? "pause.fill" : "play.fill").font(.title3)
-                        .frame(width: 40, height: 40)
+                    Image(systemName: audio.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 20, weight: .semibold))
+                        .frame(width: 36, height: 36)
+                        .contentTransition(.symbolEffect(.replace))
                 }
                 .accessibilityLabel(audio.isPlaying ? "Pause" : "Play")
                 Button { audio.isAudiobook ? audio.skip(by: 30) : audio.next() } label: {
-                    Image(systemName: audio.isAudiobook ? "goforward.30" : "forward.fill").font(.title3)
-                        .frame(width: 40, height: 40)
+                    Image(systemName: audio.isAudiobook ? "goforward.30" : "forward.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                        .frame(width: 36, height: 36)
                 }
+                .disabled(!audio.isAudiobook && !audio.hasNext)
                 .accessibilityLabel(audio.isAudiobook ? "Forward 30 seconds" : "Next")
             }
-            .foregroundStyle(.white)
-            .padding(.horizontal, 12)
-            .frame(height: 62)
-            .frame(maxWidth: 700)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(alignment: .bottom) {
-                GeometryReader { g in
-                    Capsule().fill(Theme.gradient)
-                        .frame(width: g.size.width * (audio.duration > 0 ? audio.currentTime / audio.duration : 0), height: 2)
-                }
-                .frame(height: 2)
-                .padding(.horizontal, 14)
-            }
-            .shadow(color: .black.opacity(0.4), radius: 12, y: 4)
-            .padding(.horizontal, 12)
+            .foregroundStyle(.primary)
+            .padding(.leading, 8)
+            .padding(.trailing, 10)
+            .frame(height: 56)
+            .frame(maxWidth: 640)
+            .background(.regularMaterial, in: Capsule())
+            .overlay(Capsule().strokeBorder(.white.opacity(0.12), lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.35), radius: 16, y: 6)
+            .padding(.horizontal, 14)
             .padding(.top, 4)
             .padding(.bottom, 8)
-            .contentShape(Rectangle())
+            .contentShape(Capsule())
             .onTapGesture { audio.showNowPlaying = true }
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
     }
 }
 
+/// Apple Music–style Now Playing: edge-to-edge artwork melting into a blurred wash of the same art.
 struct NowPlayingView: View {
     @Environment(AppState.self) private var app
     @Environment(AudioPlayer.self) private var audio
     @Environment(\.dismiss) private var dismiss
-    @State private var color: ArtColor?
-    @State private var scrubbing = false
-    @State private var scrubValue: Double = 0
     @State private var showQueue = false
+    @State private var volume = SystemVolume()
 
     var body: some View {
         if let item = audio.current {
-            VStack(spacing: 22) {
-                Capsule().fill(.white.opacity(0.3)).frame(width: 40, height: 5).padding(.top, 8)
+            GeometryReader { geo in
+                let artURL = DownloadManager.shared.records[item.id]?.posterURL ?? app.client?.albumArtURL(for: item, width: 1200)
+                let artSize = min(geo.size.width, geo.size.height * 0.52)
+                ZStack(alignment: .top) {
+                    // Blurred artwork wash behind everything.
+                    RemoteImage(url: artURL)
+                        .frame(width: geo.size.width + 200, height: geo.size.height + 200)
+                        .blur(radius: 70)
+                        .overlay(Color.black.opacity(0.35))
+                        .frame(width: geo.size.width, height: geo.size.height)
+                        .clipped()
+                        .ignoresSafeArea()
 
-                if showQueue {
-                    queueList
-                } else {
-                    Color.clear
-                        .aspectRatio(1, contentMode: .fit)
-                        .overlay { RemoteImage(url: app.client?.albumArtURL(for: item, width: 1000)) }
-                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                        .shadow(color: .black.opacity(0.5), radius: 30, y: 16)
-                        .scaleEffect(audio.isPlaying ? 1 : 0.88)
-                        .animation(.spring(response: 0.45, dampingFraction: 0.7), value: audio.isPlaying)
-                        .padding(.horizontal, 28)
-                        .frame(maxHeight: 420)
-                }
-
-                VStack(spacing: 4) {
-                    Text(item.name ?? "").font(.title2.weight(.bold)).lineLimit(2).multilineTextAlignment(.center)
-                    Text([item.artistLine, item.album].compactMap { $0 }.joined(separator: " — "))
-                        .font(.body).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
-                }
-                .padding(.horizontal)
-
-                VStack(spacing: 4) {
-                    Slider(value: Binding(get: { scrubbing ? scrubValue : audio.currentTime }, set: { scrubValue = $0 }),
-                           in: 0...max(audio.duration, 1)) { editing in
-                        if editing { scrubValue = audio.currentTime; scrubbing = true }
-                        else { audio.seek(to: scrubValue); scrubbing = false }
-                    }
-                    .tint(.white)
-                    HStack {
-                        Text(clock(scrubbing ? scrubValue : audio.currentTime))
-                        Spacer()
-                        Text("-" + clock(max(0, audio.duration - (scrubbing ? scrubValue : audio.currentTime))))
-                    }
-                    .font(.caption.monospacedDigit()).foregroundStyle(.white.opacity(0.7))
-                }
-                .padding(.horizontal, 28)
-
-                HStack(spacing: 44) {
-                    if audio.isAudiobook {
-                        Button { audio.skip(by: -15) } label: { Image(systemName: "gobackward.15") }
-                            .accessibilityLabel("Back 15 seconds")
-                    } else {
-                        Button { audio.previous() } label: { Image(systemName: "backward.fill") }
-                            .accessibilityLabel("Previous")
-                    }
-                    Button { audio.togglePlay() } label: {
-                        Image(systemName: audio.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: 52)).frame(width: 70, height: 70)
-                            .contentTransition(.symbolEffect(.replace))
-                    }
-                    .accessibilityLabel(audio.isPlaying ? "Pause" : "Play")
-                    if audio.isAudiobook {
-                        Button { audio.skip(by: 30) } label: { Image(systemName: "goforward.30") }
-                            .accessibilityLabel("Forward 30 seconds")
-                    } else {
-                        Button { audio.next() } label: { Image(systemName: "forward.fill") }
-                            .disabled(!audio.hasNext)
-                            .accessibilityLabel("Next")
-                    }
-                }
-                .font(.system(size: 30))
-                .foregroundStyle(.white)
-
-                HStack {
-                    if audio.isAudiobook {
-                        Menu {
-                            ForEach([0.75, 1.0, 1.25, 1.5, 1.75, 2.0], id: \.self) { r in
-                                Button("\(r.formatted())×") { audio.setRate(Float(r)) }
-                            }
-                        } label: {
-                            Text("\(Double(audio.rate).formatted())×").font(.headline)
-                                .padding(.horizontal, 12).padding(.vertical, 6)
-                                .background(.white.opacity(0.15), in: Capsule())
+                    VStack(spacing: 0) {
+                        if showQueue {
+                            queueHeader(item: item, artURL: artURL)
+                                .padding(.top, geo.safeAreaInsets.top + 24)
+                            queueList
+                        } else {
+                            // Full-width artwork that fades into the background.
+                            Color.clear
+                                .frame(width: artSize, height: artSize)
+                                .overlay { RemoteImage(url: artURL) }
+                                .clipped()
+                                .mask(LinearGradient(stops: [
+                                    .init(color: .black, location: 0),
+                                    .init(color: .black, location: 0.72),
+                                    .init(color: .clear, location: 1),
+                                ], startPoint: .top, endPoint: .bottom))
+                                .scaleEffect(audio.isPlaying ? 1 : 0.94, anchor: .top)
+                                .animation(.spring(response: 0.5, dampingFraction: 0.75), value: audio.isPlaying)
+                                .onTapGesture { dismiss() }
+                            titleRow(item: item)
+                                .padding(.horizontal, 28)
+                                .padding(.top, -24)
                         }
-                    } else {
-                        Button { withAnimation { showQueue.toggle() } } label: {
-                            Image(systemName: "list.bullet").font(.title3)
-                                .padding(10)
-                                .background(Color.white.opacity(showQueue ? 0.25 : 0), in: Circle())
-                        }
-                        .accessibilityLabel("Queue")
+
+                        Spacer(minLength: 12)
+                        controls
+                            .padding(.horizontal, 28)
+                            .padding(.bottom, geo.safeAreaInsets.bottom + 12)
                     }
-                    Spacer()
-                    RoutePicker().frame(width: 38, height: 38)
+                    .frame(width: geo.size.width, height: geo.size.height + geo.safeAreaInsets.top + geo.safeAreaInsets.bottom)
+                    .ignoresSafeArea()
+
+                    Capsule().fill(.white.opacity(0.4)).frame(width: 38, height: 5)
+                        .padding(.top, 8)
+                        .onTapGesture { dismiss() }
                 }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 28)
-                .padding(.bottom, 16)
             }
-            .background(TintedBackdrop(color: color))
-            .artColor(from: app.client?.albumArtURL(for: item, width: 300), into: $color)
+            .foregroundStyle(.white)
+            .overlay { SystemVolumeHost(volume: volume).frame(width: 1, height: 1).opacity(0.01) }
         } else {
-            Color.clear.onAppear { dismiss() }
+            Color.black.onAppear { dismiss() }
         }
+    }
+
+    private func titleRow(item: BaseItem) -> some View {
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.name ?? "").font(.title3.weight(.bold)).lineLimit(1)
+                Text(item.artistLine ?? item.album ?? "").font(.title3).foregroundStyle(.white.opacity(0.65)).lineLimit(1)
+            }
+            Spacer()
+        }
+    }
+
+    private var controls: some View {
+        VStack(spacing: 26) {
+            // Scrubber
+            VStack(spacing: 6) {
+                ThinSlider(value: audio.currentTime, range: 0...max(audio.duration, 1)) { audio.seek(to: $0) }
+                HStack {
+                    Text(clock(audio.currentTime))
+                    Spacer()
+                    Text("-" + clock(max(0, audio.duration - audio.currentTime)))
+                }
+                .font(.caption2.weight(.semibold).monospacedDigit())
+                .foregroundStyle(.white.opacity(0.6))
+            }
+
+            // Transport
+            HStack {
+                Spacer()
+                if audio.isAudiobook {
+                    Button { audio.skip(by: -15) } label: { Image(systemName: "gobackward.15") }
+                        .accessibilityLabel("Back 15 seconds")
+                } else {
+                    Button { audio.previous() } label: { Image(systemName: "backward.fill") }
+                        .accessibilityLabel("Previous")
+                }
+                Spacer()
+                Button { audio.togglePlay() } label: {
+                    Image(systemName: audio.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 50))
+                        .frame(width: 70, height: 70)
+                        .contentTransition(.symbolEffect(.replace))
+                }
+                .accessibilityLabel(audio.isPlaying ? "Pause" : "Play")
+                Spacer()
+                if audio.isAudiobook {
+                    Button { audio.skip(by: 30) } label: { Image(systemName: "goforward.30") }
+                        .accessibilityLabel("Forward 30 seconds")
+                } else {
+                    Button { audio.next() } label: { Image(systemName: "forward.fill") }
+                        .disabled(!audio.hasNext)
+                        .accessibilityLabel("Next")
+                }
+                Spacer()
+            }
+            .font(.system(size: 34))
+
+            // Volume
+            HStack(spacing: 12) {
+                Image(systemName: "speaker.fill").font(.caption)
+                ThinSlider(value: Double(volume.level), range: 0...1) { volume.set(Float($0)) }
+                Image(systemName: "speaker.wave.3.fill").font(.caption)
+            }
+            .foregroundStyle(.white.opacity(0.6))
+
+            // Bottom row
+            HStack {
+                if audio.isAudiobook {
+                    Menu {
+                        ForEach([0.75, 1.0, 1.25, 1.5, 1.75, 2.0], id: \.self) { r in
+                            Button("\(r.formatted())×") { audio.setRate(Float(r)) }
+                        }
+                    } label: {
+                        Text("\(Double(audio.rate).formatted())×").font(.subheadline.weight(.bold))
+                            .frame(width: 44, height: 32)
+                    }
+                    .accessibilityLabel("Playback speed")
+                } else {
+                    Color.clear.frame(width: 44, height: 32)
+                }
+                Spacer()
+                RoutePicker().frame(width: 32, height: 32)
+                Spacer()
+                Button { withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { showQueue.toggle() } } label: {
+                    Image(systemName: "list.bullet")
+                        .font(.system(size: 18, weight: .semibold))
+                        .frame(width: 44, height: 32)
+                        .background(Color.white.opacity(showQueue ? 0.25 : 0), in: RoundedRectangle(cornerRadius: 8))
+                }
+                .accessibilityLabel("Up Next")
+            }
+            .foregroundStyle(.white.opacity(0.75))
+        }
+    }
+
+    private func queueHeader(item: BaseItem, artURL: URL?) -> some View {
+        HStack(spacing: 14) {
+            Color.clear
+                .frame(width: 64, height: 64)
+                .overlay { RemoteImage(url: artURL) }
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .shadow(color: .black.opacity(0.4), radius: 8, y: 4)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.name ?? "").font(.headline).lineLimit(1)
+                Text(item.artistLine ?? "").font(.subheadline).foregroundStyle(.white.opacity(0.65)).lineLimit(1)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 24)
     }
 
     private var queueList: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(Array(audio.queue.enumerated()), id: \.offset) { i, t in
-                        TrackRow(track: t, number: nil, showArt: true) { audio.jump(to: i) }
-                            .id(i)
-                            .opacity(i < audio.index ? 0.5 : 1)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Up Next").font(.headline).padding(.horizontal).padding(.top, 18).padding(.bottom, 6)
+                    LazyVStack(spacing: 0) {
+                        ForEach(Array(audio.queue.enumerated()), id: \.offset) { i, t in
+                            TrackRow(track: t, number: nil, showArt: true) { audio.jump(to: i) }
+                                .id(i)
+                                .opacity(i < audio.index ? 0.45 : 1)
+                        }
                     }
                 }
             }
             .onAppear { proxy.scrollTo(audio.index, anchor: .top) }
         }
-        .frame(maxHeight: 420)
+    }
+}
+
+/// Apple Music–style thin slider: no knob, thickens while dragging.
+struct ThinSlider: View {
+    let value: Double
+    let range: ClosedRange<Double>
+    let onCommit: (Double) -> Void
+    @State private var dragValue: Double?
+
+    var body: some View {
+        GeometryReader { geo in
+            let span = max(range.upperBound - range.lowerBound, 0.0001)
+            let shown = dragValue ?? value
+            let fraction = min(1, max(0, (shown - range.lowerBound) / span))
+            let active = dragValue != nil
+            ZStack(alignment: .leading) {
+                Capsule().fill(.white.opacity(0.25))
+                Capsule().fill(.white.opacity(active ? 1 : 0.75)).frame(width: geo.size.width * fraction)
+            }
+            .frame(height: active ? 12 : 6)
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { g in
+                        let f = min(1, max(0, g.location.x / geo.size.width))
+                        dragValue = range.lowerBound + f * span
+                    }
+                    .onEnded { _ in
+                        if let v = dragValue { onCommit(v) }
+                        dragValue = nil
+                    }
+            )
+            .animation(.spring(response: 0.25, dampingFraction: 0.8), value: active)
+        }
+        .frame(height: 24)
     }
 }
 
@@ -557,6 +664,7 @@ struct NowPlayingPresenter: ViewModifier {
                 .presentationDetents([.large])
                 .presentationDragIndicator(.hidden)
                 .presentationBackground(.black)
+                .presentationCornerRadius(36)
         }
     }
 }
