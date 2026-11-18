@@ -292,17 +292,19 @@ final class JellyfinClient {
 
     func playbackInfo(itemId: String, maxBitrate: Int, startTicks: Int64 = 0,
                       audioStreamIndex: Int? = nil, subtitleStreamIndex: Int? = -1,
-                      enableDirectPlay: Bool = true) async throws -> PlaybackInfoResponse {
+                      enableDirectPlay: Bool = true, forAirPlay: Bool = false) async throws -> PlaybackInfoResponse {
+        let maxBitrate = forAirPlay ? min(maxBitrate, 10_000_000) : maxBitrate
         var body: [String: Any] = [
             "UserId": userId ?? "",
-            "DeviceProfile": DeviceCapabilities.deviceProfile(maxBitrate: maxBitrate),
+            "DeviceProfile": forAirPlay ? DeviceCapabilities.airPlayProfile(maxBitrate: maxBitrate)
+                                        : DeviceCapabilities.deviceProfile(maxBitrate: maxBitrate),
             "MaxStreamingBitrate": maxBitrate,
             "StartTimeTicks": startTicks,
-            "EnableDirectPlay": enableDirectPlay,
-            "EnableDirectStream": true,
+            "EnableDirectPlay": enableDirectPlay && !forAirPlay,
+            "EnableDirectStream": !forAirPlay,
             "EnableTranscoding": true,
-            "AllowVideoStreamCopy": true,
-            "AllowAudioStreamCopy": true,
+            "AllowVideoStreamCopy": !forAirPlay,
+            "AllowAudioStreamCopy": !forAirPlay,
             "AutoOpenLiveStream": true,
         ]
         if let audioStreamIndex { body["AudioStreamIndex"] = audioStreamIndex }

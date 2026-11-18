@@ -112,6 +112,9 @@ final class PlayerModel {
     @ObservationIgnored private var reportedStart = false
     @ObservationIgnored private var stopped = false
     @ObservationIgnored private var loadGeneration = 0
+    @ObservationIgnored private var externalCancellable: AnyCancellable?
+    /// True while video is going to an AirPlay screen (car, TV); we then send a stream any receiver can decode.
+    private(set) var airPlayMode = false
 
     init(request: PlaybackRequest, client: JellyfinClient?, maxBitrate: Int, prefs: TrackPreferences) {
         self.request = request
@@ -130,6 +133,14 @@ final class PlayerModel {
             Task { @MainActor [weak self] in self?.refreshClock() }
         }
         setupRemoteCommands()
+        player.allowsExternalPlayback = true
+        player.usesExternalPlaybackWhileExternalScreenIsActive = true
+        externalCancellable = player.publisher(for: \.isExternalPlaybackActive)
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] active in
+                Task { @MainActor [weak self] in await self?.externalPlaybackChanged(active) }
+            }
         timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 10, preferredTimescale: 1),
                                                       queue: .main) { [weak self] _ in
             Task { @MainActor [weak self] in await self?.report(.progress) }
@@ -217,6 +228,23 @@ final class PlayerModel {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     }
 
+    /// AirPlay screens (especially cars) can't decode 4K HEVC, Dolby Vision or surround formats and end up
+    /// playing sound only. When video moves to one, switch to a 1080p H.264 stream; switch back when it returns.
+    private func externalPlaybackChanged(_ active: Bool) async {
+        guard client != nil, active != airPlayMode else { return }
+        if !active {
+            // Ignore a momentary blip while the receiver swaps streams.
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !player.isExternalPlaybackActive, airPlayMode else { return }
+        }
+        airPlayMode = active
+        let seconds = player.currentTime().seconds
+        let ticks = seconds.isFinite ? Int64(seconds * 10_000_000) : request.startTicks
+        if let old = playSessionId, let client { await client.stopEncoding(playSessionId: old) }
+        if let live = liveStreamId, let client { await client.closeLiveStream(live); liveStreamId = nil }
+        await load(startTicks: isLive ? 0 : ticks)
+    }
+
     /// Switch audio and/or subtitle track. Reloads the stream at the current position.
     func selectTracks(audio: Int?, subtitle: Int) async {
         guard audio != audioIndex || subtitle != subtitleIndex else { return }
@@ -260,7 +288,7 @@ final class PlayerModel {
         pendingSeekTicks = startTicks
         do {
             let asset: AVURLAsset
-            if let local = request.localDownload, let url = local.localURL {
+            if let local = request.localDownload, let url = local.localURL, !(airPlayMode && client != nil) {
                 asset = AVURLAsset(url: url)
                 mediaSourceId = local.mediaSourceId
                 if let src = local.item.mediaSources?.first {
@@ -277,7 +305,8 @@ final class PlayerModel {
                 let info = try await client.playbackInfo(itemId: request.item.id, maxBitrate: maxBitrate,
                                                          startTicks: startTicks, audioStreamIndex: audioIndex,
                                                          subtitleStreamIndex: subtitleIndex,
-                                                         enableDirectPlay: !customTracks)
+                                                         enableDirectPlay: !customTracks,
+                                                         forAirPlay: airPlayMode)
                 guard generation == loadGeneration else { return }
                 guard let src = info.mediaSources.first else { throw JellyfinError.noMediaSource }
 
@@ -313,7 +342,7 @@ final class PlayerModel {
                     diagnostics = StreamDiagnostics.from(source: src, usingHLS: true,
                                                          audioIndex: audioIndex, subtitleIndex: subtitleIndex)
                     diagnostics.playMethod = "Live stream (HLS)"
-                } else if src.supportsDirectPlay == true && !customTracks {
+                } else if src.supportsDirectPlay == true && !customTracks && !airPlayMode {
                     url = client.directPlayURL(itemId: request.item.id, mediaSourceId: src.id, container: src.container)
                     reportedMethod = "DirectPlay"
                     diagnostics = StreamDiagnostics.from(source: src, usingHLS: false,
@@ -327,6 +356,7 @@ final class PlayerModel {
                 } else {
                     throw JellyfinError.noMediaSource
                 }
+                if airPlayMode { diagnostics.playMethod = "AirPlay (1080p H.264 for the receiver)" }
                 diagnostics.connection = client.baseURL.host ?? client.baseURL.absoluteString
                 asset = AVURLAsset(url: url, options: [
                     "AVURLAssetHTTPHeaderFieldsKey": ["Authorization": client.authorizationHeader],

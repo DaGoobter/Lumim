@@ -25,6 +25,35 @@ enum DeviceCapabilities {
         return ranges
     }
 
+    /// What AirPlay receivers such as car screens reliably decode: 1080p H.264 SDR with stereo AAC over HLS.
+    static func airPlayProfile(maxBitrate: Int) -> [String: Any] {
+        typealias J = [String: Any]
+        return [
+            "Name": "Lumen AirPlay",
+            "MaxStreamingBitrate": maxBitrate,
+            "MaxStaticBitrate": maxBitrate,
+            "DirectPlayProfiles": [J](),
+            "TranscodingProfiles": [
+                ["Type": "Video", "Container": "ts", "Protocol": "hls", "Context": "Streaming",
+                 "VideoCodec": "h264", "AudioCodec": "aac", "MaxAudioChannels": "2",
+                 "BreakOnNonKeyFrames": true, "MinSegments": 1] as J,
+            ] as [J],
+            "ContainerProfiles": [J](),
+            "CodecProfiles": [
+                ["Type": "Video", "Codec": "h264", "Conditions": [
+                    ["Condition": "EqualsAny", "Property": "VideoRangeType", "Value": "SDR", "IsRequired": true] as J,
+                    ["Condition": "LessThanEqual", "Property": "VideoLevel", "Value": "41", "IsRequired": true] as J,
+                    ["Condition": "LessThanEqual", "Property": "Height", "Value": "1080", "IsRequired": true] as J,
+                    ["Condition": "LessThanEqual", "Property": "VideoBitDepth", "Value": "8", "IsRequired": true] as J,
+                ] as [J]] as J,
+            ] as [J],
+            "SubtitleProfiles": [
+                ["Format": "vtt", "Method": "Hls"], ["Format": "subrip", "Method": "Hls"],
+                ["Format": "srt", "Method": "Hls"],
+            ] as [J],
+        ]
+    }
+
     static func deviceProfile(maxBitrate: Int) -> [String: Any] {
         var directVideo = ["h264"]
         if hevc { directVideo.append("hevc") }
