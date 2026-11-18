@@ -195,6 +195,10 @@ final class JellyfinClient {
         return imageURL(item.id, maxWidth: width)
     }
 
+    func markPlayed(_ itemId: String) async {
+        _ = try? await send("UserPlayedItems/\(itemId)", query: ["userId": userId])
+    }
+
     func item(_ id: String) async throws -> BaseItem {
         try await get("Items/\(id)", query: ["userId": userId])
     }

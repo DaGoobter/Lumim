@@ -211,6 +211,7 @@ struct BaseItem: Codable, Identifiable, Hashable {
     let genres: [String]?
     // Music / books
     let mediaType: String?
+    let parentId: String?
     let album: String?
     let albumId: String?
     let albumArtist: String?

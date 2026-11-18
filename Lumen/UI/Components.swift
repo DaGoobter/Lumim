@@ -292,6 +292,11 @@ struct ItemRouter: View {
         case "CollectionFolder" where item.collectionType == "music",
              "UserView" where item.collectionType == "music":
             MusicLibraryView(library: item)
+        case "CollectionFolder" where item.collectionType == "books",
+             "UserView" where item.collectionType == "books":
+            BooksLibraryView(library: item)
+        case "Book", "AudioBook":
+            BookDetailView(book: item)
         case "MusicAlbum":
             AlbumView(album: item)
         case "Playlist" where item.mediaType == "Audio":
