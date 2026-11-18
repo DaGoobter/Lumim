@@ -32,6 +32,11 @@ final class DJVoice: NSObject {
         get { defaults.string(forKey: "dj.kokoroURL") ?? "" }
         set { defaults.set(newValue, forKey: "dj.kokoroURL"); cache.removeAll() }
     }
+    /// Optional address for Kokoro away from home (e.g. through Caddy). Tried when the home address can't be reached.
+    var kokoroRemoteURL: String {
+        get { defaults.string(forKey: "dj.kokoroRemoteURL") ?? "" }
+        set { defaults.set(newValue, forKey: "dj.kokoroRemoteURL"); cache.removeAll() }
+    }
     var kokoroVoice: String {
         get { defaults.string(forKey: "dj.kokoroVoice") ?? "af_heart" }
         set { defaults.set(newValue, forKey: "dj.kokoroVoice"); cache.removeAll() }
@@ -153,32 +158,45 @@ final class DJVoice: NSObject {
 
     // MARK: Neural voices
 
+    /// The Kokoro address that answered last, so we don't keep waiting on the home address while away.
+    private var preferredKokoroBase: String?
+
     private func audio(for text: String) async -> Data? {
         if let hit = cache[text] { return hit }
-        guard let request = makeRequest(text) else { return nil }
-        let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 12
-        do {
-            let (data, response) = try await URLSession(configuration: config).data(for: request)
-            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), data.count > 500 else {
-                lastError = "The voice service answered with an error (\((response as? HTTPURLResponse)?.statusCode ?? 0))."
-                return nil
-            }
-            lastError = nil
-            cache[text] = data
-            return data
-        } catch {
-            lastError = error.localizedDescription
-            return nil
+        var bases: [String?] = [nil]
+        if engine == .kokoro {
+            var list = [Self.normalize(kokoroURL), Self.normalize(kokoroRemoteURL)].filter { !$0.isEmpty }
+            if let p = preferredKokoroBase, let i = list.firstIndex(of: p) { list.insert(list.remove(at: i), at: 0) }
+            bases = list.isEmpty ? [""] : list
         }
+        for (i, base) in bases.enumerated() {
+            guard let request = makeRequest(text, kokoroBase: base) else { return nil }
+            let config = URLSessionConfiguration.ephemeral
+            // A home address that isn't reachable should fail fast so the away address gets its turn.
+            config.timeoutIntervalForRequest = i < bases.count - 1 ? 4 : 15
+            do {
+                let (data, response) = try await URLSession(configuration: config).data(for: request)
+                guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), data.count > 500 else {
+                    lastError = "The voice service answered with an error (\((response as? HTTPURLResponse)?.statusCode ?? 0))."
+                    continue
+                }
+                lastError = nil
+                if let base { preferredKokoroBase = base }
+                cache[text] = data
+                return data
+            } catch {
+                lastError = error.localizedDescription
+            }
+        }
+        return nil
     }
 
-    private func makeRequest(_ text: String) -> URLRequest? {
+    private func makeRequest(_ text: String, kokoroBase: String?) -> URLRequest? {
         switch engine {
         case .iPhone:
             return nil
         case .kokoro, .openAI:
-            let base = engine == .openAI ? "https://api.openai.com/v1" : normalizedKokoroBase()
+            let base = engine == .openAI ? "https://api.openai.com/v1" : (kokoroBase ?? "")
             guard let url = URL(string: base + "/audio/speech") else { return nil }
             var req = URLRequest(url: url)
             req.httpMethod = "POST"
@@ -216,9 +234,9 @@ final class DJVoice: NSObject {
         }
     }
 
-    /// Accepts "192.168.1.20:8880", "http://host:8880" or ".../v1".
-    private func normalizedKokoroBase() -> String {
-        var s = kokoroURL.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// Accepts "192.168.1.20:8880", "http://host:8880", "https://host/path" or ".../v1".
+    private static func normalize(_ raw: String) -> String {
+        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if s.isEmpty { return "" }
         if !s.contains("://") { s = "http://" + s }
         while s.hasSuffix("/") { s.removeLast() }

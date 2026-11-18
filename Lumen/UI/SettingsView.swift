@@ -22,6 +22,7 @@ struct SettingsView: View {
     @State private var djEngine: DJVoice.Engine = DJVoice.shared.engine
     @State private var kokoroURL = DJVoice.shared.kokoroURL
     @State private var kokoroVoice = DJVoice.shared.kokoroVoice
+    @State private var kokoroRemoteURL = DJVoice.shared.kokoroRemoteURL
     @State private var kokoroSpeed = DJVoice.shared.kokoroSpeed
     @State private var openAIKey = DJVoice.shared.openAIKey
     @State private var openAIVoice = DJVoice.shared.openAIVoice
@@ -137,6 +138,11 @@ struct SettingsView: View {
                         TextField("192.168.1.20:8880", text: $kokoroURL)
                             .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
                     }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Away-from-home address (optional)").font(.caption).foregroundStyle(.secondary)
+                        TextField("https://yourdomain/kokoro", text: $kokoroRemoteURL)
+                            .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    }
                     Picker("Kokoro voice", selection: $kokoroVoice) {
                         ForEach([("af_heart", "Heart (warm, female)"),
                                  ("af_heart(2)+af_bella", "Heart + Bella (bright, female)"),
@@ -233,7 +239,7 @@ struct SettingsView: View {
     private var voiceFooter: String {
         switch djEngine {
         case .kokoro:
-            return "Free and private: a natural-sounding voice running on your own PC. Run the Kokoro installer on your PC once, then enter your PC's address above (port 8880). Try a few voices and paces; Michael + Puck or Heart + Bella sound most like radio. Away from home the DJ shows its lines as text unless you also expose Kokoro through Caddy."
+            return "Free and private: a natural-sounding voice running on your own PC. Run the Kokoro installer on your PC once, then enter your PC's address above (port 8880). Try a few voices and paces; Michael + Puck or Heart + Bella sound most like radio. "
         case .openAI:
             return "Very human voices that act like a radio DJ. Uses your OpenAI API key; DJ intros cost roughly a cent per few minutes of talking."
         case .elevenLabs:
@@ -248,6 +254,7 @@ struct SettingsView: View {
         if v.engine != djEngine { v.engine = djEngine }
         if v.kokoroURL != kokoroURL { v.kokoroURL = kokoroURL }
         if v.kokoroVoice != kokoroVoice { v.kokoroVoice = kokoroVoice }
+        if v.kokoroRemoteURL != kokoroRemoteURL { v.kokoroRemoteURL = kokoroRemoteURL }
         if v.kokoroSpeed != kokoroSpeed { v.kokoroSpeed = kokoroSpeed }
         if v.openAIKey != openAIKey { v.openAIKey = openAIKey }
         if v.openAIVoice != openAIVoice { v.openAIVoice = openAIVoice }
