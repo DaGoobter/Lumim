@@ -1,5 +1,6 @@
 import AVFoundation
 import Combine
+import MediaPlayer
 import Observation
 
 struct PlaybackRequest: Identifiable {
@@ -75,6 +76,12 @@ final class PlayerModel {
     var errorMessage: String?
     var diagnostics = StreamDiagnostics()
 
+    // Live playback state for the custom controls.
+    private(set) var isPlaying = false
+    private(set) var currentTime: Double = 0
+    private(set) var duration: Double = 0
+    private(set) var videoSize: CGSize = .zero
+
     /// The file being played (for the track picker).
     private(set) var source: MediaSource?
     /// nil = server default.
@@ -93,6 +100,8 @@ final class PlayerModel {
     @ObservationIgnored private var playSessionId: String?
     @ObservationIgnored private var reportedMethod = "DirectPlay"
     @ObservationIgnored private var timeObserver: Any?
+    @ObservationIgnored private var uiTimeObserver: Any?
+    @ObservationIgnored private var remoteTargets: [Any] = []
     @ObservationIgnored private var statusCancellable: AnyCancellable?
     @ObservationIgnored private var pendingSeekTicks: Int64 = 0
     @ObservationIgnored private var itemReady = false
@@ -111,11 +120,89 @@ final class PlayerModel {
 
     func start() async {
         try? AVAudioSession.sharedInstance().setActive(true)
+        uiTimeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.5, preferredTimescale: 600),
+                                                        queue: .main) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.refreshClock() }
+        }
+        setupRemoteCommands()
         timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 10, preferredTimescale: 1),
                                                       queue: .main) { [weak self] _ in
             Task { @MainActor [weak self] in await self?.report(.progress) }
         }
         await load(startTicks: request.startTicks)
+    }
+
+    // MARK: Transport
+
+    func togglePlay() {
+        if player.timeControlStatus == .paused { player.play() } else { player.pause() }
+        refreshClock()
+    }
+
+    func skip(by seconds: Double) {
+        seek(to: max(0, min(duration > 0 ? duration : .greatestFiniteMagnitude, currentTime + seconds)))
+    }
+
+    func seek(to seconds: Double) {
+        currentTime = seconds
+        player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+    }
+
+    private func refreshClock() {
+        let t = player.currentTime().seconds
+        if t.isFinite { currentTime = t }
+        if let d = player.currentItem?.duration.seconds, d.isFinite, d > 0 {
+            duration = d
+        } else if let ticks = request.item.runTimeTicks {
+            duration = Double(ticks) / 10_000_000
+        }
+        isPlaying = player.timeControlStatus != .paused
+        if let size = player.currentItem?.presentationSize, size != .zero { videoSize = size }
+        updateNowPlaying()
+    }
+
+    // MARK: Lock screen / Control Center
+
+    private func setupRemoteCommands() {
+        let center = MPRemoteCommandCenter.shared()
+        remoteTargets = [
+            center.playCommand.addTarget { [weak self] _ in Task { @MainActor in self?.player.play() }; return .success },
+            center.pauseCommand.addTarget { [weak self] _ in Task { @MainActor in self?.player.pause() }; return .success },
+            center.togglePlayPauseCommand.addTarget { [weak self] _ in Task { @MainActor in self?.togglePlay() }; return .success },
+            center.skipForwardCommand.addTarget { [weak self] _ in Task { @MainActor in self?.skip(by: 10) }; return .success },
+            center.skipBackwardCommand.addTarget { [weak self] _ in Task { @MainActor in self?.skip(by: -10) }; return .success },
+            center.changePlaybackPositionCommand.addTarget { [weak self] event in
+                if let e = event as? MPChangePlaybackPositionCommandEvent {
+                    let pos = e.positionTime
+                    Task { @MainActor in self?.seek(to: pos) }
+                }
+                return .success
+            },
+        ]
+        center.skipForwardCommand.preferredIntervals = [10]
+        center.skipBackwardCommand.preferredIntervals = [10]
+    }
+
+    private func updateNowPlaying() {
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: request.item.episodeLabel ?? request.item.displayTitle,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime,
+            MPMediaItemPropertyPlaybackDuration: duration,
+            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
+            MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.video.rawValue,
+        ]
+        if request.item.type == "Episode" { info[MPMediaItemPropertyArtist] = request.item.seriesName }
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+
+    private func clearRemoteCommands() {
+        let center = MPRemoteCommandCenter.shared()
+        for cmd in [center.playCommand, center.pauseCommand, center.togglePlayPauseCommand, center.skipForwardCommand,
+                    center.skipBackwardCommand, center.changePlaybackPositionCommand] as [MPRemoteCommand] {
+            cmd.removeTarget(nil)
+        }
+        remoteTargets = []
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     }
 
     /// Switch audio and/or subtitle track. Reloads the stream at the current position.
@@ -353,6 +440,9 @@ final class PlayerModel {
         stopped = true
         if let timeObserver { player.removeTimeObserver(timeObserver) }
         timeObserver = nil
+        if let uiTimeObserver { player.removeTimeObserver(uiTimeObserver) }
+        uiTimeObserver = nil
+        clearRemoteCommands()
         statusCancellable = nil
         player.pause()
         if reportedStart { await report(.stop) }

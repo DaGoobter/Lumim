@@ -1,6 +1,10 @@
 import SwiftUI
 import AVKit
 
+import MediaPlayer
+
+/// Lumen's own player: full-screen video with zoom (pinch, double-tap or the zoom menu), custom controls,
+/// AirPlay, Picture in Picture, audio/subtitle picker and Stream Info.
 struct PlayerScreen: View {
     let request: PlaybackRequest
     @Environment(AppState.self) private var app
@@ -10,53 +14,68 @@ struct PlayerScreen: View {
     @State private var showSubtitleSearch = false
     @State private var controlsVisible = true
     @State private var hideTask: Task<Void, Never>?
+    @State private var surface = VideoSurfaceHandle()
 
-    private var pinControls: Bool { model == nil || model?.isLoading == true || model?.errorMessage != nil || showInfo || showSubtitleSearch }
+    // Zoom: 1 = whole picture visible. "Fill" crops to cover the screen.
+    @State private var zoom: CGFloat = 1
+    @State private var pinchStart: CGFloat?
+    @State private var zoomHUD: String?
+    @State private var zoomHUDTask: Task<Void, Never>?
+
+    // Scrubbing
+    @State private var scrubbing = false
+    @State private var scrubValue: Double = 0
+
+    private var pinControls: Bool {
+        model == nil || model?.isLoading == true || model?.errorMessage != nil || showInfo || showSubtitleSearch
+            || scrubbing || model?.isPlaying == false
+    }
 
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
+        GeometryReader { geo in
+            ZStack {
+                Color.black.ignoresSafeArea()
 
-            if let model {
-                VideoPlayerController(player: model.player, onTap: toggleControls).ignoresSafeArea()
+                if let model {
+                    VideoSurface(player: model.player, zoom: zoom, handle: surface)
+                        .ignoresSafeArea()
+                        .gesture(pinch(fillScale: fillScale(model: model, size: geo.size)))
+                        .onTapGesture(count: 2) { toggleFill(model: model, size: geo.size) }
+                        .onTapGesture { toggleControls() }
 
-                if model.isLoading && model.errorMessage == nil {
-                    ProgressView().tint(.white).scaleEffect(1.5)
+                    if model.isLoading && model.errorMessage == nil {
+                        ProgressView().tint(.white).scaleEffect(1.5)
+                    }
+
+                    if let error = model.errorMessage {
+                        VStack(spacing: 14) {
+                            Image(systemName: "exclamationmark.triangle.fill").font(.largeTitle).foregroundStyle(.yellow)
+                            Text("Couldn't play this").font(.headline)
+                            Text(error).font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                            Button("Stream info") { showInfo = true }.buttonStyle(SecondaryButtonStyle())
+                        }
+                        .padding(24)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
+                        .padding()
+                    }
+
+                    controls(model: model, size: geo.size)
+                        .opacity(controlsVisible || pinControls ? 1 : 0)
+                        .allowsHitTesting(controlsVisible || pinControls)
+                        .animation(.easeInOut(duration: 0.25), value: controlsVisible)
                 }
 
-                if let error = model.errorMessage {
-                    VStack(spacing: 14) {
-                        Image(systemName: "exclamationmark.triangle.fill").font(.largeTitle).foregroundStyle(.yellow)
-                        Text("Couldn't play this").font(.headline)
-                        Text(error).font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                        Button("Stream info") { showInfo = true }.buttonStyle(SecondaryButtonStyle())
-                    }
-                    .padding(24)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
-                    .padding()
+                if let zoomHUD {
+                    Text(zoomHUD)
+                        .font(.headline.monospacedDigit())
+                        .padding(.horizontal, 16).padding(.vertical, 10)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .transition(.opacity)
                 }
             }
-
-            VStack {
-                HStack {
-                    overlayButton("xmark") { close() }
-                    Spacer()
-                    if let model, !model.isOffline, let source = model.source {
-                        TrackMenu(model: model, source: source,
-                                  onSearch: { showSubtitleSearch = true },
-                                  onPick: { scheduleHide() })
-                    }
-                    overlayButton("info.circle") { showInfo = true }
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 56)
-                Spacer()
-            }
-            .opacity(controlsVisible || pinControls ? 1 : 0)
-            .allowsHitTesting(controlsVisible || pinControls)
-            .animation(.easeInOut(duration: 0.25), value: controlsVisible)
         }
         .statusBarHidden()
+        .persistentSystemOverlays(.hidden)
         .task {
             guard model == nil else { return }
             let m = PlayerModel(request: request, client: app.client, maxBitrate: app.maxBitrate,
@@ -66,7 +85,7 @@ struct PlayerScreen: View {
             scheduleHide()
         }
         .onDisappear { Task { await model?.stop() } }
-        .onChange(of: model?.isLoading) { _, loading in if loading == false { scheduleHide() } }
+        .onChange(of: model?.isPlaying) { _, playing in if playing == true { scheduleHide() } }
         .onChange(of: showInfo) { _, shown in if !shown { scheduleHide() } }
         .onChange(of: showSubtitleSearch) { _, shown in if !shown { scheduleHide() } }
         .sheet(isPresented: $showSubtitleSearch) {
@@ -79,7 +98,125 @@ struct PlayerScreen: View {
         }
     }
 
-    private func overlayButton(_ symbol: String, action: @escaping () -> Void) -> some View {
+    // MARK: Controls
+
+    @ViewBuilder
+    private func controls(model: PlayerModel, size: CGSize) -> some View {
+        ZStack {
+            // Legibility gradients
+            VStack(spacing: 0) {
+                LinearGradient(colors: [.black.opacity(0.65), .clear], startPoint: .top, endPoint: .bottom).frame(height: 140)
+                Spacer()
+                LinearGradient(colors: [.clear, .black.opacity(0.75)], startPoint: .top, endPoint: .bottom).frame(height: 170)
+            }
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+
+            VStack(spacing: 0) {
+                // Top bar
+                HStack(spacing: 12) {
+                    circleButton("xmark", label: "Close") { close() }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(request.item.displayTitle).font(.headline).lineLimit(1)
+                        if let ep = request.item.episodeLabel {
+                            Text(ep).font(.caption).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
+                        }
+                    }
+                    Spacer()
+                    if !model.isOffline, let source = model.source {
+                        TrackMenu(model: model, source: source,
+                                  onSearch: { showSubtitleSearch = true },
+                                  onPick: { scheduleHide() })
+                    }
+                    RoutePicker().frame(width: 38, height: 38)
+                    if AVPictureInPictureController.isPictureInPictureSupported() {
+                        circleButton("pip.enter", label: "Picture in Picture") { surface.startPiP() }
+                    }
+                    circleButton("info.circle", label: "Stream info") { showInfo = true }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+
+                Spacer()
+
+                // Transport
+                HStack(spacing: 56) {
+                    Button { model.skip(by: -10); scheduleHide() } label: {
+                        Image(systemName: "gobackward.10").font(.system(size: 30, weight: .medium))
+                    }
+                    .accessibilityLabel("Back 10 seconds")
+                    Button { model.togglePlay(); scheduleHide() } label: {
+                        Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 46, weight: .bold))
+                            .frame(width: 64, height: 64)
+                            .contentTransition(.symbolEffect(.replace))
+                    }
+                    .accessibilityLabel(model.isPlaying ? "Pause" : "Play")
+                    Button { model.skip(by: 10); scheduleHide() } label: {
+                        Image(systemName: "goforward.10").font(.system(size: 30, weight: .medium))
+                    }
+                    .accessibilityLabel("Forward 10 seconds")
+                }
+                .foregroundStyle(.white)
+                .shadow(color: .black.opacity(0.4), radius: 8)
+
+                Spacer()
+
+                // Scrubber
+                VStack(spacing: 6) {
+                    Slider(
+                        value: Binding(
+                            get: { scrubbing ? scrubValue : model.currentTime },
+                            set: { scrubValue = $0 }
+                        ),
+                        in: 0...max(model.duration, 1),
+                        onEditingChanged: { editing in
+                            if editing {
+                                scrubValue = model.currentTime
+                                scrubbing = true
+                            } else {
+                                model.seek(to: scrubValue)
+                                scrubbing = false
+                                scheduleHide()
+                            }
+                        }
+                    )
+                    .tint(.white)
+                    HStack {
+                        Text(timeString(scrubbing ? scrubValue : model.currentTime))
+                        Spacer()
+                        zoomMenu(model: model, size: size)
+                        Spacer()
+                        Text("-" + timeString(max(0, model.duration - (scrubbing ? scrubValue : model.currentTime))))
+                    }
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.85))
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 10)
+            }
+        }
+    }
+
+    private func zoomMenu(model: PlayerModel, size: CGSize) -> some View {
+        let fill = fillScale(model: model, size: size)
+        return Menu {
+            Button { setZoom(1, label: "Fit") } label: { Label("Fit (whole picture)", systemImage: "rectangle.arrowtriangle.2.inward") }
+            Button { setZoom(fill, label: "Fill") } label: { Label("Fill screen", systemImage: "rectangle.arrowtriangle.2.outward") }
+            Divider()
+            ForEach([1.1, 1.25, 1.5, 2.0], id: \.self) { z in
+                Button("\(Int(z * 100))%") { setZoom(CGFloat(z), label: "\(Int(z * 100))%") }
+            }
+        } label: {
+            Label(zoomLabel(fill: fill), systemImage: "arrow.up.left.and.arrow.down.right")
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .background(.ultraThinMaterial, in: Capsule())
+        }
+        .accessibilityLabel("Zoom")
+    }
+
+    private func circleButton(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 16, weight: .semibold))
@@ -87,9 +224,72 @@ struct PlayerScreen: View {
                 .background(.ultraThinMaterial, in: Circle())
         }
         .foregroundStyle(.white)
+        .accessibilityLabel(label)
     }
 
-    /// Mirrors the system player: a tap shows/hides controls, and they fade after a few seconds.
+    // MARK: Zoom
+
+    /// Scale that makes the video cover the whole screen (cropping the edges).
+    private func fillScale(model: PlayerModel, size: CGSize) -> CGFloat {
+        let video = model.videoSize
+        guard video.width > 0, video.height > 0, size.width > 0, size.height > 0 else { return 1 }
+        let videoAspect = video.width / video.height
+        let screenAspect = size.width / size.height
+        return max(videoAspect / screenAspect, screenAspect / videoAspect)
+    }
+
+    private func zoomLabel(fill: CGFloat) -> String {
+        if abs(zoom - 1) < 0.01 { return "Fit" }
+        if abs(zoom - fill) < 0.01 { return "Fill" }
+        return "\(Int((zoom * 100).rounded()))%"
+    }
+
+    private func pinch(fillScale: CGFloat) -> some Gesture {
+        MagnifyGesture()
+            .onChanged { value in
+                let start = pinchStart ?? zoom
+                if pinchStart == nil { pinchStart = zoom }
+                var z = start * value.magnification
+                z = min(max(z, 1), max(2.5, fillScale * 1.5))
+                // Gentle snap to Fit / Fill.
+                if abs(z - 1) < 0.03 { z = 1 }
+                if abs(z - fillScale) < 0.04 { z = fillScale }
+                zoom = z
+                showZoomHUD(zoomLabel(fill: fillScale))
+            }
+            .onEnded { _ in pinchStart = nil }
+    }
+
+    private func toggleFill(model: PlayerModel, size: CGSize) {
+        let fill = fillScale(model: model, size: size)
+        if abs(zoom - 1) < 0.01 { setZoom(fill, label: "Fill") } else { setZoom(1, label: "Fit") }
+    }
+
+    private func setZoom(_ z: CGFloat, label: String) {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { zoom = z }
+        showZoomHUD(label)
+        scheduleHide()
+    }
+
+    private func showZoomHUD(_ text: String) {
+        withAnimation { zoomHUD = text }
+        zoomHUDTask?.cancel()
+        zoomHUDTask = Task {
+            try? await Task.sleep(for: .seconds(1.2))
+            guard !Task.isCancelled else { return }
+            withAnimation { zoomHUD = nil }
+        }
+    }
+
+    // MARK: Helpers
+
+    private func timeString(_ seconds: Double) -> String {
+        guard seconds.isFinite else { return "0:00" }
+        let s = Int(seconds)
+        let h = s / 3600, m = (s % 3600) / 60, sec = s % 60
+        return h > 0 ? String(format: "%d:%02d:%02d", h, m, sec) : String(format: "%d:%02d", m, sec)
+    }
+
     private func toggleControls() {
         controlsVisible.toggle()
         if controlsVisible { scheduleHide() } else { hideTask?.cancel() }
@@ -97,8 +297,9 @@ struct PlayerScreen: View {
 
     private func scheduleHide() {
         hideTask?.cancel()
+        controlsVisible = true
         hideTask = Task {
-            try? await Task.sleep(for: .seconds(3.5))
+            try? await Task.sleep(for: .seconds(4))
             guard !Task.isCancelled, !pinControls else { return }
             controlsVisible = false
         }
@@ -111,6 +312,7 @@ struct PlayerScreen: View {
         }
     }
 }
+
 
 /// Audio language and subtitle picker.
 struct TrackMenu: View {
@@ -275,38 +477,69 @@ struct SubtitleSearchView: View {
     }
 }
 
-struct VideoPlayerController: UIViewControllerRepresentable {
-    let player: AVPlayer
-    var onTap: () -> Void = {}
 
-    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
-        var onTap: () -> Void = {}
-        @objc func tapped() { onTap() }
-        // Let the system player keep handling the same tap (it toggles its own controls).
-        func gestureRecognizer(_ g: UIGestureRecognizer,
-                               shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
-    }
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    func makeUIViewController(context: Context) -> AVPlayerViewController {
-        let vc = AVPlayerViewController()
-        context.coordinator.onTap = onTap
-        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tapped))
-        tap.cancelsTouchesInView = false
-        tap.delegate = context.coordinator
-        vc.view.addGestureRecognizer(tap)
-        vc.player = player
-        vc.allowsPictureInPicturePlayback = true
-        vc.canStartPictureInPictureAutomaticallyFromInline = true
-        vc.videoGravity = .resizeAspect
-        return vc
-    }
-
-    func updateUIViewController(_ vc: AVPlayerViewController, context: Context) {
-        context.coordinator.onTap = onTap
+/// Lets SwiftUI buttons reach the Picture-in-Picture controller owned by the video view.
+final class VideoSurfaceHandle {
+    var pip: AVPictureInPictureController?
+    func startPiP() {
+        guard let pip else { return }
+        if pip.isPictureInPictureActive { pip.stopPictureInPicture() } else { pip.startPictureInPicture() }
     }
 }
+
+final class PlayerLayerView: UIView {
+    override class var layerClass: AnyClass { AVPlayerLayer.self }
+    var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
+}
+
+/// The video itself, rendered with AVPlayerLayer (HDR / Dolby Vision aware), scaled for zoom.
+struct VideoSurface: UIViewRepresentable {
+    let player: AVPlayer
+    let zoom: CGFloat
+    let handle: VideoSurfaceHandle
+
+    func makeUIView(context: Context) -> UIView {
+        let container = UIView()
+        container.clipsToBounds = true
+        container.backgroundColor = .black
+        let video = PlayerLayerView()
+        video.playerLayer.player = player
+        video.playerLayer.videoGravity = .resizeAspect
+        video.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        video.frame = container.bounds
+        container.addSubview(video)
+        if AVPictureInPictureController.isPictureInPictureSupported() {
+            let pip = AVPictureInPictureController(playerLayer: video.playerLayer)
+            pip?.canStartPictureInPictureAutomaticallyFromInline = true
+            handle.pip = pip
+        }
+        return container
+    }
+
+    func updateUIView(_ container: UIView, context: Context) {
+        guard let video = container.subviews.first as? PlayerLayerView else { return }
+        if video.playerLayer.player !== player { video.playerLayer.player = player }
+        guard abs(video.transform.a - zoom) > 0.001 else { return }
+        UIView.animate(withDuration: 0.2, delay: 0, options: [.beginFromCurrentState, .curveEaseOut]) {
+            video.transform = CGAffineTransform(scaleX: zoom, y: zoom)
+        }
+    }
+}
+
+/// AirPlay button.
+struct RoutePicker: UIViewRepresentable {
+    func makeUIView(context: Context) -> AVRoutePickerView {
+        let v = AVRoutePickerView()
+        v.tintColor = .white
+        v.activeTintColor = UIColor(Theme.accent)
+        v.prioritizesVideoDevices = true
+        v.backgroundColor = UIColor.white.withAlphaComponent(0.12)
+        v.layer.cornerRadius = 19
+        return v
+    }
+    func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
+}
+
 
 struct StreamInfoView: View {
     let diagnostics: StreamDiagnostics
