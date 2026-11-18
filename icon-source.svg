@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2A1270"/>
+      <stop offset="0.55" stop-color="#140A3A"/>
+      <stop offset="1" stop-color="#07061A"/>
+    </linearGradient>
+    <radialGradient id="violet" cx="0.28" cy="0.22" r="0.55">
+      <stop offset="0" stop-color="#9B6BFF" stop-opacity="0.95"/>
+      <stop offset="1" stop-color="#9B6BFF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="cyan" cx="0.85" cy="0.88" r="0.55">
+      <stop offset="0" stop-color="#2FD8FF" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#2FD8FF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="pink" cx="0.92" cy="0.25" r="0.45">
+      <stop offset="0" stop-color="#FF4FA8" stop-opacity="0.8"/>
+      <stop offset="1" stop-color="#FF4FA8" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="core" cx="0.53" cy="0.5" r="0.32">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="play" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#E4DBFF"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="38"/>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <rect width="1024" height="1024" fill="url(#violet)"/>
+  <rect width="1024" height="1024" fill="url(#pink)"/>
+  <rect width="1024" height="1024" fill="url(#cyan)"/>
+  <rect width="1024" height="1024" fill="url(#core)"/>
+  <!-- glow behind the play mark -->
+  <path d="M400 330 L400 694 L716 512 Z" fill="#C9B6FF" stroke="#C9B6FF" stroke-width="110" stroke-linejoin="round" filter="url(#glow)" opacity="0.9"/>
+  <!-- play mark with rounded corners -->
+  <path d="M400 330 L400 694 L716 512 Z" fill="url(#play)" stroke="url(#play)" stroke-width="96" stroke-linejoin="round"/>
+</svg>

@@ -56,7 +56,7 @@ struct DownloadsView: View {
                 .scrollContentBackground(.hidden)
             }
         }
-        .background(Theme.background)
+        .background(TintedBackdrop(color: nil))
         .navigationTitle("Downloads")
         .fullScreenCover(item: $playRequest) { PlayerScreen(request: $0) }
         .task(id: downloads.records.count) { refreshStorage() }

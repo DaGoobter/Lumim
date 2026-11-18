@@ -14,6 +14,7 @@ struct ItemDetailView: View {
     @State private var episodes: [BaseItem] = []
     @State private var playRequest: PlaybackRequest?
     @State private var error: String?
+    @State private var artColor: ArtColor?
 
     private var shown: BaseItem? { item ?? preview }
 
@@ -49,14 +50,18 @@ struct ItemDetailView: View {
                 }
             }
             .background(alignment: .top) {
-                AmbientGlow(url: shown.flatMap { app.client?.backdropURL(for: $0, width: 600) },
-                            size: geo.size)
+                ZStack(alignment: .top) {
+                    TintedBackdrop(color: artColor)
+                    AmbientGlow(url: shown.flatMap { app.client?.backdropURL(for: $0, width: 600) },
+                                size: geo.size)
+                }
             }
         }
         .background(Theme.background)
         .toolbarBackground(.hidden, for: .navigationBar)
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
+        .artColor(from: shown.flatMap { app.client?.backdropURL(for: $0, width: 400) }, into: $artColor)
         .fullScreenCover(item: $playRequest, onDismiss: { Task { await load() } }) { PlayerScreen(request: $0) }
     }
 
@@ -86,7 +91,7 @@ struct ItemDetailView: View {
             Button { Task { await play(it) } } label: {
                 Label(it.progress != nil ? "Resume \(remaining(it))" : "Play", systemImage: "play.fill")
             }
-            .buttonStyle(PrimaryButtonStyle())
+            .buttonStyle(PlayButtonStyle())
 
             if it.isPlayable { DownloadButton(item: it) }
         }
@@ -196,7 +201,7 @@ struct EpisodeRow: View {
                     .overlay(alignment: .bottom) { if let p = episode.progress { ProgressBar(value: p).padding(6) } }
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(CardPressStyle())
 
             NavigationLink(value: episode) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -211,7 +216,7 @@ struct EpisodeRow: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(CardPressStyle())
         }
     }
 }

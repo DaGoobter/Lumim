@@ -62,15 +62,26 @@ struct RootView: View {
 
 struct MainTabView: View {
     var body: some View {
-        TabView {
-            NavigationStack { HomeView() }
-                .tabItem { Label("Home", systemImage: "house.fill") }
-            NavigationStack { LibrariesView() }
-                .tabItem { Label("Library", systemImage: "square.grid.2x2.fill") }
-            NavigationStack { DownloadsView() }
-                .tabItem { Label("Downloads", systemImage: "arrow.down.circle.fill") }
-            NavigationStack { SettingsView() }
-                .tabItem { Label("Settings", systemImage: "gearshape.fill") }
+        if #available(iOS 18.0, *) {
+            // Tab bar on iPhone; on iPad it can expand into a sidebar.
+            TabView {
+                Tab("Home", systemImage: "house.fill") { NavigationStack { HomeView() } }
+                Tab("Library", systemImage: "square.grid.2x2.fill") { NavigationStack { LibrariesView() } }
+                Tab("Downloads", systemImage: "arrow.down.circle.fill") { NavigationStack { DownloadsView() } }
+                Tab("Settings", systemImage: "gearshape.fill") { NavigationStack { SettingsView() } }
+            }
+            .tabViewStyle(.sidebarAdaptable)
+        } else {
+            TabView {
+                NavigationStack { HomeView() }
+                    .tabItem { Label("Home", systemImage: "house.fill") }
+                NavigationStack { LibrariesView() }
+                    .tabItem { Label("Library", systemImage: "square.grid.2x2.fill") }
+                NavigationStack { DownloadsView() }
+                    .tabItem { Label("Downloads", systemImage: "arrow.down.circle.fill") }
+                NavigationStack { SettingsView() }
+                    .tabItem { Label("Settings", systemImage: "gearshape.fill") }
+            }
         }
     }
 }

@@ -112,7 +112,7 @@ struct SettingsView: View {
             }
         }
         .scrollContentBackground(.hidden)
-        .background(Theme.background)
+        .background(TintedBackdrop(color: nil))
         .navigationTitle("Settings")
         .onChange(of: app.maxBitrate) { app.persistSettings() }
         .onChange(of: app.preferLocal) {

@@ -116,14 +116,14 @@ struct PosterCard: View {
     var fixedWidth = true
 
     var body: some View {
-        let width: CGFloat = sizeClass == .regular ? 160 : 118
+        let width: CGFloat = sizeClass == .regular ? 180 : 128
         VStack(alignment: .leading, spacing: 6) {
             Color.clear
                 .aspectRatio(2 / 3, contentMode: .fit)
                 .overlay { RemoteImage(url: app.client?.posterURL(for: item)) }
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .overlay(alignment: .topTrailing) { WatchedBadge(item: item) }
-                .shadow(color: .black.opacity(0.45), radius: 8, y: 4)
+                .shadow(color: .black.opacity(0.5), radius: 12, y: 6)
             Text(item.displayTitle).font(.caption.weight(.semibold)).lineLimit(1)
             Text(item.productionYear.map(String.init) ?? " ").font(.caption2).foregroundStyle(.secondary)
         }
@@ -137,7 +137,7 @@ struct LandscapeCard: View {
     let item: BaseItem
 
     var body: some View {
-        let width: CGFloat = sizeClass == .regular ? 340 : 260
+        let width: CGFloat = sizeClass == .regular ? 380 : 290
         VStack(alignment: .leading, spacing: 6) {
             Color.clear
                 .aspectRatio(16 / 9, contentMode: .fit)
@@ -145,8 +145,8 @@ struct LandscapeCard: View {
                 .overlay(alignment: .bottom) {
                     if let p = item.progress { ProgressBar(value: p).padding(10) }
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .shadow(color: .black.opacity(0.45), radius: 8, y: 4)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .shadow(color: .black.opacity(0.5), radius: 12, y: 6)
             Text(item.displayTitle).font(.subheadline.weight(.semibold)).lineLimit(1)
             if let ep = item.episodeLabel {
                 Text(ep).font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -207,12 +207,14 @@ struct Shelf<Content: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title).font(.title3.weight(.bold)).padding(.horizontal)
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title).font(.title2.weight(.bold)).padding(.horizontal, 20)
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(alignment: .top, spacing: 14) { content }
-                    .padding(.horizontal)
+                LazyHStack(alignment: .top, spacing: 16) { content }
+                    .scrollTargetLayout()
+                    .padding(.horizontal, 20)
             }
+            .scrollTargetBehavior(.viewAligned)
         }
     }
 }
@@ -243,6 +245,30 @@ struct PrimaryButtonStyle: ButtonStyle {
             .foregroundStyle(.white)
             .scaleEffect(configuration.isPressed ? 0.95 : 1)
             .animation(.spring(response: 0.25, dampingFraction: 0.7), value: configuration.isPressed)
+    }
+}
+
+/// Apple TV–style white "Play" button.
+struct PlayButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .padding(.horizontal, 26).padding(.vertical, 13)
+            .background(.white, in: Capsule())
+            .foregroundStyle(.black)
+            .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
+            .scaleEffect(configuration.isPressed ? 0.95 : 1)
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: configuration.isPressed)
+    }
+}
+
+/// Cards lift slightly and shrink on press, like tvOS focus.
+struct CardPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.95 : 1)
+            .brightness(configuration.isPressed ? 0.06 : 0)
+            .animation(.spring(response: 0.3, dampingFraction: 0.65), value: configuration.isPressed)
     }
 }
 

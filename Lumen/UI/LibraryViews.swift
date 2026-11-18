@@ -10,22 +10,13 @@ struct LibrariesView: View {
             if let error { ErrorBanner(message: error) { Task { await load() } }.padding(.top) }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 14)], spacing: 14) {
                 ForEach(views) { lib in
-                    NavigationLink(value: lib) {
-                        Color.clear
-                            .aspectRatio(16 / 9, contentMode: .fit)
-                            .overlay { RemoteImage(url: app.client?.imageURL(lib.id, maxWidth: 700, tag: lib.imageTag("primary"))) }
-                            .overlay(alignment: .bottomLeading) {
-                                Text(lib.name ?? "").font(.title3.bold()).padding(12)
-                                    .shadow(color: .black, radius: 6)
-                            }
-                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
+                    NavigationLink(value: lib) { LibraryTile(library: lib) }
+                        .buttonStyle(CardPressStyle())
                 }
             }
             .padding()
         }
-        .background(Theme.background)
+        .background(TintedBackdrop(color: nil))
         .navigationTitle("Library")
         .task { if views.isEmpty { await load() } }
         .refreshable { await load() }
@@ -40,6 +31,33 @@ struct LibrariesView: View {
         } catch {
             self.error = error.localizedDescription
         }
+    }
+}
+
+/// A library card washed in its artwork's own color.
+struct LibraryTile: View {
+    @Environment(AppState.self) private var app
+    let library: BaseItem
+    @State private var color: ArtColor?
+
+    var body: some View {
+        let url = app.client?.imageURL(library.id, maxWidth: 700, tag: library.imageTag("primary"))
+        Color.clear
+            .aspectRatio(16 / 9, contentMode: .fit)
+            .overlay { RemoteImage(url: url) }
+            .overlay {
+                LinearGradient(colors: [.clear, (color?.background ?? Theme.accent.opacity(0.5)).opacity(0.95)],
+                               startPoint: .center, endPoint: .bottom)
+            }
+            .overlay(alignment: .bottomLeading) {
+                Text(library.name ?? "").font(.title2.weight(.heavy)).padding(16)
+                    .shadow(color: .black.opacity(0.4), radius: 6)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder((color?.accent ?? .white).opacity(0.35), lineWidth: 1))
+            .shadow(color: (color?.background ?? .black).opacity(0.6), radius: 16, y: 8)
+            .artColor(from: url, into: $color)
     }
 }
 
@@ -83,7 +101,7 @@ struct LibraryGridView: View {
                       spacing: 18) {
                 ForEach(items) { item in
                     NavigationLink(value: item) { PosterCard(item: item, fixedWidth: false) }
-                        .buttonStyle(.plain)
+                        .buttonStyle(CardPressStyle())
                         .onAppear { if item.id == items.last?.id { Task { await loadMore() } } }
                 }
             }
