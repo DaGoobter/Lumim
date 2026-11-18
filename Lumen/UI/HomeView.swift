@@ -9,6 +9,7 @@ struct LatestRow: Identifiable {
 struct HomeView: View {
     @Environment(AppState.self) private var app
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var resume: [BaseItem] = []
     @State private var nextUp: [BaseItem] = []
     @State private var latest: [LatestRow] = []
@@ -37,12 +38,15 @@ struct HomeView: View {
 
     var body: some View {
         GeometryReader { geo in
-            let artHeight = min(geo.size.width * 9 / 16, geo.size.height * (sizeClass == .regular ? 0.55 : 0.5))
+            let landscape = verticalSizeClass == .compact
+            let artHeight = landscape
+                ? geo.size.height * 0.82
+                : min(geo.size.width * 9 / 16, geo.size.height * (sizeClass == .regular ? 0.55 : 0.5))
             ScrollView {
                 VStack(alignment: .leading, spacing: 34) {
                     if !featured.isEmpty {
                         FeaturedCarousel(items: featured, index: $featuredIndex, width: geo.size.width,
-                                         artHeight: artHeight) { item in Task { await play(item) } }
+                                         artHeight: artHeight, landscape: landscape) { item in Task { await play(item) } }
                     } else {
                         Spacer(minLength: 100)
                     }
@@ -78,6 +82,8 @@ struct HomeView: View {
                 }
                 .padding(.bottom, 40)
             }
+            // Artwork runs to the very top, under the Dynamic Island.
+            .ignoresSafeArea(edges: .top)
             .background(alignment: .top) {
                 ZStack(alignment: .top) {
                     TintedBackdrop(color: heroColor)
@@ -155,18 +161,19 @@ struct FeaturedCarousel: View {
     @Binding var index: Int
     let width: CGFloat
     let artHeight: CGFloat
+    var landscape = false
     let onPlay: (BaseItem) -> Void
 
     var body: some View {
         VStack(spacing: 14) {
             TabView(selection: $index) {
                 ForEach(Array(items.enumerated()), id: \.element.id) { i, item in
-                    HeroView(item: item, width: width, artHeight: artHeight) { onPlay(item) }
+                    HeroView(item: item, width: width, artHeight: artHeight, landscape: landscape) { onPlay(item) }
                         .tag(i)
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
-            .frame(height: artHeight + HeroView.infoHeight + 14)
+            .frame(height: landscape ? artHeight + 16 : artHeight + HeroView.infoHeight + 14)
 
             if items.count > 1 {
                 HStack(spacing: 6) {
@@ -191,12 +198,13 @@ struct FeaturedCarousel: View {
 }
 
 struct HeroView: View {
-    static let infoHeight: CGFloat = 200
+    static let infoHeight: CGFloat = 176
 
     @Environment(AppState.self) private var app
     let item: BaseItem
     let width: CGFloat
     let artHeight: CGFloat
+    var landscape = false
     let onPlay: () -> Void
 
     private var subtitle: String? {
@@ -206,34 +214,56 @@ struct HeroView: View {
         return parts.isEmpty ? nil : parts.joined(separator: "  ·  ")
     }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            // Full, uncropped artwork; tap it for details.
-            NavigationLink(value: item) {
-                ArtHeader(url: app.client?.backdropURL(for: item, width: 1920), width: width, maxHeight: artHeight)
-            }
-            .buttonStyle(CardPressStyle())
-
-            VStack(alignment: .leading, spacing: 10) {
-                LogoOrTitle(url: app.client?.logoURL(for: item), title: item.displayTitle, maxHeight: 70)
-                if let subtitle {
-                    Text(subtitle).font(.subheadline.weight(.semibold)).foregroundStyle(.white.opacity(0.75)).lineLimit(1)
-                }
-                if let p = item.progress { ProgressBar(value: p).frame(maxWidth: 220) }
-                HStack(spacing: 12) {
-                    Button(action: onPlay) {
-                        Label(item.progress != nil ? "Resume" : "Play", systemImage: "play.fill")
-                    }
-                    .buttonStyle(PlayButtonStyle())
-                    NavigationLink(value: item) {
-                        Label("Details", systemImage: "info.circle")
-                    }
-                    .buttonStyle(SecondaryButtonStyle())
-                }
-            }
-            .padding(.horizontal, 20)
-            .frame(height: Self.infoHeight, alignment: .top)
+    private var art: some View {
+        // Full, uncropped artwork; tap it for details.
+        NavigationLink(value: item) {
+            ArtHeader(url: app.client?.backdropURL(for: item, width: 1920),
+                      width: landscape ? width * 0.56 : width, maxHeight: artHeight)
         }
-        .frame(width: width, alignment: .top)
+        .buttonStyle(CardPressStyle())
+    }
+
+    private var info: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            LogoOrTitle(url: app.client?.logoURL(for: item), title: item.displayTitle, maxHeight: 70)
+            if let subtitle {
+                Text(subtitle).font(.subheadline.weight(.semibold)).foregroundStyle(.white.opacity(0.75)).lineLimit(1)
+            }
+            if let overview = item.overview, landscape {
+                Text(overview).font(.subheadline).foregroundStyle(.white.opacity(0.7)).lineLimit(3)
+            }
+            if let p = item.progress { ProgressBar(value: p).frame(maxWidth: 220) }
+            HStack(spacing: 12) {
+                Button(action: onPlay) {
+                    Label(item.progress != nil ? "Resume" : "Play", systemImage: "play.fill")
+                }
+                .buttonStyle(PlayButtonStyle())
+                NavigationLink(value: item) {
+                    Label("Details", systemImage: "info.circle")
+                }
+                .buttonStyle(SecondaryButtonStyle())
+            }
+        }
+    }
+
+    var body: some View {
+        if landscape {
+            // Phone landscape: info on the left, artwork on the right — everything fits on one screen.
+            HStack(alignment: .center, spacing: 24) {
+                info.frame(maxWidth: .infinity, alignment: .leading)
+                art
+            }
+            .padding(.leading, 24)
+            .padding(.top, 12)
+            .frame(width: width, height: artHeight + 16, alignment: .leading)
+        } else {
+            VStack(alignment: .leading, spacing: 14) {
+                art
+                info
+                    .padding(.horizontal, 20)
+                    .frame(height: Self.infoHeight, alignment: .top)
+            }
+            .frame(width: width, alignment: .top)
+        }
     }
 }

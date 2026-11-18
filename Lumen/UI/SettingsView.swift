@@ -108,7 +108,7 @@ struct SettingsView: View {
             Section {
                 Button("Sign Out", role: .destructive) { Task { await app.logout() } }
             } footer: {
-                Text("Lumen \(JellyfinClient.version) · Downloads stay on this device after signing out.")
+                Text("Lumen \(JellyfinClient.version) (build \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?")) · Downloads stay on this device after signing out.")
             }
         }
         .scrollContentBackground(.hidden)

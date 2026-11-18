@@ -4,6 +4,9 @@ struct ItemDetailView: View {
     @Environment(AppState.self) private var app
     @Environment(DownloadManager.self) private var downloads
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+
+    private var landscape: Bool { verticalSizeClass == .compact }
 
     let itemId: String
     let preview: BaseItem?
@@ -23,15 +26,33 @@ struct ItemDetailView: View {
             ScrollView {
                 if let it = shown {
                     VStack(alignment: .leading, spacing: 0) {
-                        ArtHeader(url: app.client?.backdropURL(for: it, width: 1920),
-                                  width: geo.size.width, maxHeight: geo.size.height * 0.55)
-                        VStack(alignment: .leading, spacing: 18) {
-                            titleBlock(it)
-                            metaLine(it)
-                            if let src = it.mediaSources?.first, !src.badges.isEmpty {
-                                HStack(spacing: 6) { ForEach(src.badges, id: \.self) { Badge(text: $0) } }
+                        if landscape {
+                            // Phone landscape: info on the left, full artwork on the right.
+                            HStack(alignment: .center, spacing: 24) {
+                                VStack(alignment: .leading, spacing: 14) {
+                                    titleBlock(it)
+                                    metaLine(it)
+                                    badges(it)
+                                    actions(it)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                ArtHeader(url: app.client?.backdropURL(for: it, width: 1920),
+                                          width: geo.size.width * 0.55, maxHeight: geo.size.height * 0.8)
                             }
-                            actions(it)
+                            .padding(.leading, 20)
+                            .padding(.top, 48)
+                        } else {
+                            // Art runs edge to edge, up under the Dynamic Island.
+                            ArtHeader(url: app.client?.backdropURL(for: it, width: 1920),
+                                      width: geo.size.width, maxHeight: geo.size.height * 0.55)
+                        }
+                        VStack(alignment: .leading, spacing: 18) {
+                            if !landscape {
+                                titleBlock(it)
+                                metaLine(it)
+                                badges(it)
+                                actions(it)
+                            }
                             if let error { Text(error).font(.footnote).foregroundStyle(.red) }
                             if let overview = it.overview {
                                 Text(overview).font(.callout).foregroundStyle(.white.opacity(0.85))
@@ -49,6 +70,7 @@ struct ItemDetailView: View {
                     ProgressView().padding(.top, 200).frame(maxWidth: .infinity)
                 }
             }
+            .ignoresSafeArea(edges: .top)
             .background(alignment: .top) {
                 ZStack(alignment: .top) {
                     TintedBackdrop(color: artColor)
@@ -66,6 +88,13 @@ struct ItemDetailView: View {
     }
 
     // MARK: Sections
+
+    @ViewBuilder
+    private func badges(_ it: BaseItem) -> some View {
+        if let src = it.mediaSources?.first, !src.badges.isEmpty {
+            HStack(spacing: 6) { ForEach(src.badges, id: \.self) { Badge(text: $0) } }
+        }
+    }
 
     private func titleBlock(_ it: BaseItem) -> some View {
         VStack(alignment: .leading, spacing: 6) {

@@ -3,6 +3,7 @@ name: Build iOS app
 on:
   push:
     branches: [main]
+    paths-ignore: ['android/**', '.github/workflows/android.yml']
   workflow_dispatch:
 
 jobs:
@@ -29,6 +30,7 @@ jobs:
             -destination 'generic/platform=iOS' \
             -derivedDataPath build \
             -quiet \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -72,6 +74,7 @@ jobs:
             -quiet \
             ONLY_ACTIVE_ARCH=NO \
             ARCHS="x86_64 arm64" \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} \
             CODE_SIGNING_ALLOWED=NO \
             build
 
