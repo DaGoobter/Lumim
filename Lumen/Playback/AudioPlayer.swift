@@ -271,7 +271,7 @@ final class AudioPlayer {
         loadArtwork(for: item)
         Task { await report(started: true) }
 
-        if let intro = entry.intro { djLine = intro }
+        if let intro = entry.intro { djLine = DJVoice.display(intro) }
         if allowIntro, djVoiceEnabled, let intro = entry.intro {
             // Radio style: the song starts quietly under the DJ, then comes up.
             player.volume = 0.18

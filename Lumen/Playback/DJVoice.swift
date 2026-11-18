@@ -36,6 +36,11 @@ final class DJVoice: NSObject {
         get { defaults.string(forKey: "dj.kokoroVoice") ?? "af_heart" }
         set { defaults.set(newValue, forKey: "dj.kokoroVoice"); cache.removeAll() }
     }
+    /// Talking pace for Kokoro. Radio hosts talk a touch faster than an audiobook narrator.
+    var kokoroSpeed: Double {
+        get { defaults.object(forKey: "dj.kokoroSpeed") as? Double ?? 1.1 }
+        set { defaults.set(newValue, forKey: "dj.kokoroSpeed"); cache.removeAll() }
+    }
     var openAIVoice: String {
         get { defaults.string(forKey: "dj.openAIVoice") ?? "coral" }
         set { defaults.set(newValue, forKey: "dj.openAIVoice"); cache.removeAll() }
@@ -51,6 +56,40 @@ final class DJVoice: NSObject {
     var elevenKey: String {
         get { Keychain.load("dj.elevenKey").flatMap { String(data: $0, encoding: .utf8) } ?? "" }
         set { Keychain.save(Data(newValue.utf8), key: "dj.elevenKey"); cache.removeAll() }
+    }
+
+    // MARK: Script markup
+
+    private static let pauseTag = try! NSRegularExpression(pattern: #"\s*\[pause:(\d+(?:\.\d+)?)s\]\s*"#, options: .caseInsensitive)
+
+    /// The line as it should appear on screen (no pause markers).
+    static func display(_ text: String) -> String {
+        replacePauses(in: text) { _ in " " }
+            .replacingOccurrences(of: "  ", with: " ")
+            .trimmingCharacters(in: .whitespaces)
+    }
+
+    /// The line in the form each voice understands best.
+    private func spoken(_ text: String) -> String {
+        switch engine {
+        case .kokoro: return text
+        case .elevenLabs: return Self.replacePauses(in: text) { #" <break time="\#($0)s" /> "# }
+        case .openAI: return Self.replacePauses(in: text) { Double($0) ?? 0 >= 0.35 ? " ... " : " " }
+        case .iPhone: return Self.display(text)
+        }
+    }
+
+    private static func replacePauses(in text: String, with make: (String) -> String) -> String {
+        let ns = text as NSString
+        var out = ""
+        var last = 0
+        for m in pauseTag.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            out += ns.substring(with: NSRange(location: last, length: m.range.location - last))
+            out += make(ns.substring(with: m.range(at: 1)))
+            last = m.range.location + m.range.length
+        }
+        out += ns.substring(from: last)
+        return out
     }
 
     // MARK: Speaking
@@ -102,7 +141,7 @@ final class DJVoice: NSObject {
     }
 
     private func speakSystem(_ text: String) async {
-        let u = AVSpeechUtterance(string: text)
+        let u = AVSpeechUtterance(string: spoken(text))
         let voices = AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix("en") }
         u.voice = voices.first { $0.quality == .premium } ?? voices.first { $0.quality == .enhanced }
             ?? AVSpeechSynthesisVoice(language: "en-US")
@@ -144,18 +183,20 @@ final class DJVoice: NSObject {
             var req = URLRequest(url: url)
             req.httpMethod = "POST"
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            var body: [String: Any] = ["input": text, "response_format": "mp3"]
+            var body: [String: Any] = ["input": spoken(text), "response_format": "mp3"]
             if engine == .openAI {
                 guard !openAIKey.isEmpty else { lastError = "Add your OpenAI API key."; return nil }
                 req.setValue("Bearer \(openAIKey)", forHTTPHeaderField: "Authorization")
                 body["model"] = "gpt-4o-mini-tts"
                 body["voice"] = openAIVoice
-                body["instructions"] = "You are a warm, upbeat late-night radio DJ talking to one listener. "
-                    + "Relaxed and conversational, natural pauses, a hint of a smile. Never robotic."
+                body["instructions"] = "You're a charismatic radio DJ talking to one friend, not reading a script. "
+                    + "Loose, warm and playful, with a smile in your voice. Vary your pace: breeze through the "
+                    + "chatty bits, then slow down slightly and land the song title and artist like a reveal. "
+                    + "Natural breaths, a little laugh where it fits. Never monotone, never announcer-stiff."
             } else {
                 body["model"] = "kokoro"
                 body["voice"] = kokoroVoice
-                body["speed"] = 1.0
+                body["speed"] = kokoroSpeed
             }
             req.httpBody = try? JSONSerialization.data(withJSONObject: body)
             return req
@@ -168,7 +209,7 @@ final class DJVoice: NSObject {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
             req.setValue(elevenKey, forHTTPHeaderField: "xi-api-key")
             req.httpBody = try? JSONSerialization.data(withJSONObject: [
-                "text": text, "model_id": "eleven_flash_v2_5",
+                "text": spoken(text), "model_id": "eleven_flash_v2_5",
                 "voice_settings": ["stability": 0.4, "similarity_boost": 0.8, "style": 0.35],
             ] as [String: Any])
             return req

@@ -22,6 +22,7 @@ struct SettingsView: View {
     @State private var djEngine: DJVoice.Engine = DJVoice.shared.engine
     @State private var kokoroURL = DJVoice.shared.kokoroURL
     @State private var kokoroVoice = DJVoice.shared.kokoroVoice
+    @State private var kokoroSpeed = DJVoice.shared.kokoroSpeed
     @State private var openAIKey = DJVoice.shared.openAIKey
     @State private var openAIVoice = DJVoice.shared.openAIVoice
     @State private var elevenKey = DJVoice.shared.elevenKey
@@ -137,10 +138,25 @@ struct SettingsView: View {
                             .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
                     }
                     Picker("Kokoro voice", selection: $kokoroVoice) {
-                        ForEach([("af_heart", "Heart (warm, female)"), ("af_bella", "Bella (bright, female)"),
-                                 ("af_nicole", "Nicole (soft, female)"), ("am_michael", "Michael (male)"),
-                                 ("am_adam", "Adam (deep, male)"), ("bm_george", "George (British, male)"),
+                        ForEach([("af_heart", "Heart (warm, female)"),
+                                 ("af_heart(2)+af_bella", "Heart + Bella (bright, female)"),
+                                 ("af_bella", "Bella (energetic, female)"),
+                                 ("af_nicole", "Nicole (soft, female)"),
+                                 ("af_nova", "Nova (crisp, female)"),
+                                 ("am_puck", "Puck (lively, male)"),
+                                 ("am_michael", "Michael (smooth, male)"),
+                                 ("am_michael+am_puck", "Michael + Puck (radio, male)"),
+                                 ("am_fenrir", "Fenrir (deep, male)"),
+                                 ("bm_george", "George (British, male)"),
                                  ("bf_emma", "Emma (British, female)")], id: \.0) { Text($0.1).tag($0.0) }
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("Talking pace")
+                            Spacer()
+                            Text(String(format: "%.2f×", kokoroSpeed)).foregroundStyle(.secondary).monospacedDigit()
+                        }
+                        Slider(value: $kokoroSpeed, in: 0.9...1.3, step: 0.05)
                     }
                 case .openAI:
                     SecureField("OpenAI API key", text: $openAIKey)
@@ -163,7 +179,8 @@ struct SettingsView: View {
                     testingVoice = true
                     voiceTestResult = nil
                     Task {
-                        await DJVoice.shared.say("Hey, it's your Lumen DJ. If I sound like a real person, you're all set.")
+                        await DJVoice.shared.say("Hey, hey! It's your Lumen DJ." + Stations.breath
+                            + "So, here's how I sound." + Stations.beat + "Not bad, right? Okay, let's get you some music.")
                         voiceTestResult = DJVoice.shared.lastError.map { "Couldn't reach the voice: \($0)" }
                         testingVoice = false
                     }
@@ -216,7 +233,7 @@ struct SettingsView: View {
     private var voiceFooter: String {
         switch djEngine {
         case .kokoro:
-            return "Free and private: a natural-sounding voice running on your own PC. One-time setup: install Docker Desktop, then run  docker run -d --restart unless-stopped -p 8880:8880 ghcr.io/remsky/kokoro-fastapi-cpu:latest  and enter your PC's address above. Away from home the DJ shows its lines as text unless you also expose Kokoro through Caddy."
+            return "Free and private: a natural-sounding voice running on your own PC. Run the Kokoro installer on your PC once, then enter your PC's address above (port 8880). Try a few voices and paces; Michael + Puck or Heart + Bella sound most like radio. Away from home the DJ shows its lines as text unless you also expose Kokoro through Caddy."
         case .openAI:
             return "Very human voices that act like a radio DJ. Uses your OpenAI API key; DJ intros cost roughly a cent per few minutes of talking."
         case .elevenLabs:
@@ -231,6 +248,7 @@ struct SettingsView: View {
         if v.engine != djEngine { v.engine = djEngine }
         if v.kokoroURL != kokoroURL { v.kokoroURL = kokoroURL }
         if v.kokoroVoice != kokoroVoice { v.kokoroVoice = kokoroVoice }
+        if v.kokoroSpeed != kokoroSpeed { v.kokoroSpeed = kokoroSpeed }
         if v.openAIKey != openAIKey { v.openAIKey = openAIKey }
         if v.openAIVoice != openAIVoice { v.openAIVoice = openAIVoice }
         if v.elevenKey != elevenKey { v.elevenKey = elevenKey }
