@@ -21,8 +21,8 @@ struct StreamDiagnostics {
     var audio = "—"
     var transcodeReasons = "—"
     var decodedFormat = "—"
-
-    static let videoReasonMarkers = ["Video", "Subtitle", "Interlaced", "Anamorphic", "RefFrames", "ContainerBitrate"]
+    var serverVideo = "—"
+    var serverAudio = "—"
 
     static func from(source: MediaSource, usingHLS: Bool) -> StreamDiagnostics {
         var d = StreamDiagnostics()
@@ -42,10 +42,9 @@ struct StreamDiagnostics {
                 .flatMap { URLComponents(string: "http://x\($0)")?.queryItems }?
                 .first { $0.name.lowercased() == "transcodereasons" }?.value ?? ""
             d.transcodeReasons = reasons.isEmpty ? "—" : reasons.replacingOccurrences(of: ",", with: ", ")
-            let videoTouched = videoReasonMarkers.contains { reasons.contains($0) }
-            d.playMethod = videoTouched
-                ? "Transcode (video re-encoded)"
-                : "Direct Stream (remux, original video)"
+            d.playMethod = "Server stream (checking…)"
+            d.serverVideo = "Checking…"
+            d.serverAudio = "Checking…"
         } else {
             d.playMethod = "Direct Play (original file)"
         }
@@ -147,6 +146,7 @@ final class PlayerModel {
             player.play()
             Task { await report(.start) }
             Task { await inspectDecodedFormat(item) }
+            if reportedMethod == "Transcode" { Task { await checkServerSession() } }
         case .failed:
             errorMessage = item.error?.localizedDescription ?? "Playback failed."
             isLoading = false
@@ -166,6 +166,34 @@ final class PlayerModel {
             let size = item.presentationSize
             diagnostics.decodedFormat = "HLS stream · \(Int(size.width))×\(Int(size.height))"
         }
+    }
+
+    /// Asks the server what it is actually doing (copying vs re-encoding) instead of guessing.
+    private func checkServerSession() async {
+        guard let client else { return }
+        for delay in [3.0, 6.0, 10.0] {
+            try? await Task.sleep(for: .seconds(delay))
+            guard !stopped else { return }
+            guard let info = try? await client.currentSession()?.transcodingInfo else { continue }
+            let videoDirect = info.isVideoDirect == true
+            let audioDirect = info.isAudioDirect == true
+            let hw = info.hardwareAccelerationType.flatMap { $0.lowercased() == "none" ? nil : $0 }
+            diagnostics.serverVideo = videoDirect
+                ? "Copied (original, untouched)"
+                : "Re-encoded → \((info.videoCodec ?? "?").uppercased())" + (hw.map { " · \($0)" } ?? " · software")
+            diagnostics.serverAudio = audioDirect
+                ? "Copied (original)"
+                : "Converted → \((info.audioCodec ?? "?").uppercased())" + (info.audioChannels.map { " \($0)ch" } ?? "")
+            switch (videoDirect, audioDirect) {
+            case (true, true): diagnostics.playMethod = "Direct Stream (remux only, full quality)"
+            case (true, false): diagnostics.playMethod = "Direct Stream (video untouched, audio converted)"
+            default: diagnostics.playMethod = "Transcode (video re-encoded)"
+            }
+            return
+        }
+        diagnostics.serverVideo = "Unknown (server didn't report)"
+        diagnostics.serverAudio = "Unknown"
+        diagnostics.playMethod = "Server stream"
     }
 
     enum ReportKind { case start, progress, stop }

@@ -99,6 +99,26 @@ struct PlaybackInfoResponse: Codable {
     let errorCode: String?
 }
 
+struct TranscodingInfo: Codable {
+    let audioCodec: String?
+    let videoCodec: String?
+    let container: String?
+    let isVideoDirect: Bool?
+    let isAudioDirect: Bool?
+    let bitrate: Int?
+    let width: Int?
+    let height: Int?
+    let audioChannels: Int?
+    let hardwareAccelerationType: String?
+}
+
+struct SessionInfo: Codable {
+    let id: String?
+    let deviceId: String?
+    let nowPlayingItem: BaseItem?
+    let transcodingInfo: TranscodingInfo?
+}
+
 struct BaseItem: Codable, Identifiable, Hashable {
     let id: String
     let name: String?

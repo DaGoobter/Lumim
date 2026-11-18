@@ -97,6 +97,8 @@ struct StreamInfoView: View {
             List {
                 Section("Playback") {
                     row("Method", diagnostics.playMethod)
+                    row("Server video", diagnostics.serverVideo)
+                    row("Server audio", diagnostics.serverAudio)
                     row("Decoder sees", diagnostics.decodedFormat)
                     row("Server reasons", diagnostics.transcodeReasons)
                 }

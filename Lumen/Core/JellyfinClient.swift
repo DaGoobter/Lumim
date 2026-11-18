@@ -176,7 +176,20 @@ final class JellyfinClient {
         ]
         if let audioStreamIndex { body["AudioStreamIndex"] = audioStreamIndex }
         if let subtitleStreamIndex { body["SubtitleStreamIndex"] = subtitleStreamIndex }
-        return try await post("Items/\(itemId)/PlaybackInfo", query: ["userId": userId], body: body)
+        // Some server versions read these from the query string rather than the body, so send both.
+        return try await post("Items/\(itemId)/PlaybackInfo", query: [
+            "userId": userId,
+            "maxStreamingBitrate": String(maxBitrate),
+            "startTimeTicks": String(startTicks),
+            "audioStreamIndex": audioStreamIndex.map(String.init),
+            "subtitleStreamIndex": subtitleStreamIndex.map(String.init),
+        ], body: body)
+    }
+
+    /// The server's live view of this device's playback: what it is copying vs re-encoding.
+    func currentSession() async throws -> SessionInfo? {
+        let sessions: [SessionInfo] = try await get("Sessions", query: ["deviceId": Self.deviceId])
+        return sessions.first { $0.nowPlayingItem != nil } ?? sessions.first
     }
 
     /// Original file, untouched ("static" stream).
@@ -193,7 +206,8 @@ final class JellyfinClient {
     }
 
     /// Server-returned paths (like TranscodingUrl) are relative to the server root.
-    func absoluteURL(serverRelative path: String) -> URL? {
+    func absoluteURL(serverRelative rawPath: String) -> URL? {
+        let path = Self.removingSubtitleBurnIn(rawPath)
         var base = baseURL.absoluteString
         if base.hasSuffix("/") { base.removeLast() }
         var full = base + (path.hasPrefix("/") ? path : "/" + path)
@@ -202,6 +216,19 @@ final class JellyfinClient {
             full += (full.contains("?") ? "&" : "?") + "api_key=\(accessToken)"
         }
         return URL(string: full)
+    }
+
+    /// Burning subtitles into the picture forces a full video re-encode (and loses Dolby Vision/HDR).
+    /// Until subtitle selection exists, strip any burn-in request so the video can be copied untouched.
+    static func removingSubtitleBurnIn(_ path: String) -> String {
+        guard var comps = URLComponents(string: "http://placeholder" + (path.hasPrefix("/") ? path : "/" + path)),
+              let items = comps.queryItems else { return path }
+        let burnIn = items.contains { $0.name.lowercased() == "subtitlemethod" && $0.value?.lowercased() == "encode" }
+        guard burnIn else { return path }
+        let drop: Set<String> = ["subtitlemethod", "subtitlestreamindex", "subtitlecodec"]
+        comps.queryItems = items.filter { !drop.contains($0.name.lowercased()) }
+        let rebuilt = comps.percentEncodedPath + (comps.percentEncodedQuery.map { "?" + $0 } ?? "")
+        return rebuilt
     }
 
     func reportPlayback(_ path: String, body: [String: Any]) async {
