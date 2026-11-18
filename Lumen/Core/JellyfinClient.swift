@@ -148,6 +148,53 @@ final class JellyfinClient {
         ])
     }
 
+    /// Generic Items query (music, books, playlists…).
+    func browse(_ query: [String: String?]) async throws -> ItemsResult {
+        var q = query
+        q["userId"] = userId
+        if q["fields"] == nil { q["fields"] = Self.listFields + ",ChildCount" }
+        return try await get("Items", query: q)
+    }
+
+    func albumTracks(_ albumId: String) async throws -> [BaseItem] {
+        try await browse([
+            "parentId": albumId, "includeItemTypes": "Audio", "recursive": "true",
+            "sortBy": "ParentIndexNumber,IndexNumber,SortName",
+        ]).items
+    }
+
+    func artistAlbums(_ artistId: String) async throws -> [BaseItem] {
+        try await browse([
+            "artistIds": artistId, "includeItemTypes": "MusicAlbum", "recursive": "true",
+            "sortBy": "ProductionYear,SortName", "sortOrder": "Descending",
+        ]).items
+    }
+
+    func playlistItems(_ playlistId: String) async throws -> [BaseItem] {
+        let r: ItemsResult = try await get("Playlists/\(playlistId)/Items", query: [
+            "userId": userId, "fields": Self.listFields,
+        ])
+        return r.items
+    }
+
+    /// Music/audiobook stream. Plays the original (MP3/AAC/ALAC/FLAC/WAV) when possible, otherwise the
+    /// server converts to 320 kbps MP3.
+    func audioURL(itemId: String) -> URL {
+        url("Audio/\(itemId)/universal", query: [
+            "UserId": userId, "DeviceId": Self.deviceId, "MaxStreamingBitrate": "320000000",
+            "Container": "mp3,aac,m4a,m4b,flac,alac,wav,aiff",
+            "TranscodingContainer": "mp3", "TranscodingProtocol": "http", "AudioCodec": "mp3",
+            "api_key": accessToken,
+        ])
+    }
+
+    /// Square artwork for songs/albums (songs use their album's art).
+    func albumArtURL(for item: BaseItem, width: Int = 600) -> URL {
+        if item.imageTag("primary") != nil { return imageURL(item.id, maxWidth: width, tag: item.imageTag("primary")) }
+        if let aid = item.albumId { return imageURL(aid, maxWidth: width, tag: item.albumPrimaryImageTag) }
+        return imageURL(item.id, maxWidth: width)
+    }
+
     func item(_ id: String) async throws -> BaseItem {
         try await get("Items/\(id)", query: ["userId": userId])
     }

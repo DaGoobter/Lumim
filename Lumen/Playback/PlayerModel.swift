@@ -123,6 +123,7 @@ final class PlayerModel {
     var itemId: String { request.item.id }
 
     func start() async {
+        AudioPlayer.shared.stop()   // video takes over from any music/audiobook
         try? AVAudioSession.sharedInstance().setActive(true)
         uiTimeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.5, preferredTimescale: 600),
                                                         queue: .main) { [weak self] _ in

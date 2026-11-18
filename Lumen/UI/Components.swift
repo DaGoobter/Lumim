@@ -289,6 +289,15 @@ struct ItemRouter: View {
     let item: BaseItem
     var body: some View {
         switch item.type ?? "" {
+        case "CollectionFolder" where item.collectionType == "music",
+             "UserView" where item.collectionType == "music":
+            MusicLibraryView(library: item)
+        case "MusicAlbum":
+            AlbumView(album: item)
+        case "Playlist" where item.mediaType == "Audio":
+            AlbumView(album: item)
+        case "MusicArtist":
+            ArtistView(artist: item)
         case "CollectionFolder", "Folder", "BoxSet", "UserView", "Playlist":
             LibraryGridView(parent: item)
         default:

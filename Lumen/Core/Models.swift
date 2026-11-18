@@ -209,6 +209,14 @@ struct BaseItem: Codable, Identifiable, Hashable {
     let userData: UserItemData?
     let mediaSources: [MediaSource]?
     let genres: [String]?
+    // Music / books
+    let mediaType: String?
+    let album: String?
+    let albumId: String?
+    let albumArtist: String?
+    let artists: [String]?
+    let albumPrimaryImageTag: String?
+    let childCount: Int?
     // Live TV
     let channelNumber: String?
     let currentProgram: ProgramInfo?
@@ -222,6 +230,10 @@ struct BaseItem: Codable, Identifiable, Hashable {
 extension BaseItem {
     var isPlayable: Bool { ["Movie", "Episode", "Video", "MusicVideo", "TvChannel"].contains(type ?? "") }
     var isLiveChannel: Bool { type == "TvChannel" }
+    var isAudio: Bool { type == "Audio" || type == "AudioBook" }
+    var isAudiobook: Bool { type == "AudioBook" }
+    var isBook: Bool { type == "Book" }
+    var artistLine: String? { albumArtist ?? artists?.first }
     var isSeries: Bool { type == "Series" }
 
     /// Keys in ImageTags are lowercased by our decoder ("primary", "logo", "thumb").

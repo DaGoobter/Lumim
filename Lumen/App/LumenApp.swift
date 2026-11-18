@@ -35,6 +35,7 @@ struct LumenApp: App {
             RootView()
                 .environment(app)
                 .environment(downloads)
+                .environment(AudioPlayer.shared)
                 .preferredColorScheme(.dark)
                 .tint(Theme.accent)
         }
@@ -65,26 +66,28 @@ struct MainTabView: View {
         if #available(iOS 18.0, *) {
             // Tab bar on iPhone; on iPad it can expand into a sidebar.
             TabView {
-                Tab("Home", systemImage: "house.fill") { NavigationStack { HomeView() } }
-                Tab("Library", systemImage: "square.grid.2x2.fill") { NavigationStack { LibrariesView() } }
-                Tab("Live TV", systemImage: "tv") { NavigationStack { LiveTVView() } }
-                Tab("Downloads", systemImage: "arrow.down.circle.fill") { NavigationStack { DownloadsView() } }
-                Tab("Settings", systemImage: "gearshape.fill") { NavigationStack { SettingsView() } }
+                Tab("Home", systemImage: "house.fill") { NavigationStack { HomeView() }.withMiniPlayer() }
+                Tab("Library", systemImage: "square.grid.2x2.fill") { NavigationStack { LibrariesView() }.withMiniPlayer() }
+                Tab("Live TV", systemImage: "tv") { NavigationStack { LiveTVView() }.withMiniPlayer() }
+                Tab("Downloads", systemImage: "arrow.down.circle.fill") { NavigationStack { DownloadsView() }.withMiniPlayer() }
+                Tab("Settings", systemImage: "gearshape.fill") { NavigationStack { SettingsView() }.withMiniPlayer() }
             }
             .tabViewStyle(.sidebarAdaptable)
+            .withNowPlaying()
         } else {
             TabView {
-                NavigationStack { HomeView() }
+                NavigationStack { HomeView() }.withMiniPlayer()
                     .tabItem { Label("Home", systemImage: "house.fill") }
-                NavigationStack { LibrariesView() }
+                NavigationStack { LibrariesView() }.withMiniPlayer()
                     .tabItem { Label("Library", systemImage: "square.grid.2x2.fill") }
-                NavigationStack { LiveTVView() }
+                NavigationStack { LiveTVView() }.withMiniPlayer()
                     .tabItem { Label("Live TV", systemImage: "tv") }
-                NavigationStack { DownloadsView() }
+                NavigationStack { DownloadsView() }.withMiniPlayer()
                     .tabItem { Label("Downloads", systemImage: "arrow.down.circle.fill") }
-                NavigationStack { SettingsView() }
+                NavigationStack { SettingsView() }.withMiniPlayer()
                     .tabItem { Label("Settings", systemImage: "gearshape.fill") }
             }
+            .withNowPlaying()
         }
     }
 }
