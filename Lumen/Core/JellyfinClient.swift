@@ -164,6 +164,32 @@ final class JellyfinClient {
         return r.items
     }
 
+    // MARK: Live TV
+
+    func liveChannels() async throws -> [BaseItem] {
+        let r: ItemsResult = try await get("LiveTv/Channels", query: [
+            "userId": userId, "addCurrentProgram": "true", "enableImageTypes": "Primary,Thumb",
+            "fields": "PrimaryImageAspectRatio,ChannelInfo", "limit": "1000",
+        ])
+        return r.items
+    }
+
+    /// Guide entries for the next few hours, grouped by channel.
+    func liveGuide(hours: Double = 4) async throws -> [String: [ProgramInfo]] {
+        let f = ISO8601DateFormatter()
+        let now = Date()
+        let r: ProgramsResult = try await get("LiveTv/Programs", query: [
+            "userId": userId, "minEndDate": f.string(from: now),
+            "maxStartDate": f.string(from: now.addingTimeInterval(hours * 3600)),
+            "sortBy": "StartDate", "limit": "3000", "enableImages": "false",
+        ])
+        return Dictionary(grouping: r.items, by: { $0.channelId ?? "" })
+    }
+
+    func closeLiveStream(_ liveStreamId: String) async {
+        _ = try? await send("LiveTv/LiveStreams/Close", query: ["liveStreamId": liveStreamId])
+    }
+
     // MARK: Playback
 
     func playbackInfo(itemId: String, maxBitrate: Int, startTicks: Int64 = 0,

@@ -53,6 +53,10 @@ struct ItemsResult: Codable {
     let totalRecordCount: Int?
 }
 
+struct ProgramsResult: Codable {
+    let items: [ProgramInfo]
+}
+
 struct UserItemData: Codable {
     let playbackPositionTicks: Int64?
     let played: Bool?
@@ -113,6 +117,7 @@ struct MediaSource: Codable {
     let supportsDirectStream: Bool?
     let supportsTranscoding: Bool?
     let transcodingUrl: String?
+    let liveStreamId: String?
     let defaultAudioStreamIndex: Int?
     let mediaStreams: [MediaStream]?
 }
@@ -143,6 +148,42 @@ struct SessionInfo: Codable {
     let transcodingInfo: TranscodingInfo?
 }
 
+/// A guide entry for a live channel.
+struct ProgramInfo: Codable, Identifiable, Hashable {
+    let id: String
+    let name: String?
+    let episodeTitle: String?
+    let overview: String?
+    let channelId: String?
+    let startDate: String?
+    let endDate: String?
+    let isMovie: Bool?
+    let isLive: Bool?
+
+    var start: Date? { startDate.flatMap(parseJellyfinDate) }
+    var end: Date? { endDate.flatMap(parseJellyfinDate) }
+
+    func progress(at now: Date = Date()) -> Double? {
+        guard let start, let end, end > start else { return nil }
+        return min(1, max(0, now.timeIntervalSince(start) / end.timeIntervalSince(start)))
+    }
+
+    var title: String { [name, episodeTitle].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ") }
+}
+
+/// Jellyfin dates look like 2026-11-17T19:00:00.0000000Z (7 fractional digits), which ISO8601DateFormatter rejects.
+func parseJellyfinDate(_ s: String) -> Date? {
+    var trimmed = s
+    if let dot = trimmed.firstIndex(of: ".") {
+        let tail = trimmed[dot...].drop(while: { $0 == "." || $0.isNumber })
+        trimmed = String(trimmed[..<dot]) + tail
+    }
+    if !trimmed.hasSuffix("Z") && !trimmed.contains("+") && trimmed.filter({ $0 == "-" }).count <= 2 { trimmed += "Z" }
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime]
+    return f.date(from: trimmed)
+}
+
 struct BaseItem: Codable, Identifiable, Hashable {
     let id: String
     let name: String?
@@ -168,6 +209,9 @@ struct BaseItem: Codable, Identifiable, Hashable {
     let userData: UserItemData?
     let mediaSources: [MediaSource]?
     let genres: [String]?
+    // Live TV
+    let channelNumber: String?
+    let currentProgram: ProgramInfo?
 
     static func == (lhs: BaseItem, rhs: BaseItem) -> Bool { lhs.id == rhs.id }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
@@ -176,7 +220,8 @@ struct BaseItem: Codable, Identifiable, Hashable {
 // MARK: - Helpers
 
 extension BaseItem {
-    var isPlayable: Bool { ["Movie", "Episode", "Video", "MusicVideo"].contains(type ?? "") }
+    var isPlayable: Bool { ["Movie", "Episode", "Video", "MusicVideo", "TvChannel"].contains(type ?? "") }
+    var isLiveChannel: Bool { type == "TvChannel" }
     var isSeries: Bool { type == "Series" }
 
     /// Keys in ImageTags are lowercased by our decoder ("primary", "logo", "thumb").

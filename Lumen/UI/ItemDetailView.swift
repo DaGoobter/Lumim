@@ -122,7 +122,7 @@ struct ItemDetailView: View {
             }
             .buttonStyle(PlayButtonStyle())
 
-            if it.isPlayable { DownloadButton(item: it) }
+            if it.isPlayable && !it.isLiveChannel { DownloadButton(item: it) }
         }
         if let p = it.progress { ProgressBar(value: p).frame(maxWidth: 260) }
     }

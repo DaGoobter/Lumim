@@ -67,6 +67,7 @@ struct MainTabView: View {
             TabView {
                 Tab("Home", systemImage: "house.fill") { NavigationStack { HomeView() } }
                 Tab("Library", systemImage: "square.grid.2x2.fill") { NavigationStack { LibrariesView() } }
+                Tab("Live TV", systemImage: "tv") { NavigationStack { LiveTVView() } }
                 Tab("Downloads", systemImage: "arrow.down.circle.fill") { NavigationStack { DownloadsView() } }
                 Tab("Settings", systemImage: "gearshape.fill") { NavigationStack { SettingsView() } }
             }
@@ -77,6 +78,8 @@ struct MainTabView: View {
                     .tabItem { Label("Home", systemImage: "house.fill") }
                 NavigationStack { LibrariesView() }
                     .tabItem { Label("Library", systemImage: "square.grid.2x2.fill") }
+                NavigationStack { LiveTVView() }
+                    .tabItem { Label("Live TV", systemImage: "tv") }
                 NavigationStack { DownloadsView() }
                     .tabItem { Label("Downloads", systemImage: "arrow.down.circle.fill") }
                 NavigationStack { SettingsView() }

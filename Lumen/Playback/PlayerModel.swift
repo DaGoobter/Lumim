@@ -90,6 +90,9 @@ final class PlayerModel {
     private(set) var subtitleIndex: Int = -1
 
     var isOffline: Bool { request.localDownload != nil }
+    var isLive: Bool { request.item.isLiveChannel }
+    /// What's on now (live channels).
+    var liveProgramTitle: String? { request.item.currentProgram?.title }
 
     @ObservationIgnored private let request: PlaybackRequest
     @ObservationIgnored private let client: JellyfinClient?
@@ -98,6 +101,7 @@ final class PlayerModel {
     @ObservationIgnored private var appliedPreferences = false
     @ObservationIgnored private var mediaSourceId: String?
     @ObservationIgnored private var playSessionId: String?
+    @ObservationIgnored private var liveStreamId: String?
     @ObservationIgnored private var reportedMethod = "DirectPlay"
     @ObservationIgnored private var timeObserver: Any?
     @ObservationIgnored private var uiTimeObserver: Any?
@@ -151,7 +155,9 @@ final class PlayerModel {
     private func refreshClock() {
         let t = player.currentTime().seconds
         if t.isFinite { currentTime = t }
-        if let d = player.currentItem?.duration.seconds, d.isFinite, d > 0 {
+        if isLive {
+            duration = 0
+        } else if let d = player.currentItem?.duration.seconds, d.isFinite, d > 0 {
             duration = d
         } else if let ticks = request.item.runTimeTicks {
             duration = Double(ticks) / 10_000_000
@@ -185,13 +191,18 @@ final class PlayerModel {
 
     private func updateNowPlaying() {
         var info: [String: Any] = [
-            MPMediaItemPropertyTitle: request.item.episodeLabel ?? request.item.displayTitle,
+            MPMediaItemPropertyTitle: isLive ? (liveProgramTitle ?? request.item.displayTitle)
+                : (request.item.episodeLabel ?? request.item.displayTitle),
             MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime,
             MPMediaItemPropertyPlaybackDuration: duration,
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
             MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.video.rawValue,
         ]
         if request.item.type == "Episode" { info[MPMediaItemPropertyArtist] = request.item.seriesName }
+        if isLive {
+            info[MPMediaItemPropertyArtist] = request.item.name
+            info[MPNowPlayingInfoPropertyIsLiveStream] = true
+        }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
 
@@ -213,7 +224,8 @@ final class PlayerModel {
         let seconds = player.currentTime().seconds
         let ticks = seconds.isFinite ? Int64(seconds * 10_000_000) : request.startTicks
         if let old = playSessionId, let client { await client.stopEncoding(playSessionId: old) }
-        await load(startTicks: ticks)
+        if let live = liveStreamId, let client { await client.closeLiveStream(live); liveStreamId = nil }
+        await load(startTicks: isLive ? 0 : ticks)
     }
 
     /// After the server downloads a subtitle, wait for it to appear on the item, then switch to it.
@@ -283,6 +295,7 @@ final class PlayerModel {
                 source = src
                 mediaSourceId = src.id
                 playSessionId = info.playSessionId
+                liveStreamId = src.liveStreamId
 
                 let url: URL
                 if src.supportsDirectPlay == true && !customTracks {
@@ -331,7 +344,7 @@ final class PlayerModel {
             guard !itemReady else { return }
             itemReady = true
             isLoading = false
-            if pendingSeekTicks > 0 {
+            if pendingSeekTicks > 0 && !isLive {
                 let t = CMTime(seconds: Double(pendingSeekTicks) / 10_000_000, preferredTimescale: 600)
                 player.seek(to: t, toleranceBefore: .zero, toleranceAfter: .positiveInfinity)
             }
@@ -424,6 +437,7 @@ final class PlayerModel {
         ]
         if let mediaSourceId { body["MediaSourceId"] = mediaSourceId }
         if let playSessionId { body["PlaySessionId"] = playSessionId }
+        if let liveStreamId { body["LiveStreamId"] = liveStreamId }
         if let audioIndex { body["AudioStreamIndex"] = audioIndex }
         body["SubtitleStreamIndex"] = subtitleIndex
         let path: String
@@ -448,5 +462,6 @@ final class PlayerModel {
         if reportedStart { await report(.stop) }
         player.replaceCurrentItem(with: nil)
         if let playSessionId, let client { await client.stopEncoding(playSessionId: playSessionId) }
+        if let liveStreamId, let client { await client.closeLiveStream(liveStreamId) }
     }
 }

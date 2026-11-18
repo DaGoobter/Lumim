@@ -146,8 +146,8 @@ struct PlayerScreen: View {
                     circleButton("xmark", label: "Close") { close() }
                     VStack(alignment: .leading, spacing: 2) {
                         Text(request.item.displayTitle).font(.headline).lineLimit(1)
-                        if let ep = request.item.episodeLabel {
-                            Text(ep).font(.caption).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
+                        if let sub = model.isLive ? model.liveProgramTitle : request.item.episodeLabel {
+                            Text(sub).font(.caption).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
                         }
                     }
                     Spacer()
@@ -169,10 +169,12 @@ struct PlayerScreen: View {
 
                 // Transport
                 HStack(spacing: 56) {
+                    if !model.isLive {
                     Button { model.skip(by: -10); scheduleHide() } label: {
                         Image(systemName: "gobackward.10").font(.system(size: 30, weight: .medium))
                     }
                     .accessibilityLabel("Back 10 seconds")
+                    }
                     Button { model.togglePlay(); scheduleHide() } label: {
                         Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
                             .font(.system(size: 46, weight: .bold))
@@ -180,16 +182,34 @@ struct PlayerScreen: View {
                             .contentTransition(.symbolEffect(.replace))
                     }
                     .accessibilityLabel(model.isPlaying ? "Pause" : "Play")
+                    if !model.isLive {
                     Button { model.skip(by: 10); scheduleHide() } label: {
                         Image(systemName: "goforward.10").font(.system(size: 30, weight: .medium))
                     }
                     .accessibilityLabel("Forward 10 seconds")
+                    }
                 }
                 .foregroundStyle(.white)
                 .shadow(color: .black.opacity(0.4), radius: 8)
 
                 Spacer()
 
+                if model.isLive {
+                    HStack(spacing: 10) {
+                        Text("LIVE")
+                            .font(.caption.weight(.heavy))
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(Color.red, in: RoundedRectangle(cornerRadius: 5))
+                        if let program = model.liveProgramTitle {
+                            Text(program).font(.subheadline.weight(.semibold)).lineLimit(1)
+                        }
+                        Spacer()
+                        zoomMenu(model: model, size: size)
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 14)
+                } else {
                 // Scrubber
                 VStack(spacing: 6) {
                     Slider(
@@ -222,6 +242,7 @@ struct PlayerScreen: View {
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 10)
+                }
             }
         }
     }
