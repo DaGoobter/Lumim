@@ -7,13 +7,17 @@ struct PlayerScreen: View {
     @Environment(\.dismiss) private var dismiss
     @State private var model: PlayerModel?
     @State private var showInfo = false
+    @State private var controlsVisible = true
+    @State private var hideTask: Task<Void, Never>?
+
+    private var pinControls: Bool { model == nil || model?.isLoading == true || model?.errorMessage != nil || showInfo }
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
             if let model {
-                VideoPlayerController(player: model.player).ignoresSafeArea()
+                VideoPlayerController(player: model.player, onTap: toggleControls).ignoresSafeArea()
 
                 if model.isLoading && model.errorMessage == nil {
                     ProgressView().tint(.white).scaleEffect(1.5)
@@ -42,6 +46,9 @@ struct PlayerScreen: View {
                 .padding(.top, 56)
                 Spacer()
             }
+            .opacity(controlsVisible || pinControls ? 1 : 0)
+            .allowsHitTesting(controlsVisible || pinControls)
+            .animation(.easeInOut(duration: 0.25), value: controlsVisible)
         }
         .statusBarHidden()
         .task {
@@ -49,8 +56,11 @@ struct PlayerScreen: View {
             let m = PlayerModel(request: request, client: app.client, maxBitrate: app.maxBitrate)
             model = m
             await m.start()
+            scheduleHide()
         }
         .onDisappear { Task { await model?.stop() } }
+        .onChange(of: model?.isLoading) { _, loading in if loading == false { scheduleHide() } }
+        .onChange(of: showInfo) { _, shown in if !shown { scheduleHide() } }
         .sheet(isPresented: $showInfo) {
             if let model { StreamInfoView(diagnostics: model.diagnostics) }
         }
@@ -66,6 +76,21 @@ struct PlayerScreen: View {
         .foregroundStyle(.white)
     }
 
+    /// Mirrors the system player: a tap shows/hides controls, and they fade after a few seconds.
+    private func toggleControls() {
+        controlsVisible.toggle()
+        if controlsVisible { scheduleHide() } else { hideTask?.cancel() }
+    }
+
+    private func scheduleHide() {
+        hideTask?.cancel()
+        hideTask = Task {
+            try? await Task.sleep(for: .seconds(3.5))
+            guard !Task.isCancelled, !pinControls else { return }
+            controlsVisible = false
+        }
+    }
+
     private func close() {
         Task {
             await model?.stop()
@@ -76,9 +101,25 @@ struct PlayerScreen: View {
 
 struct VideoPlayerController: UIViewControllerRepresentable {
     let player: AVPlayer
+    var onTap: () -> Void = {}
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var onTap: () -> Void = {}
+        @objc func tapped() { onTap() }
+        // Let the system player keep handling the same tap (it toggles its own controls).
+        func gestureRecognizer(_ g: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let vc = AVPlayerViewController()
+        context.coordinator.onTap = onTap
+        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tapped))
+        tap.cancelsTouchesInView = false
+        tap.delegate = context.coordinator
+        vc.view.addGestureRecognizer(tap)
         vc.player = player
         vc.allowsPictureInPicturePlayback = true
         vc.canStartPictureInPictureAutomaticallyFromInline = true
@@ -86,7 +127,9 @@ struct VideoPlayerController: UIViewControllerRepresentable {
         return vc
     }
 
-    func updateUIViewController(_ vc: AVPlayerViewController, context: Context) {}
+    func updateUIViewController(_ vc: AVPlayerViewController, context: Context) {
+        context.coordinator.onTap = onTap
+    }
 }
 
 struct StreamInfoView: View {
