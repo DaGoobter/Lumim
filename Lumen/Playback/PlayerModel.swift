@@ -298,7 +298,21 @@ final class PlayerModel {
                 liveStreamId = src.liveStreamId
 
                 let url: URL
-                if src.supportsDirectPlay == true && !customTracks {
+                if isLive {
+                    // Live TV: always HLS (iOS can't play the raw MPEG-TS stream the server offers).
+                    if let t = src.transcodingUrl, t.lowercased().contains(".m3u8"),
+                       let u = client.absoluteURL(serverRelative: t) {
+                        url = u
+                    } else {
+                        url = client.liveHLSURL(channelId: request.item.id, mediaSourceId: src.id,
+                                                liveStreamId: src.liveStreamId, playSessionId: info.playSessionId,
+                                                maxBitrate: maxBitrate, audioIndex: audioIndex)
+                    }
+                    reportedMethod = "Transcode"
+                    diagnostics = StreamDiagnostics.from(source: src, usingHLS: true,
+                                                         audioIndex: audioIndex, subtitleIndex: subtitleIndex)
+                    diagnostics.playMethod = "Live stream (HLS)"
+                } else if src.supportsDirectPlay == true && !customTracks {
                     url = client.directPlayURL(itemId: request.item.id, mediaSourceId: src.id, container: src.container)
                     reportedMethod = "DirectPlay"
                     diagnostics = StreamDiagnostics.from(source: src, usingHLS: false,

@@ -186,6 +186,30 @@ final class JellyfinClient {
         return Dictionary(grouping: r.items, by: { $0.channelId ?? "" })
     }
 
+    /// An HLS stream for a live channel. The server otherwise offers a raw MPEG-TS stream for live TV,
+    /// which iOS can't play. Video and audio are copied when compatible (H.264/HEVC + AAC/AC-3/E-AC-3).
+    func liveHLSURL(channelId: String, mediaSourceId: String, liveStreamId: String?, playSessionId: String?,
+                    maxBitrate: Int, audioIndex: Int?) -> URL {
+        url("Videos/\(channelId)/master.m3u8", query: [
+            "MediaSourceId": mediaSourceId,
+            "LiveStreamId": liveStreamId,
+            "PlaySessionId": playSessionId,
+            "DeviceId": Self.deviceId,
+            "VideoCodec": DeviceCapabilities.hevc ? "h264,hevc" : "h264",
+            "AudioCodec": "aac,eac3,ac3,mp3",
+            "AudioStreamIndex": audioIndex.map(String.init),
+            "SegmentContainer": "ts",
+            "MinSegments": "1",
+            "BreakOnNonKeyFrames": "true",
+            "TranscodingMaxAudioChannels": "6",
+            "MaxStreamingBitrate": String(maxBitrate),
+            "AllowVideoStreamCopy": "true",
+            "AllowAudioStreamCopy": "true",
+            "RequireAvc": "false",
+            "api_key": accessToken,
+        ])
+    }
+
     func closeLiveStream(_ liveStreamId: String) async {
         _ = try? await send("LiveTv/LiveStreams/Close", query: ["liveStreamId": liveStreamId])
     }
