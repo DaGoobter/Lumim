@@ -19,6 +19,15 @@ struct SettingsView: View {
         .init(label: "4 Mbps", value: 4_000_000),
     ]
 
+    @State private var djEngine: DJVoice.Engine = DJVoice.shared.engine
+    @State private var kokoroURL = DJVoice.shared.kokoroURL
+    @State private var kokoroVoice = DJVoice.shared.kokoroVoice
+    @State private var openAIKey = DJVoice.shared.openAIKey
+    @State private var openAIVoice = DJVoice.shared.openAIVoice
+    @State private var elevenKey = DJVoice.shared.elevenKey
+    @State private var elevenVoice = DJVoice.shared.elevenVoice
+    @State private var testingVoice = false
+    @State private var voiceTestResult: String?
     @State private var remoteField = ""
     @State private var localField = ""
     @State private var savingAddresses = false
@@ -116,6 +125,59 @@ struct SettingsView: View {
                 Text("Pinch the video to zoom, or double-tap to switch between Fit and Fill.")
             }
 
+            Section {
+                Picker("Voice", selection: $djEngine) {
+                    ForEach(DJVoice.Engine.allCases) { Text($0.label).tag($0) }
+                }
+                switch djEngine {
+                case .kokoro:
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Kokoro address").font(.caption).foregroundStyle(.secondary)
+                        TextField("192.168.1.20:8880", text: $kokoroURL)
+                            .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    }
+                    Picker("Kokoro voice", selection: $kokoroVoice) {
+                        ForEach([("af_heart", "Heart (warm, female)"), ("af_bella", "Bella (bright, female)"),
+                                 ("af_nicole", "Nicole (soft, female)"), ("am_michael", "Michael (male)"),
+                                 ("am_adam", "Adam (deep, male)"), ("bm_george", "George (British, male)"),
+                                 ("bf_emma", "Emma (British, female)")], id: \.0) { Text($0.1).tag($0.0) }
+                    }
+                case .openAI:
+                    SecureField("OpenAI API key", text: $openAIKey)
+                    Picker("OpenAI voice", selection: $openAIVoice) {
+                        ForEach(["coral", "sage", "ballad", "verse", "ash", "nova", "shimmer", "onyx", "alloy", "echo", "fable"],
+                                id: \.self) { Text($0.capitalized).tag($0) }
+                    }
+                case .elevenLabs:
+                    SecureField("ElevenLabs API key", text: $elevenKey)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Voice ID (from your ElevenLabs voice library)").font(.caption).foregroundStyle(.secondary)
+                        TextField("21m00Tcm4TlvDq8Ikz7M", text: $elevenVoice)
+                            .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    }
+                case .iPhone:
+                    EmptyView()
+                }
+                Button {
+                    saveVoice()
+                    testingVoice = true
+                    voiceTestResult = nil
+                    Task {
+                        await DJVoice.shared.say("Hey, it's your Lumen DJ. If I sound like a real person, you're all set.")
+                        voiceTestResult = DJVoice.shared.lastError.map { "Couldn't reach the voice: \($0)" }
+                        testingVoice = false
+                    }
+                } label: {
+                    HStack { Text("Test voice"); if testingVoice { Spacer(); ProgressView() } }
+                }
+                .disabled(testingVoice)
+                if let voiceTestResult { Text(voiceTestResult).font(.footnote).foregroundStyle(.red) }
+            } header: {
+                Text("DJ Voice")
+            } footer: {
+                Text(voiceFooter)
+            }
+
             Section("This device") {
                 capability("Dolby Vision", DeviceCapabilities.dolbyVision)
                 capability("HDR10", DeviceCapabilities.hdr10)
@@ -141,7 +203,38 @@ struct SettingsView: View {
         .onChange(of: app.trackPrefs) { app.persistSettings() }
         .onChange(of: app.showBrightnessSlider) { app.persistSettings() }
         .onChange(of: app.showVolumeSlider) { app.persistSettings() }
-        .onAppear { loadFields() }
+        .onAppear {
+            loadFields()
+            if kokoroURL.isEmpty, let host = app.session?.localURL.flatMap({ URL(string: $0)?.host }) {
+                kokoroURL = "\(host):8880"
+            }
+        }
+        .onDisappear { saveVoice() }
+        .onChange(of: djEngine) { saveVoice() }
+    }
+
+    private var voiceFooter: String {
+        switch djEngine {
+        case .kokoro:
+            return "Free and private: a natural-sounding voice running on your own PC. One-time setup: install Docker Desktop, then run  docker run -d --restart unless-stopped -p 8880:8880 ghcr.io/remsky/kokoro-fastapi-cpu:latest  and enter your PC's address above. Away from home the DJ shows its lines as text unless you also expose Kokoro through Caddy."
+        case .openAI:
+            return "Very human voices that act like a radio DJ. Uses your OpenAI API key; DJ intros cost roughly a cent per few minutes of talking."
+        case .elevenLabs:
+            return "The most lifelike voices. ElevenLabs has a free monthly allowance that easily covers DJ intros."
+        case .iPhone:
+            return "Uses the iPhone's built-in speech. For a better iPhone voice, download an Enhanced or Premium English voice in Settings → Accessibility → Spoken Content → Voices."
+        }
+    }
+
+    private func saveVoice() {
+        let v = DJVoice.shared
+        if v.engine != djEngine { v.engine = djEngine }
+        if v.kokoroURL != kokoroURL { v.kokoroURL = kokoroURL }
+        if v.kokoroVoice != kokoroVoice { v.kokoroVoice = kokoroVoice }
+        if v.openAIKey != openAIKey { v.openAIKey = openAIKey }
+        if v.openAIVoice != openAIVoice { v.openAIVoice = openAIVoice }
+        if v.elevenKey != elevenKey { v.elevenKey = elevenKey }
+        if v.elevenVoice != elevenVoice { v.elevenVoice = elevenVoice }
     }
 
     private func loadFields() {

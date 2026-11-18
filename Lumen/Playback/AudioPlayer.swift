@@ -52,12 +52,11 @@ final class AudioPlayer {
     @ObservationIgnored private var commandsInstalled = false
     @ObservationIgnored private var playedIds = Set<String>()
     @ObservationIgnored private var refilling = false
-    @ObservationIgnored private let speech = AVSpeechSynthesizer()
-    @ObservationIgnored private let speechDelegate = SpeechDelegate()
+    @ObservationIgnored private var djSpeaking = false
+    @ObservationIgnored private var fadeTask: Task<Void, Never>?
 
     private init() {
         player.automaticallyWaitsToMinimizeStalling = true
-        speech.delegate = speechDelegate
         timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.5, preferredTimescale: 600),
                                                       queue: .main) { [weak self] _ in
             Task { @MainActor [weak self] in self?.tick() }
@@ -90,6 +89,11 @@ final class AudioPlayer {
         stopSpeech()
         let first = await station.refill(client, [])
         guard !first.isEmpty else { return }
+        // Get the first intro ready before the music starts.
+        if djVoiceEnabled, let intro = first.first?.intro, DJVoice.shared.engine != .iPhone {
+            DJVoice.shared.prefetch(intro)
+            try? await Task.sleep(for: .milliseconds(1500))
+        }
         play(entries: first, startAt: 0, shuffle: false, station: station, client: client)
     }
 
@@ -152,12 +156,7 @@ final class AudioPlayer {
     // MARK: Transport
 
     func togglePlay() {
-        if speech.isSpeaking {
-            stopSpeech()
-            player.playImmediately(atRate: rate)
-            tick()
-            return
-        }
+        if djSpeaking { stopSpeech() }
         if player.timeControlStatus == .paused { player.playImmediately(atRate: rate) } else { player.pause() }
         tick()
         Task { await report() }
@@ -242,6 +241,7 @@ final class AudioPlayer {
         defer { refilling = false }
         let exclude = playedIds.union(queue.map(\.item.id))
         let more = await station.refill(client, exclude)
+        if djVoiceEnabled { more.compactMap(\.intro).forEach { DJVoice.shared.prefetch($0) } }
         queue.append(contentsOf: more)
     }
 
@@ -273,12 +273,18 @@ final class AudioPlayer {
 
         if let intro = entry.intro { djLine = intro }
         if allowIntro, djVoiceEnabled, let intro = entry.intro {
-            speak(intro) { [weak self] in
-                guard let self, self.current?.id == item.id else { return }
-                self.player.playImmediately(atRate: self.rate)
-                self.tick()
+            // Radio style: the song starts quietly under the DJ, then comes up.
+            player.volume = 0.18
+            player.playImmediately(atRate: rate)
+            djSpeaking = true
+            Task {
+                await DJVoice.shared.say(intro)
+                guard self.current?.id == item.id else { return }
+                self.djSpeaking = false
+                self.fadeVolume(to: 1)
             }
         } else {
+            player.volume = 1
             player.playImmediately(atRate: rate)
         }
         tick()
@@ -287,28 +293,30 @@ final class AudioPlayer {
 
     // MARK: DJ voice
 
-    private func speak(_ text: String, then done: @escaping @MainActor () -> Void) {
-        player.pause()
-        let utterance = AVSpeechUtterance(string: text)
-        let voices = AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix("en") }
-        utterance.voice = voices.first { $0.quality == .premium } ?? voices.first { $0.quality == .enhanced }
-            ?? AVSpeechSynthesisVoice(language: "en-US")
-        utterance.rate = 0.5
-        utterance.postUtteranceDelay = 0.2
-        speechDelegate.onFinish = { Task { @MainActor in done() } }
-        speech.speak(utterance)
+    private func stopSpeech() {
+        guard djSpeaking else { return }
+        djSpeaking = false
+        DJVoice.shared.stop()
+        fadeVolume(to: 1)
     }
 
-    private func stopSpeech() {
-        speechDelegate.onFinish = nil
-        if speech.isSpeaking { speech.stopSpeaking(at: .immediate) }
+    private func fadeVolume(to target: Float) {
+        fadeTask?.cancel()
+        fadeTask = Task {
+            let start = player.volume
+            for step in 1...12 {
+                try? await Task.sleep(for: .milliseconds(60))
+                guard !Task.isCancelled else { return }
+                player.volume = start + (target - start) * Float(step) / 12
+            }
+        }
     }
 
     private func tick() {
         let t = player.currentTime().seconds
         if t.isFinite { currentTime = t }
         if let d = player.currentItem?.duration.seconds, d.isFinite, d > 0 { duration = d }
-        isPlaying = player.timeControlStatus != .paused || speech.isSpeaking
+        isPlaying = player.timeControlStatus != .paused
         updateNowPlaying()
         if Date().timeIntervalSince(lastReport) > 10, isPlaying { Task { await report() } }
     }
@@ -393,14 +401,5 @@ final class AudioPlayer {
             cmd.removeTarget(nil)
         }
         commandsInstalled = false
-    }
-}
-
-final class SpeechDelegate: NSObject, AVSpeechSynthesizerDelegate {
-    var onFinish: (() -> Void)?
-    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        let f = onFinish
-        onFinish = nil
-        f?()
     }
 }

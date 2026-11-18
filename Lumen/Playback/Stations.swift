@@ -28,7 +28,7 @@ enum Stations {
                 var line = intro(for: kind, seed: seed)
                 if !state.greeted {
                     state.greeted = true
-                    line = "Hey, it's your Lumen DJ. " + line
+                    line = greeting + " " + line
                 }
                 return set.enumerated().map { i, item in QueueEntry(item: item, intro: i == 0 ? line : nil) }
             }
@@ -54,21 +54,55 @@ enum Stations {
     }
 
     private static func intro(for kind: DJSet, seed: BaseItem) -> String {
-        let song = seed.name ?? "this one"
+        let song = seed.name.map(cleanTitle) ?? "this one"
         let artist = seed.artistLine ?? "an artist you like"
+        let lines: [String]
         switch kind {
         case .heavyRotation:
-            return ["You've had \(artist) on repeat lately, so let's start with \(song).",
-                    "Back to one of your most played: \(song). Plus a few that fit right in."].randomElement()!
+            lines = [
+                "Okay, you've clearly had \(artist) on repeat lately. No judgment. Here's \(song).",
+                "Let's go back to one you keep coming back to. \(song), by \(artist).",
+                "This one's been getting a lot of love from you. \(artist), \(song). Then I've got a few more in the same lane.",
+            ]
         case .favorite:
-            return ["Here's one you love. \(song), by \(artist). I've lined up a few more in the same mood.",
-                    "A favorite of yours, \(song). Let's keep that feeling going."].randomElement()!
+            lines = [
+                "Here's one you hearted. \(song), by \(artist). Stick around, I've lined up some more like it.",
+                "A favorite of yours coming up. \(artist), with \(song).",
+                "You told me you love this one, so, \(song). Enjoy.",
+            ]
         case .throwback:
-            return ["Time for a throwback. You haven't played \(song) in a while.",
-                    "Remember this one? \(song), by \(artist). It's been a minute."].randomElement()!
+            lines = [
+                "Throwback time. You haven't played \(song) in a while, and honestly, it still holds up.",
+                "Remember this? \(artist), \(song). It's been a minute.",
+                "Let's dig into the archives for a second. Here's \(song).",
+            ]
         case .discover:
-            return ["Something from your library you haven't heard yet. \(song), by \(artist).",
-                    "Let's try something new to you: \(artist), with \(song)."].randomElement()!
+            lines = [
+                "Here's something sitting in your library that you've never actually played. \(artist), \(song). Let's see what you think.",
+                "Trying something new on you. \(song), by \(artist).",
+                "You've never played this one before, so, first listen. \(artist), \(song).",
+            ]
+        }
+        return lines.randomElement()!
+    }
+
+    /// "Big Shot (Album Version)" → "Big Shot", so the DJ doesn't read out edition notes.
+    private static func cleanTitle(_ title: String) -> String {
+        var t = title
+        while let r = t.range(of: #"\s*[\(\[][^\)\]]*(version|remaster|edit|mix|mono|stereo|live|explicit|feat\.?)[^\)\]]*[\)\]]"#,
+                             options: [.regularExpression, .caseInsensitive]) {
+            t.removeSubrange(r)
+        }
+        return t.trimmingCharacters(in: .whitespaces)
+    }
+
+    private static var greeting: String {
+        let h = Calendar.current.component(.hour, from: Date())
+        switch h {
+        case 5..<12: return "Good morning! It's your Lumen DJ."
+        case 12..<17: return "Hey, good afternoon. Lumen DJ here."
+        case 17..<22: return "Good evening. It's your Lumen DJ, let's get into it."
+        default: return "Hey, night owl. Lumen DJ here."
         }
     }
 
