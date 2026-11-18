@@ -110,6 +110,18 @@ struct ItemDetailView: View {
                     }
                 }
             }
+            if !episodes.isEmpty, let client = app.client {
+                let pending = episodes.filter { downloads.records[$0.id] == nil }
+                Button {
+                    Task { await downloads.startAll(pending, client: client) }
+                } label: {
+                    Label(pending.isEmpty ? "Season downloaded" : "Download season (\(pending.count))",
+                          systemImage: pending.isEmpty ? "checkmark.circle.fill" : "arrow.down.circle")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .buttonStyle(SecondaryButtonStyle())
+                .disabled(pending.isEmpty)
+            }
             LazyVStack(alignment: .leading, spacing: 14) {
                 ForEach(episodes) { ep in EpisodeRow(episode: ep) { playRequest = PlaybackRequest(item: ep, startTicks: ep.resumeTicks) } }
             }
@@ -132,7 +144,8 @@ struct ItemDetailView: View {
             return
         }
         if let local = downloads.records[it.id], local.state == .completed {
-            playRequest = PlaybackRequest(item: it, startTicks: it.resumeTicks, localDownload: local)
+            playRequest = PlaybackRequest(item: it, startTicks: local.needsSync == true ? local.resumeTicks : it.resumeTicks,
+                                          localDownload: local)
         } else {
             playRequest = PlaybackRequest(item: it, startTicks: it.resumeTicks)
         }
@@ -214,6 +227,10 @@ struct DownloadButton: View {
             guard let client = app.client else { return }
             if record?.state == .failed {
                 Task { await downloads.retry(item.id, client: client) }
+            } else if record?.state == .paused {
+                downloads.resume(item.id)
+            } else if record?.state == .downloading || record?.state == .queued {
+                downloads.pause(item.id)
             } else if record == nil {
                 Task { await downloads.start(item: item, client: client) }
             }
@@ -231,7 +248,9 @@ struct DownloadButton: View {
                 }
                 .frame(width: 20, height: 20)
             case .queued?:
-                ProgressView()
+                Image(systemName: "clock")
+            case .paused?:
+                Image(systemName: "pause.circle")
             case .failed?:
                 Image(systemName: "exclamationmark.arrow.circlepath")
             case nil:

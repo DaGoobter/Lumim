@@ -320,9 +320,14 @@ final class PlayerModel {
     enum ReportKind { case start, progress, stop }
 
     private func report(_ kind: ReportKind) async {
-        guard let client else { return }
         let seconds = player.currentTime().seconds
         let ticks = seconds.isFinite ? Int64(seconds * 10_000_000) : 0
+        // Offline: remember the position on the device; it syncs to the server when back online.
+        if let local = request.localDownload {
+            if kind != .start, ticks > 0 { DownloadManager.shared.recordOfflineProgress(local.itemId, ticks: ticks) }
+            return
+        }
+        guard let client else { return }
         var body: [String: Any] = [
             "ItemId": request.item.id,
             "PositionTicks": ticks,

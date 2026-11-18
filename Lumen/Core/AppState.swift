@@ -91,6 +91,8 @@ final class AppState {
         if client?.baseURL != target {
             client = JellyfinClient(baseURL: target, deviceName: UIDevice.current.name, token: s.token, userId: s.userId)
         }
+        // Back online: resume queued downloads and push any offline watch progress.
+        if let client { DownloadManager.shared.attach(client: client) }
     }
 
     /// Quick reachability check that also confirms it's the same server (not some other device on this Wi-Fi).

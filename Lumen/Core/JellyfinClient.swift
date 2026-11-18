@@ -248,6 +248,21 @@ final class JellyfinClient {
         return rebuilt
     }
 
+    /// Set watch position / played state directly (used to sync offline viewing).
+    func updateUserData(itemId: String, positionTicks: Int64, played: Bool) async -> Bool {
+        let body: [String: Any] = [
+            "PlaybackPositionTicks": positionTicks,
+            "Played": played,
+            "LastPlayedDate": ISO8601DateFormatter().string(from: Date()),
+        ]
+        if (try? await send("UserItems/\(itemId)/UserData", query: ["userId": userId], body: body)) != nil {
+            return true
+        }
+        // Older servers: report a stopped playback session at that position instead.
+        let fallback: [String: Any] = ["ItemId": itemId, "PositionTicks": positionTicks, "CanSeek": true]
+        return (try? await send("Sessions/Playing/Stopped", body: fallback)) != nil
+    }
+
     func reportPlayback(_ path: String, body: [String: Any]) async {
         _ = try? await send(path, body: body)
     }
