@@ -28,6 +28,8 @@ final class AppState {
     var maxBitrate: Int = 200_000_000
     /// Switch to the server's local address when on the same network (faster, no internet round-trip).
     var preferLocal: Bool = true
+    /// Default audio/subtitle choices.
+    var trackPrefs = TrackPreferences.load()
 
     @ObservationIgnored private let monitor = NWPathMonitor()
     @ObservationIgnored private var routeTask: Task<Void, Never>?
@@ -35,6 +37,7 @@ final class AppState {
     func persistSettings() {
         UserDefaults.standard.set(maxBitrate, forKey: "lumen.maxBitrate")
         UserDefaults.standard.set(preferLocal, forKey: "lumen.preferLocal")
+        trackPrefs.save()
     }
 
     init() {

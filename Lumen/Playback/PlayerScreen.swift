@@ -7,10 +7,11 @@ struct PlayerScreen: View {
     @Environment(\.dismiss) private var dismiss
     @State private var model: PlayerModel?
     @State private var showInfo = false
+    @State private var showSubtitleSearch = false
     @State private var controlsVisible = true
     @State private var hideTask: Task<Void, Never>?
 
-    private var pinControls: Bool { model == nil || model?.isLoading == true || model?.errorMessage != nil || showInfo }
+    private var pinControls: Bool { model == nil || model?.isLoading == true || model?.errorMessage != nil || showInfo || showSubtitleSearch }
 
     var body: some View {
         ZStack {
@@ -40,9 +41,9 @@ struct PlayerScreen: View {
                 HStack {
                     overlayButton("xmark") { close() }
                     Spacer()
-                    if let model, !model.isOffline, let source = model.source,
-                       !(source.audioStreams.count <= 1 && source.subtitleStreams.isEmpty) {
-                        TrackMenu(model: model, source: source, onOpen: { hideTask?.cancel() },
+                    if let model, !model.isOffline, let source = model.source {
+                        TrackMenu(model: model, source: source,
+                                  onSearch: { showSubtitleSearch = true },
                                   onPick: { scheduleHide() })
                     }
                     overlayButton("info.circle") { showInfo = true }
@@ -58,7 +59,8 @@ struct PlayerScreen: View {
         .statusBarHidden()
         .task {
             guard model == nil else { return }
-            let m = PlayerModel(request: request, client: app.client, maxBitrate: app.maxBitrate)
+            let m = PlayerModel(request: request, client: app.client, maxBitrate: app.maxBitrate,
+                                prefs: app.trackPrefs)
             model = m
             await m.start()
             scheduleHide()
@@ -66,6 +68,12 @@ struct PlayerScreen: View {
         .onDisappear { Task { await model?.stop() } }
         .onChange(of: model?.isLoading) { _, loading in if loading == false { scheduleHide() } }
         .onChange(of: showInfo) { _, shown in if !shown { scheduleHide() } }
+        .onChange(of: showSubtitleSearch) { _, shown in if !shown { scheduleHide() } }
+        .sheet(isPresented: $showSubtitleSearch) {
+            if let model, let client = app.client {
+                SubtitleSearchView(model: model, client: client, language: app.trackPrefs.subtitleLanguage)
+            }
+        }
         .sheet(isPresented: $showInfo) {
             if let model { StreamInfoView(diagnostics: model.diagnostics) }
         }
@@ -108,7 +116,7 @@ struct PlayerScreen: View {
 struct TrackMenu: View {
     let model: PlayerModel
     let source: MediaSource
-    let onOpen: () -> Void
+    let onSearch: () -> Void
     let onPick: () -> Void
 
     var body: some View {
@@ -140,6 +148,9 @@ struct TrackMenu: View {
                              selected: model.subtitleIndex == stream.index)
                     }
                 }
+                Button(action: onSearch) {
+                    Label("Search online…", systemImage: "magnifyingglass")
+                }
             }
         } label: {
             Image(systemName: "captions.bubble")
@@ -163,6 +174,104 @@ struct TrackMenu: View {
     private func pick(audio: Int?, subtitle: Int) {
         onPick()
         Task { await model.selectTracks(audio: audio, subtitle: subtitle) }
+    }
+}
+
+/// Finds subtitles online through the server (OpenSubtitles plugin) and switches to the one picked.
+struct SubtitleSearchView: View {
+    let model: PlayerModel
+    let client: JellyfinClient
+    @State var language: String
+    @Environment(\.dismiss) private var dismiss
+    @State private var results: [RemoteSubtitleInfo] = []
+    @State private var loading = false
+    @State private var message: String?
+    @State private var downloadingId: String?
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Picker("Language", selection: $language) {
+                        ForEach(Languages.all, id: \.code) { Text($0.name).tag($0.code) }
+                    }
+                }
+                if loading {
+                    HStack { Spacer(); ProgressView(); Spacer() }
+                }
+                if let message {
+                    Text(message).font(.footnote).foregroundStyle(.secondary)
+                }
+                Section {
+                    ForEach(results) { r in
+                        Button { Task { await download(r) } } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(r.name ?? "Subtitle").font(.subheadline).lineLimit(2)
+                                    Text(details(r)).font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                if downloadingId == r.id { ProgressView() }
+                            }
+                        }
+                        .disabled(downloadingId != nil)
+                    }
+                }
+            }
+            .navigationTitle("Find Subtitles")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
+            .task(id: language) { await search() }
+        }
+    }
+
+    private func details(_ r: RemoteSubtitleInfo) -> String {
+        var parts: [String] = []
+        if r.isHashMatch == true { parts.append("Exact match") }
+        if let p = r.providerName { parts.append(p) }
+        if let f = r.format { parts.append(f.uppercased()) }
+        if let d = r.downloadCount { parts.append("\(d) downloads") }
+        if r.hearingImpaired == true { parts.append("SDH") }
+        if r.forced == true { parts.append("Forced") }
+        if r.machineTranslated == true || r.aiTranslated == true { parts.append("Machine translated") }
+        return parts.joined(separator: " · ")
+    }
+
+    private func search() async {
+        loading = true
+        message = nil
+        results = []
+        do {
+            let found = try await client.searchSubtitles(itemId: model.itemId, language: language)
+            // Exact (hash) matches first, then most downloaded.
+            results = found.sorted {
+                ($0.isHashMatch == true ? 1 : 0, $0.downloadCount ?? 0) > ($1.isHashMatch == true ? 1 : 0, $1.downloadCount ?? 0)
+            }
+            if results.isEmpty {
+                message = "No subtitles found. If this keeps happening, make sure the Open Subtitles plugin is installed on your Jellyfin server (Dashboard → Plugins → Catalog) and signed in with your opensubtitles.com account."
+            }
+        } catch {
+            message = "Search failed: \(error.localizedDescription) Your server needs the Open Subtitles plugin (Dashboard → Plugins → Catalog)."
+        }
+        loading = false
+    }
+
+    private func download(_ r: RemoteSubtitleInfo) async {
+        downloadingId = r.id
+        message = nil
+        let known = Set(model.source?.subtitleStreams.compactMap(\.index) ?? [])
+        do {
+            try await client.downloadSubtitle(itemId: model.itemId, subtitleId: r.id)
+            message = "Downloaded. Adding it to the video…"
+            if await model.useDownloadedSubtitle(knownIndexes: known, language: language) {
+                dismiss()
+            } else {
+                message = "Downloaded to your server, but it hasn't shown up yet. Pick it from the subtitle menu in a moment."
+            }
+        } catch {
+            message = "Download failed: \(error.localizedDescription)"
+        }
+        downloadingId = nil
     }
 }
 

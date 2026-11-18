@@ -80,7 +80,26 @@ struct MediaStream: Codable {
     let dvProfile: Int?
     let audioSpatialFormat: String?
     let isDefault: Bool?
+    let isForced: Bool?
     let isExternal: Bool?
+}
+
+/// A subtitle found online by the server's subtitle plugin (e.g. OpenSubtitles).
+struct RemoteSubtitleInfo: Codable, Identifiable {
+    let id: String
+    let name: String?
+    let providerName: String?
+    let format: String?
+    let author: String?
+    let comment: String?
+    let downloadCount: Int?
+    let communityRating: Double?
+    let threeLetterISOLanguageName: String?
+    let isHashMatch: Bool?
+    let hearingImpaired: Bool?
+    let forced: Bool?
+    let machineTranslated: Bool?
+    let aiTranslated: Bool?
 }
 
 struct MediaSource: Codable {

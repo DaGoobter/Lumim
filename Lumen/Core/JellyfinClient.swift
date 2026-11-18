@@ -193,6 +193,16 @@ final class JellyfinClient {
         ], body: body)
     }
 
+    /// Search online subtitles through the server's plugins (needs e.g. the Open Subtitles plugin).
+    func searchSubtitles(itemId: String, language: String) async throws -> [RemoteSubtitleInfo] {
+        try await get("Items/\(itemId)/RemoteSearch/Subtitles/\(language)", query: ["isPerfectMatch": "false"])
+    }
+
+    /// The server downloads the subtitle next to the media file and adds it to the item.
+    func downloadSubtitle(itemId: String, subtitleId: String) async throws {
+        try await send("Items/\(itemId)/RemoteSearch/Subtitles/\(subtitleId)", method: "POST")
+    }
+
     /// The server's live view of this device's playback: what it is copying vs re-encoding.
     func currentSession() async throws -> SessionInfo? {
         let sessions: [SessionInfo] = try await get("Sessions", query: ["deviceId": Self.deviceId])

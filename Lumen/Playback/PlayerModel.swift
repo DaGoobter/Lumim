@@ -87,6 +87,8 @@ final class PlayerModel {
     @ObservationIgnored private let request: PlaybackRequest
     @ObservationIgnored private let client: JellyfinClient?
     @ObservationIgnored private let maxBitrate: Int
+    @ObservationIgnored private let prefs: TrackPreferences
+    @ObservationIgnored private var appliedPreferences = false
     @ObservationIgnored private var mediaSourceId: String?
     @ObservationIgnored private var playSessionId: String?
     @ObservationIgnored private var reportedMethod = "DirectPlay"
@@ -98,11 +100,14 @@ final class PlayerModel {
     @ObservationIgnored private var stopped = false
     @ObservationIgnored private var loadGeneration = 0
 
-    init(request: PlaybackRequest, client: JellyfinClient?, maxBitrate: Int) {
+    init(request: PlaybackRequest, client: JellyfinClient?, maxBitrate: Int, prefs: TrackPreferences) {
         self.request = request
         self.client = client
         self.maxBitrate = maxBitrate
+        self.prefs = prefs
     }
+
+    var itemId: String { request.item.id }
 
     func start() async {
         try? AVAudioSession.sharedInstance().setActive(true)
@@ -122,6 +127,28 @@ final class PlayerModel {
         let ticks = seconds.isFinite ? Int64(seconds * 10_000_000) : request.startTicks
         if let old = playSessionId, let client { await client.stopEncoding(playSessionId: old) }
         await load(startTicks: ticks)
+    }
+
+    /// After the server downloads a subtitle, wait for it to appear on the item, then switch to it.
+    func useDownloadedSubtitle(knownIndexes: Set<Int>, language: String) async -> Bool {
+        guard let client else { return false }
+        for delay in [1.5, 2.0, 3.0, 4.0, 5.0] {
+            try? await Task.sleep(for: .seconds(delay))
+            guard !stopped,
+                  let info = try? await client.playbackInfo(itemId: request.item.id, maxBitrate: maxBitrate,
+                                                            enableDirectPlay: false),
+                  let src = info.mediaSources.first else { continue }
+            if let sid = info.playSessionId { await client.stopEncoding(playSessionId: sid) }
+            let fresh = src.subtitleStreams.filter { s in s.index.map { !knownIndexes.contains($0) } ?? false }
+            let pick = fresh.first { $0.isExternal == true && Languages.matches($0.language, language) }
+                ?? fresh.first { $0.isExternal == true } ?? fresh.first
+            if let index = pick?.index {
+                source = src
+                await selectTracks(audio: audioIndex, subtitle: index)
+                return true
+            }
+        }
+        return false
     }
 
     private func load(startTicks: Int64) async {
@@ -153,6 +180,19 @@ final class PlayerModel {
                                                          enableDirectPlay: !customTracks)
                 guard generation == loadGeneration else { return }
                 guard let src = info.mediaSources.first else { throw JellyfinError.noMediaSource }
+
+                // First load: apply the user's default languages, then ask again with those tracks.
+                if !appliedPreferences {
+                    appliedPreferences = true
+                    let choice = prefs.choose(for: src)
+                    if choice.audio != audioIndex || choice.subtitle != subtitleIndex {
+                        audioIndex = choice.audio
+                        subtitleIndex = choice.subtitle
+                        await load(startTicks: startTicks)
+                        return
+                    }
+                }
+
                 source = src
                 mediaSourceId = src.id
                 playSessionId = info.playSessionId

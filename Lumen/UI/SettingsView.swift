@@ -80,6 +80,23 @@ struct SettingsView: View {
                 Text("Keep this at Maximum for untouched Direct Play. Lower it only if remote playback stutters; the server will then re-encode, which loses Dolby Vision. Downloads always use full quality.")
             }
 
+            Section {
+                Picker("Audio language", selection: $app.trackPrefs.audioLanguage) {
+                    Text("File default").tag("")
+                    ForEach(Languages.all, id: \.code) { Text($0.name).tag($0.code) }
+                }
+                Picker("Subtitles", selection: $app.trackPrefs.subtitleMode) {
+                    ForEach(SubtitleMode.allCases) { Text($0.label).tag($0) }
+                }
+                Picker("Subtitle language", selection: $app.trackPrefs.subtitleLanguage) {
+                    ForEach(Languages.all, id: \.code) { Text($0.name).tag($0.code) }
+                }
+            } header: {
+                Text("Audio & Subtitles")
+            } footer: {
+                Text("Applied automatically when something starts playing; change tracks anytime with the captions button in the player. Picture-based subtitles (PGS, VobSub) are only used when you pick them yourself, because they force the server to re-encode the video and Dolby Vision is lost. To search OpenSubtitles from the player, install the Open Subtitles plugin on your Jellyfin server (Dashboard → Plugins → Catalog) and sign in with your opensubtitles.com account.")
+            }
+
             Section("This device") {
                 capability("Dolby Vision", DeviceCapabilities.dolbyVision)
                 capability("HDR10", DeviceCapabilities.hdr10)
@@ -102,6 +119,7 @@ struct SettingsView: View {
             app.persistSettings()
             app.scheduleRouteCheck()
         }
+        .onChange(of: app.trackPrefs) { app.persistSettings() }
         .onAppear { loadFields() }
     }
 
