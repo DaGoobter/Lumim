@@ -64,7 +64,7 @@ struct LibraryGridView: View {
     @State private var items: [BaseItem] = []
     @State private var total = Int.max
     @State private var loading = false
-    @State private var sort: Sort = .added
+    @State private var sort: Sort = .name
     @State private var error: String?
 
     private var query: (types: String?, recursive: Bool) {
