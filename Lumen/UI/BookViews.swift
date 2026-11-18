@@ -75,8 +75,9 @@ struct BookDetailView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 18) {
-                RemoteImage(url: app.client?.posterURL(for: book, width: 700))
+                Color.clear
                     .aspectRatio(2 / 3, contentMode: .fit)
+                    .overlay { RemoteImage(url: app.client?.posterURL(for: book, width: 700)) }
                     .frame(maxWidth: 230)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .shadow(color: (color?.background ?? .black).opacity(0.8), radius: 24, y: 12)
@@ -109,6 +110,9 @@ struct BookDetailView: View {
                             }
                             .buttonStyle(SecondaryButtonStyle())
                         }
+                    }
+                    if app.client != nil {
+                        DownloadButton(item: book)
                     }
                 }
                 if let p = book.progress { ProgressBar(value: p).frame(maxWidth: 220) }
@@ -146,7 +150,7 @@ struct BookDetailView: View {
     }
 
     private func openReader() async {
-        guard let client = app.client else { return }
+        let client = app.client
         downloading = true
         defer { downloading = false }
         do {
@@ -182,7 +186,12 @@ struct BookFile {
     }
 
     /// Downloads the original book file once and keeps it in the cache.
-    static func fetch(_ book: BaseItem, client: JellyfinClient) async throws -> BookFile {
+    static func fetch(_ book: BaseItem, client: JellyfinClient?) async throws -> BookFile {
+        // Downloaded in the Downloads tab? Read it offline.
+        if let local = await MainActor.run(body: { DownloadManager.shared.localFile(for: book.id) }) {
+            return BookFile(url: local, kind: kind(for: local.pathExtension))
+        }
+        guard let client else { throw JellyfinError.noMediaSource }
         if let cached = try? FileManager.default.contentsOfDirectory(at: cacheDir, includingPropertiesForKeys: nil)
             .first(where: { $0.deletingPathExtension().lastPathComponent == book.id && !$0.hasDirectoryPath }) {
             return BookFile(url: cached, kind: kind(for: cached.pathExtension))

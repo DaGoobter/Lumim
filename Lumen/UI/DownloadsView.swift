@@ -4,6 +4,8 @@ struct DownloadsView: View {
     @Environment(AppState.self) private var app
     @Environment(DownloadManager.self) private var downloads
     @State private var playRequest: PlaybackRequest?
+    @State private var reading: (book: BaseItem, file: BookFile)?
+    @State private var showReader = false
     @State private var used: Int64 = 0
     @State private var free: Int64?
 
@@ -59,6 +61,9 @@ struct DownloadsView: View {
         .background(TintedBackdrop(color: nil))
         .navigationTitle("Downloads")
         .fullScreenCover(item: $playRequest) { PlayerScreen(request: $0) }
+        .fullScreenCover(isPresented: $showReader) {
+            if let reading { BookReaderScreen(book: reading.book, file: reading.file) }
+        }
         .task(id: downloads.records.count) { refreshStorage() }
         .onChange(of: downloads.records.values.filter { $0.state == .completed }.count) { refreshStorage() }
     }
@@ -70,6 +75,18 @@ struct DownloadsView: View {
 
     private func tap(_ record: DownloadRecord) {
         switch record.state {
+        case .completed where record.item.isAudio:
+            // Play this song/audiobook and the rest of its album/book from the downloads.
+            let group = downloads.groups.first { $0.title == record.groupTitle }?.records
+                .filter { $0.state == .completed && $0.item.isAudio }.map(\.item) ?? [record.item]
+            let start = group.firstIndex { $0.id == record.itemId } ?? 0
+            AudioPlayer.shared.play(group, startAt: start, client: app.client)
+            AudioPlayer.shared.showNowPlaying = true
+        case .completed where record.item.isBook:
+            if let url = record.localURL {
+                reading = (record.item, BookFile(url: url, kind: BookFile.kind(for: url.pathExtension)))
+                showReader = true
+            }
         case .completed:
             playRequest = PlaybackRequest(item: record.item, startTicks: record.resumeTicks, localDownload: record)
         case .failed:
@@ -117,7 +134,7 @@ struct DownloadRow: View {
                 status
             }
             Spacer()
-            if record.state == .completed { Image(systemName: "play.circle.fill").font(.title2).foregroundStyle(Theme.accent) }
+            if record.state == .completed { Image(systemName: record.item.isBook ? "book.circle.fill" : "play.circle.fill").font(.title2).foregroundStyle(Theme.accent) }
         }
         .foregroundStyle(.white)
     }

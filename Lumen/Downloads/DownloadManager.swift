@@ -37,7 +37,15 @@ struct DownloadRecord: Codable, Identifiable, Hashable {
     }
 
     /// Groups episodes under their show in the Downloads tab.
-    var groupTitle: String { item.type == "Episode" ? (item.seriesName ?? "TV") : "Movies" }
+    var groupTitle: String {
+        switch item.type {
+        case "Episode": return item.seriesName ?? "TV"
+        case "Audio": return item.album ?? "Music"
+        case "AudioBook": return "Audiobooks"
+        case "Book": return "Books"
+        default: return "Movies"
+        }
+    }
 }
 
 struct DownloadGroup: Identifiable {
@@ -105,7 +113,10 @@ final class DownloadManager {
     @ObservationIgnored private var syncing = false
 
     var sortedRecords: [DownloadRecord] {
-        func key(_ r: DownloadRecord) -> String { r.groupTitle + " " + r.item.displayTitle + " " + (r.item.episodeLabel ?? "") }
+        func key(_ r: DownloadRecord) -> String {
+            let order = String(format: "%04d-%04d", r.item.parentIndexNumber ?? 0, r.item.indexNumber ?? 0)
+            return r.groupTitle + " " + (r.item.type == "Audio" ? order : r.item.displayTitle + " " + (r.item.episodeLabel ?? ""))
+        }
         return records.values.sorted { key($0) < key($1) }
     }
 
@@ -156,7 +167,7 @@ final class DownloadManager {
 
     /// Queue every episode in a list (e.g. a season). Already-downloaded ones are skipped.
     func startAll(_ items: [BaseItem], client: JellyfinClient) async {
-        for item in items where item.isPlayable { await start(item: item, client: client) }
+        for item in items where item.isPlayable || item.isAudio || item.isBook { await start(item: item, client: client) }
     }
 
     func retry(_ id: String, client: JellyfinClient) async {
@@ -184,6 +195,17 @@ final class DownloadManager {
     private func begin(_ id: String, client: JellyfinClient) async {
         guard var record = records[id] else { return }
         let item = record.item
+        // Music and books: always the original file, byte for byte.
+        if item.isAudio || item.isBook {
+            record.kind = .original
+            let task = fileSession.downloadTask(with: client.originalDownloadURL(itemId: item.id))
+            task.taskDescription = item.id
+            task.resume()
+            record.state = .downloading
+            records[id] = record
+            save()
+            return
+        }
         do {
             // Ask for a very high bitrate so the server never lowers quality for downloads.
             let info = try await client.playbackInfo(itemId: item.id, maxBitrate: 400_000_000)
@@ -272,6 +294,13 @@ final class DownloadManager {
     }
 
     func delete(all ids: [String]) { for id in ids { delete(id) } }
+
+    /// The downloaded file for an item, if it's finished.
+    func localFile(for itemId: String) -> URL? {
+        guard let r = records[itemId], r.state == .completed, let url = r.localURL,
+              FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return url
+    }
 
     private func forEachTask(_ id: String, _ body: @escaping @Sendable (URLSessionTask) -> Void) {
         fileSession.getAllTasks { tasks in tasks.filter { $0.taskDescription == id }.forEach(body) }
@@ -395,7 +424,8 @@ final class DownloadManager {
     }
 
     private func savePoster(for item: BaseItem, client: JellyfinClient) async {
-        guard let result = try? await URLSession.shared.data(from: client.posterURL(for: item, width: 500)) else { return }
+        let art = item.type == "Audio" ? client.albumArtURL(for: item, width: 500) : client.posterURL(for: item, width: 500)
+        guard let result = try? await URLSession.shared.data(from: art) else { return }
         let data = result.0
         let url = downloadsDirectory().appendingPathComponent("\(item.id)-poster.jpg")
         guard (try? data.write(to: url)) != nil, var r = records[item.id] else { return }

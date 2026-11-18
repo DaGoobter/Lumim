@@ -177,6 +177,7 @@ struct TrackRow: View {
                 if showArt {
                     RemoteImage(url: app.client?.albumArtURL(for: track, width: 120))
                         .frame(width: 44, height: 44)
+                        .clipped()
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                 } else {
                     Text(number.map(String.init) ?? "").font(.subheadline.monospacedDigit())
@@ -224,8 +225,9 @@ struct AlbumView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
-                RemoteImage(url: app.client?.albumArtURL(for: album, width: 800))
+                Color.clear
                     .aspectRatio(1, contentMode: .fit)
+                    .overlay { RemoteImage(url: app.client?.albumArtURL(for: album, width: 800)) }
                     .frame(maxWidth: 300)
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .shadow(color: (color?.background ?? .black).opacity(0.8), radius: 24, y: 12)
@@ -248,6 +250,7 @@ struct AlbumView: View {
                         Label("Shuffle", systemImage: "shuffle").frame(maxWidth: .infinity)
                     }
                     .buttonStyle(SecondaryButtonStyle())
+                    CollectionDownloadButton(items: tracks)
                 }
                 .padding(.horizontal)
                 .disabled(tracks.isEmpty)
@@ -293,6 +296,7 @@ struct ArtistView: View {
             VStack(spacing: 14) {
                 RemoteImage(url: app.client?.imageURL(artist.id, maxWidth: 600, tag: artist.imageTag("primary")))
                     .frame(width: 180, height: 180)
+                    .clipped()
                     .clipShape(Circle())
                     .shadow(color: .black.opacity(0.5), radius: 20, y: 10)
                     .padding(.top, 12)
@@ -326,6 +330,30 @@ struct ArtistView: View {
     }
 }
 
+/// Downloads a whole album/playlist; shows progress across its tracks.
+struct CollectionDownloadButton: View {
+    @Environment(AppState.self) private var app
+    @Environment(DownloadManager.self) private var downloads
+    let items: [BaseItem]
+
+    var body: some View {
+        let states = items.map { downloads.records[$0.id]?.state }
+        let done = states.filter { $0 == .completed }.count
+        let active = states.filter { $0 == .downloading || $0 == .queued }.count
+        let allDone = !items.isEmpty && done == items.count
+        Button {
+            guard let client = app.client, !allDone else { return }
+            Task { await downloads.startAll(items, client: client) }
+        } label: {
+            Image(systemName: allDone ? "checkmark.circle.fill" : (active > 0 ? "arrow.down.circle.dotted" : "arrow.down.circle"))
+                .font(.title3)
+                .frame(width: 22, height: 22)
+        }
+        .buttonStyle(SecondaryButtonStyle())
+        .accessibilityLabel(allDone ? "Downloaded" : (active > 0 ? "Downloading \(done) of \(items.count)" : "Download all"))
+    }
+}
+
 // MARK: - Mini player & Now Playing
 
 struct MiniPlayer: View {
@@ -337,6 +365,7 @@ struct MiniPlayer: View {
             HStack(spacing: 12) {
                 RemoteImage(url: app.client?.albumArtURL(for: item, width: 120))
                     .frame(width: 44, height: 44)
+                    .clipped()
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.name ?? "").font(.subheadline.weight(.semibold)).lineLimit(1)
@@ -356,7 +385,8 @@ struct MiniPlayer: View {
             }
             .foregroundStyle(.white)
             .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .frame(height: 62)
+            .frame(maxWidth: 700)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(alignment: .bottom) {
                 GeometryReader { g in
@@ -367,8 +397,9 @@ struct MiniPlayer: View {
                 .padding(.horizontal, 14)
             }
             .shadow(color: .black.opacity(0.4), radius: 12, y: 4)
-            .padding(.horizontal, 10)
-            .padding(.bottom, 6)
+            .padding(.horizontal, 12)
+            .padding(.top, 4)
+            .padding(.bottom, 8)
             .contentShape(Rectangle())
             .onTapGesture { audio.showNowPlaying = true }
             .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -393,8 +424,9 @@ struct NowPlayingView: View {
                 if showQueue {
                     queueList
                 } else {
-                    RemoteImage(url: app.client?.albumArtURL(for: item, width: 1000))
+                    Color.clear
                         .aspectRatio(1, contentMode: .fit)
+                        .overlay { RemoteImage(url: app.client?.albumArtURL(for: item, width: 1000)) }
                         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                         .shadow(color: .black.opacity(0.5), radius: 30, y: 16)
                         .scaleEffect(audio.isPlaying ? 1 : 0.88)
@@ -521,7 +553,10 @@ struct NowPlayingPresenter: ViewModifier {
     func body(content: Content) -> some View {
         @Bindable var audio = audio
         content.sheet(isPresented: $audio.showNowPlaying) {
-            NowPlayingView().presentationDragIndicator(.hidden)
+            NowPlayingView()
+                .presentationDetents([.large])
+                .presentationDragIndicator(.hidden)
+                .presentationBackground(.black)
         }
     }
 }

@@ -48,8 +48,8 @@ final class AudioPlayer {
     // MARK: Control
 
     func play(_ items: [BaseItem], startAt start: Int = 0, shuffle: Bool = false, client: JellyfinClient?) {
-        guard let client, !items.isEmpty else { return }
-        self.client = client
+        guard !items.isEmpty else { return }
+        if let client { self.client = client }
         var list = items.filter(\.isAudio)
         guard !list.isEmpty else { return }
         var startIndex = min(max(0, start), list.count - 1)
@@ -128,10 +128,17 @@ final class AudioPlayer {
     // MARK: Internals
 
     private func loadCurrent(startAt seconds: Double) {
-        guard let item = current, let client else { return }
-        let asset = AVURLAsset(url: client.audioURL(itemId: item.id), options: [
-            "AVURLAssetHTTPHeaderFieldsKey": ["Authorization": client.authorizationHeader],
-        ])
+        guard let item = current else { return }
+        let asset: AVURLAsset
+        if let local = DownloadManager.shared.localFile(for: item.id) {
+            asset = AVURLAsset(url: local)                       // downloaded: plays offline
+        } else if let client {
+            asset = AVURLAsset(url: client.audioURL(itemId: item.id), options: [
+                "AVURLAssetHTTPHeaderFieldsKey": ["Authorization": client.authorizationHeader],
+            ])
+        } else {
+            return
+        }
         let playerItem = AVPlayerItem(asset: asset)
         playerItem.audioTimePitchAlgorithm = .timeDomain   // natural voice at 1.5×/2×
         player.replaceCurrentItem(with: playerItem)
@@ -141,7 +148,7 @@ final class AudioPlayer {
         player.playImmediately(atRate: rate)
         artwork = nil
         if commandsInstalled { refreshCommandAvailability() }
-        loadArtwork(for: item, client: client)
+        loadArtwork(for: item)
         Task { await report(started: true) }
         tick()
     }
@@ -169,8 +176,10 @@ final class AudioPlayer {
         await client.reportPlayback(path, body: body)
     }
 
-    private func loadArtwork(for item: BaseItem, client: JellyfinClient) {
-        let url = client.albumArtURL(for: item, width: 800)
+    private func loadArtwork(for item: BaseItem) {
+        let offlineArt = DownloadManager.shared.records[item.id]?.posterURL
+        let url = offlineArt ?? client?.albumArtURL(for: item, width: 800)
+        guard let url else { return }
         Task {
             guard let result = try? await URLSession.shared.data(from: url),
                   let image = UIImage(data: result.0), current?.id == item.id else { return }
