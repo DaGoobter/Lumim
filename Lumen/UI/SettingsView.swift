@@ -33,10 +33,30 @@ struct SettingsView: View {
     @State private var remoteField = ""
     @State private var localField = ""
     @State private var savingAddresses = false
+    @State private var isAdmin = false
 
     var body: some View {
         @Bindable var app = app
         Form {
+            if isAdmin, let client = app.client {
+                Section {
+                    NavigationLink { AdminDashboardView(client: client) } label: {
+                        HStack(spacing: 14) {
+                            Image(systemName: "gauge.with.dots.needle.67percent")
+                                .font(.system(size: 20, weight: .bold)).foregroundStyle(.white)
+                                .frame(width: 46, height: 46)
+                                .background(RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                    .fill(LinearGradient(colors: [AdminPalette.violet, AdminPalette.pink],
+                                                         startPoint: .topLeading, endPoint: .bottomTrailing)))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Server Dashboard").font(.headline)
+                                Text("Now playing, stats, libraries, users, logs").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
             if let s = app.session {
                 Section("Server") {
                     LabeledContent("Name", value: s.serverName ?? "Jellyfin")
@@ -218,6 +238,9 @@ struct SettingsView: View {
         .scrollContentBackground(.hidden)
         .background(TintedBackdrop(color: nil))
         .navigationTitle("Settings")
+        .task(id: app.session?.userName) {
+            if let client = app.client { isAdmin = await client.adminIsAdministrator() } else { isAdmin = false }
+        }
         .onChange(of: app.maxBitrate) { app.persistSettings() }
         .onChange(of: app.preferLocal) {
             app.persistSettings()
