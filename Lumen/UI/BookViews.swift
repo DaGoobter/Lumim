@@ -251,7 +251,7 @@ struct BookReaderScreen: View {
                     ContentUnavailableView {
                         Label("Can't open this format here", systemImage: "book.closed")
                     } description: {
-                        Text("Lumen reads EPUB, PDF and CBZ. Use Open in… to read this \(file.url.pathExtension.uppercased()) in another app.")
+                        Text("Prism reads EPUB, PDF and CBZ. Use Open in… to read this \(file.url.pathExtension.uppercased()) in another app.")
                     } actions: {
                         ShareLink(item: file.url) { Label("Open in…", systemImage: "square.and.arrow.up") }
                             .buttonStyle(PlayButtonStyle())

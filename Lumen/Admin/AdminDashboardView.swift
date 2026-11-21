@@ -4,15 +4,15 @@ import Charts
 // MARK: - Look
 
 enum AdminPalette {
-    static let violet = Color(red: 0.58, green: 0.45, blue: 1.0)
-    static let blue = Color(red: 0.25, green: 0.62, blue: 1.0)
+    static let violet = Theme.violet
+    static let blue = Theme.blue
     static let cyan = Color(red: 0.25, green: 0.85, blue: 0.95)
     static let teal = Color(red: 0.2, green: 0.85, blue: 0.7)
-    static let green = Color(red: 0.35, green: 0.88, blue: 0.45)
-    static let yellow = Color(red: 1.0, green: 0.82, blue: 0.3)
-    static let orange = Color(red: 1.0, green: 0.58, blue: 0.25)
-    static let pink = Color(red: 1.0, green: 0.38, blue: 0.62)
-    static let red = Color(red: 1.0, green: 0.36, blue: 0.36)
+    static let green = Theme.green
+    static let yellow = Theme.yellow
+    static let orange = Theme.orange
+    static let pink = Color(red: 1.0, green: 0.36, blue: 0.62)
+    static let red = Theme.red
 
     static func color(for method: AdminSession.Method) -> Color {
         switch method {

@@ -29,7 +29,7 @@ enum DeviceCapabilities {
     static func airPlayProfile(maxBitrate: Int) -> [String: Any] {
         typealias J = [String: Any]
         return [
-            "Name": "Lumen AirPlay",
+            "Name": "Prism AirPlay",
             "MaxStreamingBitrate": maxBitrate,
             "MaxStaticBitrate": maxBitrate,
             "DirectPlayProfiles": [J](),
@@ -109,7 +109,7 @@ enum DeviceCapabilities {
         ]
 
         let profile: J = [
-            "Name": "Lumen iOS",
+            "Name": "Prism iOS",
             "MaxStreamingBitrate": maxBitrate,
             "MaxStaticBitrate": maxBitrate,
             "MusicStreamingTranscodingBitrate": 384_000,

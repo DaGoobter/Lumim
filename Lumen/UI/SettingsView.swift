@@ -105,7 +105,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Connection")
                 } footer: {
-                    Text("At home Lumen talks to your server directly over Wi‑Fi (faster, full quality, no internet needed); everywhere else it uses your remote address. It switches automatically. Leave the home address empty to auto-detect it.")
+                    Text("At home Prism talks to your server directly over Wi‑Fi (faster, full quality, no internet needed); everywhere else it uses your remote address. It switches automatically. Leave the home address empty to auto-detect it.")
                 }
             }
 
@@ -205,7 +205,7 @@ struct SettingsView: View {
                     testingVoice = true
                     voiceTestResult = nil
                     Task {
-                        await DJVoice.shared.say("Hey, hey! It's your Lumen DJ." + Stations.breath
+                        await DJVoice.shared.say("Hey, hey! It's your Prism DJ." + Stations.breath
                             + "So, here's how I sound." + Stations.beat + "Not bad, right? Okay, let's get you some music.")
                         voiceTestResult = DJVoice.shared.lastError.map { "Couldn't reach the voice: \($0)" }
                         testingVoice = false
@@ -232,7 +232,7 @@ struct SettingsView: View {
             Section {
                 Button("Sign Out", role: .destructive) { Task { await app.logout() } }
             } footer: {
-                Text("Lumen \(JellyfinClient.version) (build \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?")) · Downloads stay on this device after signing out.")
+                Text("Prism \(JellyfinClient.version) (build \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?")) · Downloads stay on this device after signing out.")
             }
         }
         .scrollContentBackground(.hidden)

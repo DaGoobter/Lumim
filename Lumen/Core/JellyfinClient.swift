@@ -28,7 +28,7 @@ final class JellyfinClient {
     var userId: String?
     private let session: URLSession
 
-    static let clientName = "Lumen"
+    static let clientName = "Prism"
     static let version: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.0"
     static let deviceId: String = {
         let key = "lumen.deviceId"

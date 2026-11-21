@@ -12,19 +12,20 @@ struct LoginView: View {
     var body: some View {
         ZStack {
             Theme.background.ignoresSafeArea()
-            Circle().fill(Theme.accent).frame(width: 340).blur(radius: 130)
+            Circle().fill(Theme.blue).frame(width: 340).blur(radius: 130)
                 .offset(x: glow ? -90 : 60, y: glow ? -260 : -180).opacity(0.55)
-            Circle().fill(Theme.accent2).frame(width: 300).blur(radius: 130)
+            Circle().fill(Theme.red).frame(width: 300).blur(radius: 130)
                 .offset(x: glow ? 120 : -40, y: glow ? 260 : 200).opacity(0.4)
 
             ScrollView {
                 VStack(spacing: 22) {
                     Spacer(minLength: 70)
-                    Image(systemName: "play.rectangle.fill")
-                        .font(.system(size: 60))
-                        .foregroundStyle(Theme.gradient)
+                    Image("PrismMark")
+                        .resizable()
+                        .frame(width: 112, height: 112)
+                        .shadow(color: Theme.violet.opacity(0.45), radius: 30, y: 12)
                     VStack(spacing: 6) {
-                        Text("Lumen").font(.system(size: 42, weight: .heavy, design: .rounded))
+                        Text("prism").font(.system(size: 46, weight: .heavy)).tracking(-1.5)
                         Text("Connect to your Jellyfin server").foregroundStyle(.secondary)
                     }
 

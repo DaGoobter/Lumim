@@ -95,7 +95,7 @@ struct ForYouView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 28) {
-            DJCard(playing: audio.station?.name == "Lumen DJ", busy: starting == "Lumen DJ") {
+            DJCard(playing: audio.station?.name == "Prism DJ", busy: starting == "Prism DJ") {
                 start(Stations.dj(libraryId: library.id))
             }
 
@@ -103,24 +103,24 @@ struct ForYouView: View {
                 Text("Stations").font(.title2.weight(.bold))
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
                     StationTile(title: "Heavy Rotation", subtitle: "Your most played", symbol: "flame.fill",
-                                colors: [.orange, .pink], busy: starting == "Heavy Rotation") {
+                                colors: [Theme.orange, Theme.red], busy: starting == "Heavy Rotation") {
                         start(Stations.heavyRotation(libraryId: library.id))
                     }
                     StationTile(title: "Favorites Mix", subtitle: "Songs you've hearted", symbol: "heart.fill",
-                                colors: [.pink, .purple], busy: starting == "Favorites Mix") {
+                                colors: [Theme.red, Theme.violet], busy: starting == "Favorites Mix") {
                         start(Stations.favorites(libraryId: library.id))
                     }
                     StationTile(title: "Throwbacks", subtitle: "Not played in a while", symbol: "clock.arrow.circlepath",
-                                colors: [.teal, .blue], busy: starting == "Throwbacks") {
+                                colors: [Theme.green, Theme.blue], busy: starting == "Throwbacks") {
                         start(Stations.throwbacks(libraryId: library.id))
                     }
                     StationTile(title: "Discover", subtitle: "Never played yet", symbol: "sparkles",
-                                colors: [.green, .teal], busy: starting == "Discover") {
+                                colors: [Theme.yellow, Theme.green], busy: starting == "Discover") {
                         start(Stations.discover(libraryId: library.id))
                     }
                 }
                 StationTile(title: "Shuffle Everything", subtitle: "Your whole music library", symbol: "shuffle",
-                            colors: [.indigo, .purple], busy: starting == "Shuffle All") {
+                            colors: [Theme.blue, Theme.violet], busy: starting == "Shuffle All") {
                     start(Stations.shuffleAll(libraryId: library.id))
                 }
             }
@@ -202,7 +202,7 @@ struct ForYouView: View {
     }
 }
 
-/// The big, animated Lumen DJ card.
+/// The big, animated Prism DJ card.
 struct DJCard: View {
     let playing: Bool
     let busy: Bool
@@ -212,14 +212,14 @@ struct DJCard: View {
     var body: some View {
         Button(action: action) {
             ZStack(alignment: .bottomLeading) {
-                LinearGradient(colors: [Theme.accent, .pink, .orange, Theme.accent2],
+                LinearGradient(colors: [Theme.violet, Theme.red, Theme.orange, Theme.blue],
                                startPoint: animate ? .topLeading : .bottomLeading,
                                endPoint: animate ? .bottomTrailing : .topTrailing)
                     .hueRotation(.degrees(animate ? 25 : -10))
                 Circle().fill(.white.opacity(0.18)).frame(width: 220).blur(radius: 40)
                     .offset(x: animate ? 160 : 60, y: animate ? -40 : -90)
                 VStack(alignment: .leading, spacing: 6) {
-                    Label("LUMEN DJ", systemImage: "waveform.and.mic").font(.caption.weight(.heavy))
+                    Label("PRISM DJ", systemImage: "waveform.and.mic").font(.caption.weight(.heavy))
                     Text("Your music, mixed for you").font(.title2.weight(.heavy))
                     Text("Heavy rotation, favorites, throwbacks and new finds, with a voice between sets.")
                         .font(.footnote.weight(.medium)).opacity(0.9).lineLimit(2)
@@ -242,14 +242,14 @@ struct DJCard: View {
                 .padding(16)
             }
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .shadow(color: .pink.opacity(0.4), radius: 20, y: 10)
+            .shadow(color: Theme.violet.opacity(0.45), radius: 20, y: 10)
         }
         .buttonStyle(CardPressStyle())
         .foregroundStyle(.white)
         .onAppear {
             withAnimation(.easeInOut(duration: 6).repeatForever(autoreverses: true)) { animate = true }
         }
-        .accessibilityLabel(playing ? "Lumen DJ, playing" : "Play Lumen DJ")
+        .accessibilityLabel(playing ? "Prism DJ, playing" : "Play Prism DJ")
     }
 }
 

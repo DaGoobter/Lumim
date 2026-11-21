@@ -1,11 +1,26 @@
 import SwiftUI
 
 enum Theme {
-    static let accent = Color(red: 0.58, green: 0.45, blue: 1.0)
-    static let accent2 = Color(red: 0.25, green: 0.78, blue: 0.98)
-    static let background = Color(red: 0.035, green: 0.035, blue: 0.06)
+    // Prism palette: midnight glass with a full spectrum of light.
+    static let red = Color(red: 1.0, green: 0.30, blue: 0.43)        // #FF4D6D
+    static let orange = Color(red: 1.0, green: 0.65, blue: 0.17)     // #FFA62B
+    static let yellow = Color(red: 1.0, green: 0.89, blue: 0.36)     // #FFE45C
+    static let green = Color(red: 0.24, green: 0.94, blue: 0.63)     // #3EF0A0
+    static let blue = Color(red: 0.24, green: 0.66, blue: 1.0)       // #3DA9FF
+    static let violet = Color(red: 0.61, green: 0.36, blue: 1.0)     // #9B5CFF
+
+    static let accent = Color(red: 0.42, green: 0.55, blue: 1.0)     // #6B8CFF, the tint for controls
+    static let accent2 = red
+    static let midnight = Color(red: 0.114, green: 0.102, blue: 0.239) // #1D1A3D
+    static let background = Color(red: 0.035, green: 0.031, blue: 0.067) // #09080F
     static let card = Color.white.opacity(0.06)
-    static let gradient = LinearGradient(colors: [accent, accent2], startPoint: .topLeading, endPoint: .bottomTrailing)
+
+    /// The full rainbow: progress, highlights, the brand mark.
+    static let spectrum = LinearGradient(colors: [red, orange, yellow, green, blue, violet],
+                                         startPoint: .leading, endPoint: .trailing)
+    /// Cool side of the spectrum: fills that carry white text stay readable.
+    static let gradient = LinearGradient(colors: [blue, violet, red],
+                                         startPoint: .topLeading, endPoint: .bottomTrailing)
 }
 
 // MARK: - Images
@@ -162,7 +177,7 @@ struct ProgressBar: View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
                 Capsule().fill(.white.opacity(0.25))
-                Capsule().fill(Theme.gradient).frame(width: geo.size.width * value)
+                Capsule().fill(Theme.spectrum).frame(width: geo.size.width * value)
             }
         }
         .frame(height: 4)

@@ -1,11 +1,11 @@
 import Foundation
 
-/// Builds endless radio stations from the library — including "Lumen DJ", a Spotify DJ–style mix of
+/// Builds endless radio stations from the library — including "Prism DJ", a Spotify DJ–style mix of
 /// your heavy rotation, favorites, throwbacks and things you haven't heard, with a spoken intro per set.
 @MainActor
 enum Stations {
 
-    // MARK: Lumen DJ
+    // MARK: Prism DJ
 
     private enum DJSet: CaseIterable { case heavyRotation, favorite, throwback, discover }
 
@@ -17,7 +17,7 @@ enum Stations {
 
     static func dj(libraryId: String?) -> Station {
         let state = DJState()
-        return Station(name: "Lumen DJ") { client, exclude in
+        return Station(name: "Prism DJ") { client, exclude in
             // Try each kind of set in rotation until one produces music.
             for _ in 0..<DJSet.allCases.count {
                 let kind = DJSet.allCases[state.turn % DJSet.allCases.count]
@@ -163,19 +163,19 @@ enum Stations {
         let day = DateFormatter().weekdaySymbols[weekday - 1]
         switch h {
         case 5..<12:
-            return ["Good morning!" + beat + "It's your Lumen DJ. Let's ease into this \(day).",
-                    "Morning! Lumen DJ here. Got some good stuff for you today."].randomElement()!
+            return ["Good morning!" + beat + "It's your Prism DJ. Let's ease into this \(day).",
+                    "Morning! Prism DJ here. Got some good stuff for you today."].randomElement()!
         case 12..<17:
-            return ["Hey, good afternoon! Lumen DJ here.",
-                    "Hey there. Happy \(day)." + beat + "It's your Lumen DJ."].randomElement()!
+            return ["Hey, good afternoon! Prism DJ here.",
+                    "Hey there. Happy \(day)." + beat + "It's your Prism DJ."].randomElement()!
         case 17..<22:
-            let friday: String = "It's Friday night!" + beat + "Lumen DJ here, let's get into it."
-            let evening: String = "Good evening. It's your Lumen DJ," + beat + "let's get into it."
-            let company: String = "Hey, hey. Lumen DJ, keeping you company this \(day) night."
+            let friday: String = "It's Friday night!" + beat + "Prism DJ here, let's get into it."
+            let evening: String = "Good evening. It's your Prism DJ," + beat + "let's get into it."
+            let company: String = "Hey, hey. Prism DJ, keeping you company this \(day) night."
             return [weekday == 6 ? friday : evening, company].randomElement()!
         default:
-            return ["Hey, night owl." + beat + "Lumen DJ here. Let's keep it going.",
-                    "Still up? Me too. It's your Lumen DJ."].randomElement()!
+            return ["Hey, night owl." + beat + "Prism DJ here. Let's keep it going.",
+                    "Still up? Me too. It's your Prism DJ."].randomElement()!
         }
     }
 

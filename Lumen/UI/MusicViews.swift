@@ -501,7 +501,7 @@ struct NowPlayingView: View {
             }
             if let station = audio.station {
                 HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: station.name == "Lumen DJ" ? "waveform.and.mic" : "dot.radiowaves.left.and.right")
+                    Image(systemName: station.name == "Prism DJ" ? "waveform.and.mic" : "dot.radiowaves.left.and.right")
                     Text(audio.djLine ?? station.name).lineLimit(2)
                 }
                 .font(.caption.weight(.semibold))

@@ -23,7 +23,7 @@ targets:
     info:
       path: Lumen/Info.plist
       properties:
-        CFBundleDisplayName: Lumen
+        CFBundleDisplayName: Prism
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
@@ -31,7 +31,7 @@ targets:
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
         UIApplicationSupportsIndirectInputEvents: true
-        NSLocalNetworkUsageDescription: Lumen connects to Jellyfin servers on your local network.
+        NSLocalNetworkUsageDescription: Prism connects to Jellyfin servers on your local network.
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
         UISupportedInterfaceOrientations:
