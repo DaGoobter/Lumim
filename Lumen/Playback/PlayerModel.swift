@@ -404,7 +404,7 @@ final class PlayerModel {
             liveStatus = nil
             if pendingSeekTicks > 0 && !isLive {
                 let t = CMTime(seconds: Double(pendingSeekTicks) / 10_000_000, preferredTimescale: 600)
-                player.seek(to: t, toleranceBefore: .zero, toleranceAfter: .positiveInfinity)
+                player.seek(to: t, toleranceBefore: .zero, toleranceAfter: .positiveInfinity) { _ in }
             }
             player.play()
             if !reportedStart {
