@@ -310,6 +310,7 @@ struct UserAdminDetailView: View {
     @State private var downloads = true
     @State private var transcoding = true
     @State private var liveTV = true
+    @State private var remoteLimit = 0
     @State private var ready = false
     @State private var status: String?
 
@@ -334,6 +335,14 @@ struct UserAdminDetailView: View {
             } footer: {
                 Text("Turning off transcoding means this person only gets files their device can play as-is. Changes apply right away.")
             }
+            Section {
+                Picker("Away-from-home quality", selection: $remoteLimit) {
+                    Text("No limit").tag(0)
+                    ForEach([40, 20, 15, 12, 10, 8, 6, 4, 3, 2], id: \.self) { Text("\($0) Mbps").tag($0 * 1_000_000) }
+                }
+            } footer: {
+                Text("The most this person can stream when they're not on your home Wi-Fi. Anything bigger is shrunk to fit. 8 Mbps looks great on a 1080p TV; 4K originals run 25–80 Mbps, so a lower cap stops buffering on slower connections and saves your upload.")
+            }
             if let status { Section { Text(status).font(.footnote).foregroundStyle(.secondary) } }
         }
         .navigationTitle(user.name ?? "User")
@@ -344,6 +353,7 @@ struct UserAdminDetailView: View {
             downloads = p?.enableContentDownloading ?? true
             transcoding = p?.enableVideoPlaybackTranscoding ?? true
             liveTV = p?.enableLiveTvAccess ?? true
+            remoteLimit = p?.remoteClientBitrateLimit ?? 0
             DispatchQueue.main.async { ready = true }
         }
         .onChange(of: disabled) { _, v in save(["IsDisabled": v]) }
@@ -351,6 +361,7 @@ struct UserAdminDetailView: View {
         .onChange(of: downloads) { _, v in save(["EnableContentDownloading": v]) }
         .onChange(of: transcoding) { _, v in save(["EnableVideoPlaybackTranscoding": v]) }
         .onChange(of: liveTV) { _, v in save(["EnableLiveTvAccess": v]) }
+        .onChange(of: remoteLimit) { _, v in save(["RemoteClientBitrateLimit": v]) }
     }
 
     private func save(_ changes: [String: Any]) {
