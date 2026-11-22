@@ -74,6 +74,8 @@ final class PlayerModel {
     let player = AVPlayer()
     var isLoading = true
     var errorMessage: String?
+    /// Live TV: the stream stalled and we're waiting for it (or reconnecting).
+    var liveStatus: String?
     var diagnostics = StreamDiagnostics()
 
     // Live playback state for the custom controls.
@@ -107,6 +109,9 @@ final class PlayerModel {
     @ObservationIgnored private var uiTimeObserver: Any?
     @ObservationIgnored private var remoteTargets: [Any] = []
     @ObservationIgnored private var statusCancellable: AnyCancellable?
+    @ObservationIgnored private var liveWatchdog: Task<Void, Never>?
+    @ObservationIgnored private var liveReconnects: [Date] = []
+    @ObservationIgnored private var liveEndObserver: NSObjectProtocol?
     @ObservationIgnored private var pendingSeekTicks: Int64 = 0
     @ObservationIgnored private var itemReady = false
     @ObservationIgnored private var reportedStart = false
@@ -332,7 +337,7 @@ final class PlayerModel {
                     // Live TV: always HLS (iOS can't play the raw MPEG-TS stream the server offers).
                     if let t = src.transcodingUrl, t.lowercased().contains(".m3u8"),
                        let u = client.absoluteURL(serverRelative: t) {
-                        url = u
+                        url = JellyfinClient.tuningLiveURL(u)
                     } else {
                         url = client.liveHLSURL(channelId: request.item.id, mediaSourceId: src.id,
                                                 liveStreamId: src.liveStreamId, playSessionId: info.playSessionId,
@@ -364,6 +369,13 @@ final class PlayerModel {
             }
 
             let item = AVPlayerItem(asset: asset)
+            if isLive {
+                // Sit a few seconds behind the live edge and stay there, so a slow segment doesn't freeze the picture.
+                item.automaticallyPreservesTimeOffsetFromLive = true
+                item.configuredTimeOffsetFromLive = CMTime(seconds: Double(JellyfinClient.liveSegmentLength * 3),
+                                                           preferredTimescale: 1)
+                item.canUseNetworkResourcesForLiveStreamingWhilePaused = true
+            }
             observe(item, generation: generation)
             player.replaceCurrentItem(with: item)
         } catch {
@@ -378,17 +390,18 @@ final class PlayerModel {
             .sink { [weak self] status in
                 Task { @MainActor [weak self] in
                     guard let self, generation == self.loadGeneration else { return }
-                    self.handle(status: status, item: item)
+                    await self.handle(status: status, item: item)
                 }
             }
     }
 
-    private func handle(status: AVPlayerItem.Status, item: AVPlayerItem) {
+    private func handle(status: AVPlayerItem.Status, item: AVPlayerItem) async {
         switch status {
         case .readyToPlay:
             guard !itemReady else { return }
             itemReady = true
             isLoading = false
+            liveStatus = nil
             if pendingSeekTicks > 0 && !isLive {
                 let t = CMTime(seconds: Double(pendingSeekTicks) / 10_000_000, preferredTimescale: 600)
                 player.seek(to: t, toleranceBefore: .zero, toleranceAfter: .positiveInfinity)
@@ -401,7 +414,9 @@ final class PlayerModel {
             Task { await applySubtitleSelection(item) }
             Task { await inspectDecodedFormat(item) }
             if reportedMethod == "Transcode" { Task { await checkServerSession() } }
+            if isLive { startLiveWatchdog(item) }
         case .failed:
+            if isLive, await reconnectLive(reason: "The channel dropped. Reconnecting…") { return }
             errorMessage = item.error?.localizedDescription ?? "Playback failed."
             isLoading = false
         default:
@@ -494,9 +509,66 @@ final class PlayerModel {
         await client.reportPlayback(path, body: body)
     }
 
+    // MARK: Live TV resilience
+
+    /// Watches a live channel: shows "Buffering" during a stall, and if the stream is stuck or ends
+    /// (the channel source restarted, the server dropped it), quietly reopens it at the live edge.
+    private func startLiveWatchdog(_ item: AVPlayerItem) {
+        liveWatchdog?.cancel()
+        if let liveEndObserver { NotificationCenter.default.removeObserver(liveEndObserver) }
+        liveEndObserver = NotificationCenter.default.addObserver(
+            forName: AVPlayerItem.didPlayToEndTimeNotification, object: item, queue: .main) { [weak self] _ in
+            Task { @MainActor [weak self] in _ = await self?.reconnectLive(reason: "Reconnecting to the channel…") }
+        }
+        liveWatchdog = Task { @MainActor [weak self] in
+            var stalledFor = 0
+            var lastTime = -1.0
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard let self, !Task.isCancelled, !self.stopped else { return }
+                let waiting = self.player.timeControlStatus == .waitingToPlayAtSpecifiedRate
+                let t = self.player.currentTime().seconds
+                // Playing but the clock isn't moving counts as stuck too.
+                let frozen = self.player.timeControlStatus == .playing && t.isFinite && abs(t - lastTime) < 0.01
+                lastTime = t
+                if waiting || frozen {
+                    stalledFor += 1
+                    if stalledFor >= 2 { self.liveStatus = "Buffering…" }
+                    if stalledFor >= 12 {
+                        stalledFor = 0
+                        _ = await self.reconnectLive(reason: "Reconnecting to the channel…")
+                        return
+                    }
+                } else {
+                    stalledFor = 0
+                    if self.liveStatus != nil { self.liveStatus = nil }
+                }
+            }
+        }
+    }
+
+    /// Reopens the live stream. Gives up (returns false) after a few tries in a short time.
+    private func reconnectLive(reason: String) async -> Bool {
+        guard isLive, !stopped, client != nil else { return false }
+        let now = Date()
+        liveReconnects = liveReconnects.filter { now.timeIntervalSince($0) < 120 } + [now]
+        guard liveReconnects.count <= 4 else {
+            liveStatus = nil
+            return false
+        }
+        liveStatus = reason
+        liveWatchdog?.cancel()
+        if let old = playSessionId, let client { await client.stopEncoding(playSessionId: old) }
+        if let live = liveStreamId, let client { await client.closeLiveStream(live); liveStreamId = nil }
+        await load(startTicks: 0)
+        return true
+    }
+
     func stop() async {
         guard !stopped else { return }
         stopped = true
+        liveWatchdog?.cancel()
+        if let liveEndObserver { NotificationCenter.default.removeObserver(liveEndObserver) }
         if let timeObserver { player.removeTimeObserver(timeObserver) }
         timeObserver = nil
         if let uiTimeObserver { player.removeTimeObserver(uiTimeObserver) }

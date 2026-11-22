@@ -47,7 +47,22 @@ struct PlayerScreen: View {
                         .onTapGesture { toggleControls() }
 
                     if model.isLoading && model.errorMessage == nil {
-                        ProgressView().tint(.white).scaleEffect(1.5)
+                        VStack(spacing: 14) {
+                            ProgressView().tint(.white).scaleEffect(1.5)
+                            if let status = model.liveStatus {
+                                Text(status).font(.footnote.weight(.semibold)).foregroundStyle(.white.opacity(0.85))
+                            } else if model.isLive {
+                                Text("Tuning in…").font(.footnote.weight(.semibold)).foregroundStyle(.white.opacity(0.7))
+                            }
+                        }
+                    } else if let status = model.liveStatus, model.errorMessage == nil {
+                        VStack(spacing: 12) {
+                            ProgressView().tint(.white)
+                            Text(status).font(.footnote.weight(.semibold))
+                        }
+                        .padding(.horizontal, 18).padding(.vertical, 14)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .allowsHitTesting(false)
                     }
 
                     if let error = model.errorMessage {

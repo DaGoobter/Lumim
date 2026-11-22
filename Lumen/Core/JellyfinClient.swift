@@ -273,8 +273,9 @@ final class JellyfinClient {
             "AudioCodec": "aac,eac3,ac3,mp3",
             "AudioStreamIndex": audioIndex.map(String.init),
             "SegmentContainer": "ts",
-            "MinSegments": "1",
-            "BreakOnNonKeyFrames": "true",
+            "SegmentLength": String(Self.liveSegmentLength),
+            "MinSegments": String(Self.liveMinSegments),
+            "BreakOnNonKeyFrames": "false",
             "TranscodingMaxAudioChannels": "6",
             "MaxStreamingBitrate": String(maxBitrate),
             "AllowVideoStreamCopy": "true",
@@ -282,6 +283,29 @@ final class JellyfinClient {
             "RequireAvc": "false",
             "api_key": accessToken,
         ])
+    }
+
+    /// Live TV arrives in real time, so the player can never get ahead of it. Short segments that always
+    /// start on a keyframe, plus a few of them ready before playback begins, give a cushion that absorbs
+    /// hiccups instead of freezing on them.
+    static let liveSegmentLength = 2
+    static let liveMinSegments = 4
+
+    /// Rewrites the server's live playlist URL with the cushion settings above.
+    static func tuningLiveURL(_ url: URL) -> URL {
+        guard var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
+        var items = comps.queryItems ?? []
+        let set: [String: String] = [
+            "segmentlength": String(liveSegmentLength),
+            "minsegments": String(liveMinSegments),
+            "breakonnonkeyframes": "false",
+        ]
+        items.removeAll { set[$0.name.lowercased()] != nil }
+        items += [URLQueryItem(name: "SegmentLength", value: set["segmentlength"]),
+                  URLQueryItem(name: "MinSegments", value: set["minsegments"]),
+                  URLQueryItem(name: "BreakOnNonKeyFrames", value: "false")]
+        comps.queryItems = items
+        return comps.url ?? url
     }
 
     func closeLiveStream(_ liveStreamId: String) async {
