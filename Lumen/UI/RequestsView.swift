@@ -36,7 +36,7 @@ struct RequestsView: View {
             }
         }
         .task(id: app.session?.key) {
-            if seerr.baseURL == nil || !seerr.signedIn { await seerr.activate(accountKey: app.session?.key) }
+            await seerr.activate(accountKey: app.session?.key, jellyfinURL: app.session?.serverURL)
         }
         .sheet(item: $selected) { r in SeerrDetailSheet(result: r) }
     }
@@ -185,7 +185,7 @@ struct SeerrDetailSheet: View {
 
 struct SeerrSetupView: View {
     @Environment(AppState.self) private var app
-    @State private var address = ""
+    @State private var address = Seerr.shared.baseURL?.absoluteString ?? ""
     @State private var password = ""
     @State private var busy = false
     @State private var error: String?

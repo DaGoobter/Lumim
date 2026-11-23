@@ -71,6 +71,10 @@ struct SearchView: View {
                             ForEach(group.items) { item in cell(item) }
                         }
                     }
+                    if Seerr.shared.needsSignIn && !searching {
+                        SeerrInlineConnect { Task { await run() } }
+                            .padding(.horizontal, 20)
+                    }
                     if !requestable.isEmpty {
                         Shelf("Not on your server? Request it") {
                             ForEach(requestable) { r in
@@ -103,7 +107,9 @@ struct SearchView: View {
                     .accessibilityLabel("Requests")
             }
         }
-        .task(id: app.session?.key) { await Seerr.shared.activate(accountKey: app.session?.key) }
+        .task(id: app.session?.key) {
+            await Seerr.shared.activate(accountKey: app.session?.key, jellyfinURL: app.session?.serverURL)
+        }
     }
 
     @ViewBuilder
@@ -167,6 +173,54 @@ struct SearchView: View {
     }
 
     private func saveRecent() { UserDefaults.standard.set(recent, forKey: "prism.recentSearches") }
+}
+
+/// "Can't find it? Request it": one-time password entry for people signed in before requests were set up
+/// (or who signed in with Quick Connect).
+struct SeerrInlineConnect: View {
+    @Environment(AppState.self) private var app
+    var onConnected: () -> Void
+    @State private var password = ""
+    @State private var busy = false
+    @State private var failed = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Not finding it? Request it", systemImage: "plus.rectangle.on.rectangle")
+                .font(.headline)
+            Text("Enter your Prism password once to turn on requests for movies and shows that aren't on the server yet.")
+                .font(.caption).foregroundStyle(.secondary)
+            HStack {
+                SecureField("Password", text: $password)
+                    .textContentType(.password)
+                    .padding(10)
+                    .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .onSubmit(connect)
+                Button(action: connect) {
+                    if busy { ProgressView() } else { Text("Turn on") }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(busy || password.isEmpty)
+            }
+            if failed { Text("That password didn't work.").font(.caption).foregroundStyle(.red) }
+        }
+        .padding(16)
+        .background(Theme.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private func connect() {
+        guard let base = Seerr.shared.baseURL, !password.isEmpty else { return }
+        busy = true
+        failed = false
+        Task {
+            do {
+                try await Seerr.shared.signIn(address: base.absoluteString, username: app.session?.userName ?? "", password: password)
+                onConnected()
+            } catch { failed = true }
+            password = ""
+            busy = false
+        }
+    }
 }
 
 /// Square artwork card for music, channels and the like.

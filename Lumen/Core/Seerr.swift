@@ -45,21 +45,65 @@ final class Seerr {
     private(set) var userName: String?
 
     @ObservationIgnored private var accountKey: String?
-    private var session: URLSession { .shared }
+    /// Each Prism profile keeps its own Seerr sign-in (cookies aren't shared between profiles).
+    @ObservationIgnored private let session: URLSession = {
+        let c = URLSessionConfiguration.ephemeral
+        c.httpShouldSetCookies = false
+        c.httpCookieAcceptPolicy = .never
+        return URLSession(configuration: c)
+    }()
+    @ObservationIgnored private var cookie: String?
 
     private init() {}
 
     var isConfigured: Bool { baseURL != nil && signedIn }
+    /// Found Seerr, but this profile hasn't signed in to it yet.
+    var needsSignIn: Bool { baseURL != nil && !signedIn }
 
-    /// Load the saved address for this Prism account and check the session.
-    func activate(accountKey: String?) async {
+    /// Find Seerr for this Prism profile (saved, or found next to the Jellyfin server) and check the sign-in.
+    func activate(accountKey: String?, jellyfinURL: String? = nil) async {
+        guard accountKey != self.accountKey || baseURL == nil else { return }
         self.accountKey = accountKey
         signedIn = false
         canManage = false
-        guard let key = accountKey, let raw = UserDefaults.standard.string(forKey: "prism.seerr.\(key)"),
-              let url = URL(string: raw) else { baseURL = nil; return }
-        baseURL = url
-        await refreshMe()
+        cookie = accountKey.flatMap { Keychain.load("seerr.\($0)") }.flatMap { String(data: $0, encoding: .utf8) }
+        if let key = accountKey, let raw = UserDefaults.standard.string(forKey: "prism.seerr.\(key)"), let url = URL(string: raw) {
+            baseURL = url
+        } else {
+            baseURL = await Self.discover(near: jellyfinURL)
+        }
+        if baseURL != nil, cookie != nil { await refreshMe() }
+    }
+
+    /// Seerr usually lives at requests.<your Jellyfin domain>. Confirm it's a Seerr that uses Jellyfin.
+    static func discover(near jellyfinURL: String?) async -> URL? {
+        guard let raw = jellyfinURL, let host = URL(string: raw)?.host, !host.isEmpty,
+              host.contains("."), Int(host.split(separator: ".").last ?? "") == nil else { return nil }
+        let parts = host.split(separator: ".")
+        let root = parts.count > 2 && parts.first != "www" && !host.hasSuffix(".duckdns.org") ? parts.dropFirst().joined(separator: ".") : host
+        let candidates = ["requests.\(host)", "requests.\(root)", "seerr.\(root)", "jellyseerr.\(root)", "request.\(root)"]
+        var seen = Set<String>()
+        for h in candidates where seen.insert(h).inserted {
+            guard let url = URL(string: "https://\(h)"),
+                  let probe = URL(string: "https://\(h)/api/v1/settings/public") else { continue }
+            var req = URLRequest(url: probe)
+            req.timeoutInterval = 4
+            if let (data, resp) = try? await URLSession.shared.data(for: req),
+               (resp as? HTTPURLResponse)?.statusCode == 200,
+               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               obj["initialized"] as? Bool == true, (obj["mediaServerType"] as? Int) == 2 {
+                return url
+            }
+        }
+        return nil
+    }
+
+    /// Sign in to requests with the same username and password used for Prism (right after Prism sign-in).
+    func autoConnect(accountKey: String, jellyfinURL: String, username: String, password: String) async {
+        self.accountKey = nil
+        await activate(accountKey: accountKey, jellyfinURL: jellyfinURL)
+        guard let base = baseURL, !signedIn else { return }
+        try? await signIn(address: base.absoluteString, username: username, password: password)
     }
 
     func signIn(address: String, username: String, password: String) async throws {
@@ -76,8 +120,11 @@ final class Seerr {
 
     func signOut() async {
         _ = try? await call("POST", "auth/logout")
-        if let key = accountKey { UserDefaults.standard.removeObject(forKey: "prism.seerr.\(key)") }
-        baseURL = nil
+        if let key = accountKey {
+            UserDefaults.standard.removeObject(forKey: "prism.seerr.\(key)")
+            Keychain.delete("seerr.\(key)")
+        }
+        cookie = nil
         signedIn = false
     }
 
@@ -149,13 +196,21 @@ final class Seerr {
         req.httpMethod = method
         req.timeoutInterval = 15
         req.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let cookie { req.setValue(cookie, forHTTPHeaderField: "Cookie") }
         if let body {
             req.httpBody = try JSONSerialization.data(withJSONObject: body)
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
         let (data, response) = try await session.data(for: req)
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            throw JellyfinError.http(http.statusCode)
+        if let http = response as? HTTPURLResponse {
+            // Keep the session cookie Seerr hands out at sign-in, per profile.
+            let fields = http.allHeaderFields.reduce(into: [String: String]()) { $0["\($1.key)"] = "\($1.value)" }
+            let found = HTTPCookie.cookies(withResponseHeaderFields: fields, for: url).filter { $0.name == "connect.sid" }
+            if let c = found.first {
+                cookie = "\(c.name)=\(c.value)"
+                if let key = accountKey, let d = cookie?.data(using: .utf8) { Keychain.save(d, key: "seerr.\(key)") }
+            }
+            if !(200..<300).contains(http.statusCode) { throw JellyfinError.http(http.statusCode) }
         }
         return data.isEmpty ? nil : try? JSONSerialization.jsonObject(with: data)
     }

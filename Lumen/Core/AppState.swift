@@ -260,6 +260,10 @@ final class AppState {
         let (client, info) = try await connect(server: server)
         let auth = try await client.authenticate(username: username, password: password)
         adopt(client: client, info: info, auth: auth)
+        // Connect requests (Seerr) with the same sign-in, so search can offer "Request it".
+        if let s = session {
+            Task { await Seerr.shared.autoConnect(accountKey: s.key, jellyfinURL: s.serverURL, username: username, password: password) }
+        }
     }
 
     /// Quick Connect: ask the server for a code that a signed-in device approves.
