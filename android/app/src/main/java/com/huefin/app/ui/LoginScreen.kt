@@ -78,7 +78,7 @@ fun LoginScreen(adding: Boolean, onDone: () -> Unit) {
                     HueButton(enabled = !busy && server.isNotBlank() && username.isNotBlank(), modifier = Modifier.fillMaxWidth(), onClick = {
                         busy = true; error = null
                         scope.launch {
-                            try { AppState.login(server, username, password); onDone() }
+                            try { AppState.login(server.trim(), username.trim(), password); onDone() }
                             catch (e: Exception) { error = e.message ?: "Couldn't sign in." }
                             busy = false
                         }
