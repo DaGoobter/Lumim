@@ -369,6 +369,9 @@ struct ItemRouter: View {
         case "CollectionFolder" where item.collectionType == "books",
              "UserView" where item.collectionType == "books":
             BooksLibraryView(library: item)
+        case "CollectionFolder" where item.collectionType == "livetv",
+             "UserView" where item.collectionType == "livetv":
+            LiveTVView()
         case "Book", "AudioBook":
             BookDetailView(book: item)
         case "MusicAlbum":
