@@ -53,7 +53,8 @@ fun cardScale(): Float = when (LocalWidthClass.current) { WidthClass.Compact -> 
 @Composable
 fun RemoteImage(url: String?, modifier: Modifier = Modifier, contentScale: ContentScale = ContentScale.Crop) {
     Box(modifier.background(Color.White.copy(alpha = 0.06f))) {
-        if (url != null) AsyncImage(model = url, contentDescription = null, contentScale = contentScale, modifier = Modifier.fillMaxSize())
+        if (url != null) AsyncImage(model = url, contentDescription = null, contentScale = contentScale, modifier = Modifier.fillMaxSize(),
+            filterQuality = androidx.compose.ui.graphics.FilterQuality.High)
     }
 }
 

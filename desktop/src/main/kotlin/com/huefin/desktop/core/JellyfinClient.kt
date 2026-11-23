@@ -309,8 +309,9 @@ class JellyfinClient(val baseUrl: String, var accessToken: String? = null, var u
 
     // MARK: Images
 
+    /** PC screens are big and often high-DPI: ask for images at twice the phone size, at high quality. */
     fun imageURL(itemId: String, type: String = "Primary", maxWidth: Int = 400, tag: String? = null) =
-        url("Items/$itemId/Images/$type", mapOf("maxWidth" to maxWidth.toString(), "quality" to "90", "tag" to tag))
+        url("Items/$itemId/Images/$type", mapOf("maxWidth" to (maxWidth * 2).coerceAtMost(3840).toString(), "quality" to "96", "tag" to tag))
     fun posterURL(item: BaseItem, width: Int = 400): String =
         if (item.type == "Episode" && item.seriesId != null) imageURL(item.seriesId, maxWidth = width, tag = item.seriesPrimaryImageTag)
         else imageURL(item.id, maxWidth = width, tag = item.imageTag("Primary"))
@@ -333,7 +334,7 @@ class JellyfinClient(val baseUrl: String, var accessToken: String? = null, var u
         item.albumId?.let { return imageURL(it, maxWidth = width, tag = item.albumPrimaryImageTag) }
         return imageURL(item.id, maxWidth = width)
     }
-    fun userImageURL(id: String) = url("Users/$id/Images/Primary", mapOf("maxWidth" to "300"))
+    fun userImageURL(id: String) = url("Users/$id/Images/Primary", mapOf("maxWidth" to "600", "quality" to "96"))
 }
 
 fun JsonElement.objOrNull(): JsonObject? = runCatching { jsonObject }.getOrNull()

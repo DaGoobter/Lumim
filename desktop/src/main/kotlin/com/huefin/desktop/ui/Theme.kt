@@ -73,7 +73,7 @@ fun HuefinTheme(content: @Composable () -> Unit) {
         surfaceContainerHigh = Color(0xFF221F2F), onSurface = Color(0xFFF5F3FA), onSurfaceVariant = Hue.secondaryText,
         outline = Hue.hairline,
     )
-    MaterialTheme(colorScheme = scheme) {
+    MaterialTheme(colorScheme = scheme, typography = windowsTypography()) {
         Surface(color = Hue.night, contentColor = Color(0xFFF5F3FA)) { content() }
     }
 }
@@ -134,3 +134,20 @@ fun SoftButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Bool
 @Composable
 fun Eyebrow(text: String, color: Color = LocalHue.current) =
     Text(text.uppercase(), color = color, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.4.sp)
+
+/** Windows' own UI font (Segoe UI), so text is as crisp as the rest of the system. */
+private val Segoe = androidx.compose.ui.text.font.FontFamily(
+    listOf(FontWeight.Light, FontWeight.Normal, FontWeight.Medium, FontWeight.SemiBold, FontWeight.Bold, FontWeight.ExtraBold, FontWeight.Black).map {
+        androidx.compose.ui.text.platform.SystemFont("Segoe UI", it)
+    })
+
+@Composable
+private fun windowsTypography(): androidx.compose.material3.Typography {
+    val t = androidx.compose.material3.Typography()
+    fun f(s: androidx.compose.ui.text.TextStyle) = s.copy(fontFamily = Segoe)
+    return t.copy(displayLarge = f(t.displayLarge), displayMedium = f(t.displayMedium), displaySmall = f(t.displaySmall),
+        headlineLarge = f(t.headlineLarge), headlineMedium = f(t.headlineMedium), headlineSmall = f(t.headlineSmall),
+        titleLarge = f(t.titleLarge), titleMedium = f(t.titleMedium), titleSmall = f(t.titleSmall),
+        bodyLarge = f(t.bodyLarge), bodyMedium = f(t.bodyMedium), bodySmall = f(t.bodySmall),
+        labelLarge = f(t.labelLarge), labelMedium = f(t.labelMedium), labelSmall = f(t.labelSmall))
+}
