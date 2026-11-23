@@ -131,11 +131,15 @@ final class JellyfinClient {
         return r?.items ?? []
     }
 
-    /// Chapter markers for an item.
-    func chapters(itemId: String) async -> [ChapterMarker] {
-        struct R: Codable { let chapters: [ChapterMarker]? }
-        let r: R? = try? await get("Users/\(userId ?? "")/Items/\(itemId)", query: ["Fields": "Chapters"])
-        return r?.chapters ?? []
+    /// Chapter markers and scrubbing-thumbnail info for an item.
+    func playbackExtras(itemId: String) async -> (chapters: [ChapterMarker], trickplay: [String: [String: TrickplayInfo]]) {
+        struct R: Codable { let chapters: [ChapterMarker]?; let trickplay: [String: [String: TrickplayInfo]]? }
+        let r: R? = try? await get("Users/\(userId ?? "")/Items/\(itemId)", query: ["Fields": "Chapters,Trickplay"])
+        return (r?.chapters ?? [], r?.trickplay ?? [:])
+    }
+
+    func trickplayTileURL(itemId: String, width: Int, index: Int, mediaSourceId: String) -> URL {
+        url("Videos/\(itemId)/Trickplay/\(width)/\(index).jpg", query: ["mediaSourceId": mediaSourceId])
     }
 
     /// The episode that comes after this one, across seasons.

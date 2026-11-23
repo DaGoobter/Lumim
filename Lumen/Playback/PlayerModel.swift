@@ -1,3 +1,4 @@
+import UIKit
 import AVFoundation
 import Combine
 import MediaPlayer
@@ -104,6 +105,10 @@ final class PlayerModel {
     private(set) var segments: [MediaSegment] = []
     private(set) var chapters: [ChapterMarker] = []
     private(set) var nextEpisode: BaseItem?
+    /// Scrubbing thumbnails, when the server has generated them.
+    private(set) var trickplay: TrickplayInfo?
+    @ObservationIgnored private var trickplaySourceId: String?
+    @ObservationIgnored private var trickplayTiles: [Int: UIImage] = [:]
     /// Seconds left before the next episode starts by itself; nil when the card isn't showing.
     private(set) var upNextCountdown: Int?
     @ObservationIgnored private var upNextDismissed = false
@@ -209,12 +214,22 @@ final class PlayerModel {
             segments = []; chapters = []; nextEpisode = nil; return
         }
         async let segs = client.mediaSegments(itemId: item.id)
-        async let chaps = client.chapters(itemId: item.id)
+        async let extras = client.playbackExtras(itemId: item.id)
         async let next: BaseItem? = item.type == "Episode" ? client.episodeAfter(item) : nil
-        let (s1, c1, n1) = await (segs, chaps, next)
+        let (s1, x1, n1) = await (segs, extras, next)
         segments = s1
-        chapters = c1.filter { $0.start > 0 || !($0.name ?? "").isEmpty }
+        chapters = x1.chapters
         nextEpisode = n1
+        trickplayTiles = [:]
+        // Pick this file's thumbnails, preferring a width that looks sharp in the preview.
+        let bySource = x1.trickplay[mediaSourceId ?? ""] ?? x1.trickplay.values.first
+        if let sizes = bySource {
+            trickplaySourceId = mediaSourceId ?? x1.trickplay.keys.first
+            let sorted = sizes.values.sorted { ($0.width ?? 0) < ($1.width ?? 0) }
+            trickplay = sorted.first { ($0.width ?? 0) >= 320 } ?? sorted.last
+        } else {
+            trickplay = nil
+        }
     }
 
     private func updateUpNext() {
@@ -228,6 +243,39 @@ final class PlayerModel {
         let left = Self.upNextSeconds - Int(Date().timeIntervalSince(upNextShownAt ?? Date()))
         upNextCountdown = max(0, left)
         if left <= 0 { Task { await playNextEpisode() } }
+    }
+
+    /// The chapter the given time falls in.
+    func chapter(at seconds: Double) -> ChapterMarker? {
+        chapters.last { $0.start <= seconds }
+    }
+
+    /// The scrubbing thumbnail for a time, cut out of its sprite sheet.
+    func thumbnail(at seconds: Double) async -> UIImage? {
+        guard let info = trickplay, let client, let sourceId = trickplaySourceId,
+              let width = info.width, let interval = info.interval, interval > 0,
+              let tw = info.tileWidth, let th = info.tileHeight, tw > 0, th > 0 else { return nil }
+        let perTile = tw * th
+        let count = info.thumbnailCount ?? Int.max
+        let frame = min(max(0, Int(seconds * 1000) / interval), max(0, count - 1))
+        let tileIndex = frame / perTile
+        let tile: UIImage
+        if let cached = trickplayTiles[tileIndex] {
+            tile = cached
+        } else {
+            let url = client.trickplayTileURL(itemId: item.id, width: width, index: tileIndex, mediaSourceId: sourceId)
+            var req = URLRequest(url: url)
+            req.setValue(client.authorizationHeader, forHTTPHeaderField: "Authorization")
+            guard let (data, _) = try? await URLSession.shared.data(for: req), let img = UIImage(data: data) else { return nil }
+            trickplayTiles[tileIndex] = img
+            tile = img
+        }
+        guard let cg = tile.cgImage else { return nil }
+        let cellW = cg.width / tw, cellH = cg.height / th
+        let inTile = frame % perTile
+        let rect = CGRect(x: (inTile % tw) * cellW, y: (inTile / tw) * cellH, width: cellW, height: cellH)
+        guard let cut = cg.cropping(to: rect) else { return nil }
+        return UIImage(cgImage: cut)
     }
 
     func dismissUpNext() {
@@ -250,6 +298,8 @@ final class PlayerModel {
         reportedStart = false
         segments = []
         chapters = []
+        trickplay = nil
+        trickplayTiles = [:]
         currentTime = 0
         duration = 0
         // Keep the same audio/subtitle choices by language, not by track number.

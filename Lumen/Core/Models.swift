@@ -324,3 +324,14 @@ struct ChapterMarker: Codable, Hashable {
     let name: String?
     var start: Double { Double(startPositionTicks ?? 0) / 10_000_000 }
 }
+
+
+/// One size of Jellyfin's scrubbing thumbnails: sprite sheets of tileWidth × tileHeight frames.
+struct TrickplayInfo: Codable, Hashable {
+    let width: Int?
+    let height: Int?
+    let tileWidth: Int?
+    let tileHeight: Int?
+    let thumbnailCount: Int?
+    let interval: Int?        // milliseconds between frames
+}

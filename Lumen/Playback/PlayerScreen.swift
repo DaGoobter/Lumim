@@ -28,6 +28,7 @@ struct PlayerScreen: View {
     // Scrubbing
     @State private var scrubbing = false
     @State private var scrubValue: Double = 0
+    @State private var scrubThumb: UIImage?
 
     private var pinControls: Bool {
         model == nil || model?.isLoading == true || model?.errorMessage != nil || showInfo || showSubtitleSearch
@@ -173,6 +174,9 @@ struct PlayerScreen: View {
                                   onSearch: { showSubtitleSearch = true },
                                   onPick: { scheduleHide() })
                     }
+                    if model.chapters.count > 1 {
+                        ChapterMenu(model: model, timeString: timeString) { scheduleHide() }
+                    }
                     RoutePicker().frame(width: 38, height: 38)
                     if AVPictureInPictureController.isPictureInPictureSupported() {
                         circleButton("pip.enter", label: "Picture in Picture") { surface.startPiP() }
@@ -247,6 +251,16 @@ struct PlayerScreen: View {
                         }
                     )
                     .tint(.white)
+                    .background { ChapterTicks(model: model) }
+                    .overlay(alignment: .bottomLeading) {
+                        if scrubbing {
+                            ScrubPreview(model: model, time: scrubValue, image: scrubThumb, timeText: timeString(scrubValue))
+                        }
+                    }
+                    .task(id: scrubbing ? Int(scrubValue / Double(max(1, (model.trickplay?.interval ?? 10_000))) * 1000) : -1) {
+                        guard scrubbing else { scrubThumb = nil; return }
+                        if let img = await model.thumbnail(at: scrubValue) { scrubThumb = img }
+                    }
                     HStack {
                         Text(timeString(scrubbing ? scrubValue : model.currentTime))
                         Spacer()
@@ -801,5 +815,105 @@ struct SkipAndUpNext: View {
         .padding(12)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .shadow(color: .black.opacity(0.4), radius: 20, y: 8)
+    }
+}
+
+
+// MARK: - Scrubbing thumbnails & chapters
+
+/// A thumbnail (when the server has them) and the chapter name, floating above the scrub position.
+struct ScrubPreview: View {
+    let model: PlayerModel
+    let time: Double
+    let image: UIImage?
+    let timeText: String
+
+    private let width: CGFloat = 200
+
+    var body: some View {
+        GeometryReader { geo in
+            let fraction = model.duration > 0 ? min(1, max(0, time / model.duration)) : 0
+            let x = min(max(0, geo.size.width * fraction - width / 2), max(0, geo.size.width - width))
+            VStack(spacing: 6) {
+                if model.trickplay != nil {
+                    ZStack {
+                        Color.black
+                        if let image {
+                            Image(uiImage: image).resizable().aspectRatio(contentMode: .fit)
+                        } else {
+                            ProgressView().tint(.white)
+                        }
+                    }
+                    .frame(width: width, height: width * 9 / 16)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.white.opacity(0.6), lineWidth: 1.5))
+                }
+                VStack(spacing: 1) {
+                    if let name = model.chapter(at: time)?.name, !name.isEmpty {
+                        Text(name).font(.caption.weight(.semibold)).lineLimit(1)
+                    }
+                    Text(timeText).font(.caption.monospacedDigit().weight(.bold))
+                }
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(.ultraThinMaterial, in: Capsule())
+            }
+            .frame(width: width)
+            .offset(x: x, y: -(model.trickplay != nil ? width * 9 / 16 + 52 : 44))
+            .shadow(color: .black.opacity(0.5), radius: 12, y: 4)
+        }
+        .frame(height: 1)
+        .allowsHitTesting(false)
+    }
+}
+
+/// Small marks on the scrubber where each chapter starts.
+struct ChapterTicks: View {
+    let model: PlayerModel
+
+    var body: some View {
+        GeometryReader { geo in
+            if model.duration > 0, model.chapters.count > 1 {
+                ForEach(Array(model.chapters.enumerated()), id: \.offset) { _, ch in
+                    if ch.start > 1 {
+                        Capsule()
+                            .fill(.white.opacity(0.55))
+                            .frame(width: 2, height: 8)
+                            .position(x: geo.size.width * min(1, ch.start / model.duration), y: geo.size.height / 2)
+                    }
+                }
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+struct ChapterMenu: View {
+    let model: PlayerModel
+    let timeString: (Double) -> String
+    var onPick: () -> Void
+
+    var body: some View {
+        Menu {
+            ForEach(Array(model.chapters.enumerated()), id: \.offset) { i, ch in
+                Button {
+                    model.seek(to: ch.start)
+                    onPick()
+                } label: {
+                    let title = "\(ch.name?.isEmpty == false ? ch.name! : "Chapter \(i + 1)")  ·  \(timeString(ch.start))"
+                    if model.chapter(at: model.currentTime) == ch {
+                        Label(title, systemImage: "play.fill")
+                    } else {
+                        Text(title)
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "list.bullet.rectangle")
+                .font(.system(size: 16, weight: .semibold))
+                .frame(width: 38, height: 38)
+                .background(.ultraThinMaterial, in: Circle())
+                .foregroundStyle(.white)
+        }
+        .accessibilityLabel("Chapters")
     }
 }
