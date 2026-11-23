@@ -258,6 +258,7 @@ final class SyncPlayManager {
     private func normalized(_ id: String) -> String { id.replacingOccurrences(of: "-", with: "").lowercased() }
 }
 
+#if os(iOS)
 /// The Watch Together sheet: start a group with this video, join someone's, or leave.
 struct SyncPlaySheet: View {
     let model: PlayerModel?
@@ -350,3 +351,4 @@ struct SyncPlaySheet: View {
         }
     }
 }
+#endif

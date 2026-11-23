@@ -54,6 +54,7 @@ final class AppRouter {
 struct DownloadRecord: Codable, Hashable {
     let itemId: String
     var posterURL: URL? { nil }
+    var localURL: URL? { nil }
 }
 
 @MainActor
@@ -63,4 +64,12 @@ final class DownloadManager {
     func attach(client: JellyfinClient) {}
     func localFile(for itemId: String) -> URL? { nil }
     func recordOfflineProgress(_ itemId: String, ticks: Int64) {}
+}
+
+extension MediaStream {
+    /// Picture-based subtitles can't be sent as text; the server has to burn them into the video.
+    var isImageSubtitle: Bool {
+        ["pgssub", "pgs", "hdmv_pgs_subtitle", "dvdsub", "dvd_subtitle", "vobsub", "dvbsub", "dvb_subtitle"]
+            .contains((codec ?? "").lowercased())
+    }
 }

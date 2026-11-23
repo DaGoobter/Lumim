@@ -55,7 +55,8 @@ struct TVMusicView: View {
         .fullScreenCover(isPresented: $nowPlaying) { TVNowPlaying() }
         .task {
             guard let c = app.client else { return }
-            lib = library ?? (try? await c.userViews())?.first { $0.collectionType == "music" }
+            let views = (try? await c.userViews()) ?? []
+            lib = library ?? views.first { $0.collectionType == "music" }
             guard let lib else { return }
             albums = (try? await c.items(parentId: lib.id, types: "MusicAlbum", recursive: true, sortBy: "DateCreated", sortOrder: "Descending", start: 0, limit: 60).items) ?? []
         }

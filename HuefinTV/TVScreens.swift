@@ -278,7 +278,7 @@ struct TVDetailView: View {
                         if let logo = app.client?.logoURL(for: i), i.type != "Episode" { TVImage(url: logo, contentMode: .fit).frame(maxWidth: 600, maxHeight: 200, alignment: .leading) }
                         else { Text(i.displayTitle).font(.system(size: 60, weight: .black)) }
                         if let e = i.episodeLabel { Text(e).font(.title3.weight(.semibold)) }
-                        Text(([i.productionYear.map(String.init), i.officialRating, i.runtimeText, i.communityRating.map { String(format: "★ %.1f", $0) }].compactMap { $0 } + i.badges).joined(separator: "  ·  "))
+                        Text(([i.productionYear.map(String.init), i.officialRating, i.runtimeText, i.communityRating.map { String(format: "★ %.1f", $0) }].compactMap { $0 } + (i.mediaSources?.first?.badges ?? [])).joined(separator: "  ·  "))
                             .foregroundStyle(.secondary)
                         Text(i.overview ?? "").lineLimit(4).frame(maxWidth: 1000, alignment: .leading)
                         HStack(spacing: 30) {
