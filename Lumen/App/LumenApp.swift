@@ -46,6 +46,10 @@ struct RootView: View {
     @Environment(AppState.self) private var app
     @Environment(\.scenePhase) private var scenePhase
     @State private var router = AppRouter.shared
+    @State private var socket = SessionSocket.shared
+    @State private var showProfiles = false
+    @State private var askedThisLaunch = false
+    @AppStorage("prism.askWhoIsWatching") private var askOnLaunch = true
 
     var body: some View {
         Group {
@@ -58,7 +62,31 @@ struct RootView: View {
         }
         .animation(.easeInOut(duration: 0.35), value: app.client != nil)
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { app.scheduleRouteCheck() }
+            if phase == .active {
+                app.scheduleRouteCheck()
+                if let c = app.client { Task { await socket.connect(c) } }
+            }
+        }
+        .task(id: app.client.map { ObjectIdentifier($0) }) {
+            if let c = app.client { await socket.connect(c) } else { socket.disconnect() }
+        }
+        .overlay(alignment: .top) {
+            if let notice = socket.notice {
+                NoticeBanner(notice: notice) { withAnimation { socket.notice = nil } }
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .task(id: notice.id) {
+                        try? await Task.sleep(for: .seconds(12))
+                        withAnimation { if socket.notice?.id == notice.id { socket.notice = nil } }
+                    }
+            }
+        }
+        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: socket.notice)
+        .fullScreenCover(isPresented: $showProfiles) { ProfilePickerView() }
+        .onChange(of: router.showProfiles) { _, v in if v { router.showProfiles = false; showProfiles = true } }
+        .onAppear {
+            guard !askedThisLaunch else { return }
+            askedThisLaunch = true
+            if askOnLaunch, app.accounts.count > 1, app.client != nil, router.pending == nil { showProfiles = true }
         }
         // Siri or Watch Together started a video.
         .fullScreenCover(item: $router.playRequest) { PlayerScreen(request: $0) }
@@ -121,6 +149,7 @@ struct AccountButton: View {
                 .shadow(color: .black.opacity(0.4), radius: 6)
         }
         .contextMenu {
+            Button { AppRouter.shared.showProfiles = true } label: { Label("Who's watching?", systemImage: "person.2.crop.square.stack") }
             ForEach(app.accounts, id: \.key) { account in
                 Button { app.switchTo(account) } label: {
                     Label("\(account.userName) · \(account.serverName ?? "Jellyfin")",

@@ -12,6 +12,9 @@ packages:
   ZIPFoundation:
     url: https://github.com/weichsel/ZIPFoundation
     from: 0.9.16
+  VLCKitSPM:
+    url: https://github.com/koombea/vlckit-spm
+    from: 3.6.0
 targets:
   Lumen:
     type: application
@@ -20,6 +23,7 @@ targets:
       - path: Lumen
     dependencies:
       - package: ZIPFoundation
+      - package: VLCKitSPM
     info:
       path: Lumen/Info.plist
       properties:

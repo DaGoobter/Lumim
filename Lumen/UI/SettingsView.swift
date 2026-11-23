@@ -36,6 +36,14 @@ struct SettingsView: View {
     @State private var isAdmin = false
     @State private var showAddAccount = false
     @State private var showSyncPlay = false
+    @State private var canFamily = false
+    @AppStorage(PlaybackPrefs.keys.engine) private var engine = PlaybackEngine.auto.rawValue
+    @AppStorage(PlaybackPrefs.keys.autoIntro) private var autoIntro = false
+    @AppStorage(PlaybackPrefs.keys.autoRecap) private var autoRecap = false
+    @AppStorage(PlaybackPrefs.keys.autoCredits) private var autoCredits = false
+    @AppStorage(PlaybackPrefs.keys.delay) private var autoDelay = 3
+    @AppStorage(PlaybackPrefs.keys.back) private var skipBack = 10
+    @AppStorage(PlaybackPrefs.keys.forward) private var skipForward = 10
 
     var body: some View {
         @Bindable var app = app
@@ -59,6 +67,24 @@ struct SettingsView: View {
                     }
                 }
             }
+            if canFamily, let client = app.client {
+                Section {
+                    NavigationLink { FamilyView(client: client) } label: {
+                        HStack(spacing: 14) {
+                            Image(systemName: "figure.2.and.child.holdinghands")
+                                .font(.system(size: 19, weight: .bold)).foregroundStyle(.white)
+                                .frame(width: 46, height: 46)
+                                .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Theme.gradient))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Family").font(.headline)
+                                Text("See what everyone's watching, pause it, send a message").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+
             Section {
                 ForEach(app.accounts, id: \.key) { account in
                     Button { app.switchTo(account) } label: {
@@ -265,6 +291,38 @@ struct SettingsView: View {
                 Text(voiceFooter)
             }
 
+            Section {
+                Picker("Player", selection: $engine) {
+                    ForEach(PlaybackEngine.allCases) { Text($0.label).tag($0.rawValue) }
+                }
+            } header: {
+                Text("Playback engine")
+            } footer: {
+                Text("Automatic uses Apple's player whenever it can play the original (best for Dolby Vision, HDR, AirPlay and Picture in Picture). For files it can't, like many MKV, AVI, DTS or TrueHD files, Prism switches to its own engine and plays the original instead of making your server convert it. Each title's page shows which will happen.")
+            }
+
+            Section {
+                Toggle("Skip intros automatically", isOn: $autoIntro)
+                Toggle("Skip recaps automatically", isOn: $autoRecap)
+                Toggle("Skip credits to the next episode", isOn: $autoCredits)
+                if autoIntro || autoRecap {
+                    Picker("Wait before skipping", selection: $autoDelay) {
+                        Text("Skip right away").tag(0)
+                        ForEach([3, 5, 10], id: \.self) { Text("\($0) seconds").tag($0) }
+                    }
+                }
+                Picker("Jump back", selection: $skipBack) {
+                    ForEach([5, 10, 15, 30], id: \.self) { Text("\($0) seconds").tag($0) }
+                }
+                Picker("Jump forward", selection: $skipForward) {
+                    ForEach([5, 10, 15, 30], id: \.self) { Text("\($0) seconds").tag($0) }
+                }
+            } header: {
+                Text("Skipping")
+            } footer: {
+                Text("Auto-skip shows a \"Watch it\" button during the wait so you can keep an intro you like. Needs intro/credits markers on the server (Intro Skipper plugin).")
+            }
+
             Section("This device") {
                 capability("Dolby Vision", DeviceCapabilities.dolbyVision)
                 capability("HDR10", DeviceCapabilities.hdr10)
@@ -283,7 +341,10 @@ struct SettingsView: View {
         .background(TintedBackdrop(color: nil))
         .navigationTitle("Settings")
         .task(id: app.session?.userName) {
-            if let client = app.client { isAdmin = await client.adminIsAdministrator() } else { isAdmin = false }
+            if let client = app.client {
+                isAdmin = await client.adminIsAdministrator()
+                canFamily = await client.canControlOthers()
+            } else { isAdmin = false; canFamily = false }
         }
         .onChange(of: app.maxBitrate) { app.persistSettings() }
         .onChange(of: app.preferLocal) {

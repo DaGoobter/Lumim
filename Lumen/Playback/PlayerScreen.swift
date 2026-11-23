@@ -3,9 +3,43 @@ import AVKit
 
 import MediaPlayer
 
+/// Opens the right player: Apple's (HDR, Dolby Vision, AirPlay, PiP) or the Prism Engine for files
+/// Apple can't play, so the server doesn't have to convert them.
+struct PlayerScreen: View {
+    let request: PlaybackRequest
+    @Environment(AppState.self) private var app
+    @State private var useEngine: Bool?
+
+    var body: some View {
+        Group {
+            switch useEngine {
+            case .none:
+                ZStack { Color.black.ignoresSafeArea(); ProgressView().tint(.white) }
+            case .some(true):
+                #if canImport(VLCKitSPM)
+                EnginePlayerScreen(request: request)
+                #else
+                AppleVideoPlayerScreen(request: request)
+                #endif
+            case .some(false):
+                AppleVideoPlayerScreen(request: request)
+            }
+        }
+        .task {
+            guard useEngine == nil else { return }
+            // Watch Together needs Apple's player (it's the one wired to the group).
+            if !EngineAvailability.available || SyncPlayManager.shared.groupId != nil {
+                useEngine = false
+            } else {
+                useEngine = await EngineDecider.useEngine(for: request, client: app.client, maxBitrate: app.maxBitrate)
+            }
+        }
+    }
+}
+
 /// Lumen's own player: full-screen video with zoom (pinch, double-tap or the zoom menu), custom controls,
 /// AirPlay, Picture in Picture, audio/subtitle picker and Stream Info.
-struct PlayerScreen: View {
+struct AppleVideoPlayerScreen: View {
     let request: PlaybackRequest
     @Environment(AppState.self) private var app
     @Environment(\.dismiss) private var dismiss
@@ -108,6 +142,7 @@ struct PlayerScreen: View {
             let m = PlayerModel(request: request, client: app.client, maxBitrate: app.maxBitrate,
                                 prefs: app.trackPrefs)
             model = m
+            PlayerModel.closeAction = { close() }
             await m.start()
             scheduleHide()
             await SyncPlayManager.shared.playerOpened(m)
@@ -197,10 +232,10 @@ struct PlayerScreen: View {
                 // Transport
                 HStack(spacing: 56) {
                     if !model.isLive {
-                    Button { model.skip(by: -10); scheduleHide() } label: {
-                        Image(systemName: "gobackward.10").font(.system(size: 30, weight: .medium))
+                    Button { model.skip(by: -Double(PlaybackPrefs.skipBack)); scheduleHide() } label: {
+                        Image(systemName: "gobackward.\(PlaybackPrefs.skipBack)").font(.system(size: 30, weight: .medium))
                     }
-                    .accessibilityLabel("Back 10 seconds")
+                    .accessibilityLabel("Back \(PlaybackPrefs.skipBack) seconds")
                     }
                     Button { model.togglePlay(); scheduleHide() } label: {
                         Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
@@ -210,10 +245,10 @@ struct PlayerScreen: View {
                     }
                     .accessibilityLabel(model.isPlaying ? "Pause" : "Play")
                     if !model.isLive {
-                    Button { model.skip(by: 10); scheduleHide() } label: {
-                        Image(systemName: "goforward.10").font(.system(size: 30, weight: .medium))
+                    Button { model.skip(by: Double(PlaybackPrefs.skipForward)); scheduleHide() } label: {
+                        Image(systemName: "goforward.\(PlaybackPrefs.skipForward)").font(.system(size: 30, weight: .medium))
                     }
-                    .accessibilityLabel("Forward 10 seconds")
+                    .accessibilityLabel("Forward \(PlaybackPrefs.skipForward) seconds")
                     }
                 }
                 .foregroundStyle(.white)
@@ -763,9 +798,19 @@ struct SkipAndUpNext: View {
                     upNextCard(next: next, countdown: countdown)
                         .transition(.move(edge: .trailing).combined(with: .opacity))
                 } else if model.activeSkip != nil {
+                    if model.autoSkipIn != nil {
+                        Button { model.cancelAutoSkip() } label: {
+                            Text("Watch it")
+                                .font(.subheadline.weight(.semibold))
+                                .padding(.horizontal, 16).padding(.vertical, 13)
+                                .foregroundStyle(.white)
+                                .background(.ultraThinMaterial, in: Capsule())
+                        }
+                    }
                     Button { model.skipSegment() } label: {
                         HStack(spacing: 8) {
-                            Text(model.skipLabel)
+                            Text(model.autoSkipIn.map { "\(model.skipLabel) in \($0)" } ?? model.skipLabel)
+                                .contentTransition(.numericText(countsDown: true))
                             Image(systemName: "forward.end.fill")
                         }
                         .font(.headline)

@@ -176,6 +176,7 @@ struct AdminUserPolicy: Codable, Hashable {
     let enablePlaybackRemuxing: Bool?
     let enableLiveTvAccess: Bool?
     let remoteClientBitrateLimit: Int?
+    let enableRemoteControlOfOtherUsers: Bool?
 }
 
 struct ScheduledTask: Codable, Identifiable, Hashable {
@@ -277,6 +278,18 @@ extension JellyfinClient {
     func adminSystemInfo() async throws -> AdminSystemInfo { try await get("System/Info") }
     func adminStorage() async throws -> SystemStorage { try await get("System/Info/Storage") }
     func adminCounts() async throws -> ItemCounts { try await get("Items/Counts") }
+
+    /// Admins, and people the admin marked as a parent, can control other people's playback.
+    func canControlOthers() async -> Bool {
+        struct Me: Codable { let policy: AdminUserPolicy? }
+        let me: Me? = try? await get("Users/Me")
+        return me?.policy?.isAdministrator == true || me?.policy?.enableRemoteControlOfOtherUsers == true
+    }
+
+    /// Devices this user is allowed to control (everyone's, for admins and parents).
+    func controllableSessions() async throws -> [AdminSession] {
+        try await get("Sessions", query: ["controllableByUserId": userId, "activeWithinSeconds": "960"])
+    }
 
     func adminSessions() async throws -> [AdminSession] {
         try await get("Sessions", query: ["activeWithinSeconds": "960"])

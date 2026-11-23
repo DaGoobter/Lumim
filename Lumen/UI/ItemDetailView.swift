@@ -20,6 +20,10 @@ struct ItemDetailView: View {
     @State private var artColor: ArtColor?
     @State private var favorite: Bool?
     @State private var similar: [BaseItem] = []
+    @State private var extras: [BaseItem] = []
+    @State private var parts: [BaseItem] = []
+    @State private var version: String?
+    @State private var playability: Playability?
 
     private var shown: BaseItem? { item ?? preview }
 
@@ -67,6 +71,17 @@ struct ItemDetailView: View {
                         }
                         .padding()
                         .frame(maxWidth: 900, alignment: .leading)
+                        if !parts.isEmpty || !extras.isEmpty {
+                            Shelf(parts.isEmpty ? "Extras" : "Parts & Extras") {
+                                ForEach(parts + extras) { x in
+                                    Button { playRequest = PlaybackRequest(item: x, startTicks: x.resumeTicks) } label: {
+                                        LandscapeCard(item: x)
+                                    }
+                                    .buttonStyle(CardPressStyle())
+                                }
+                            }
+                            .padding(.top, 20)
+                        }
                         if !similar.isEmpty {
                             Shelf("More Like This") {
                                 ForEach(similar) { s in
@@ -93,6 +108,15 @@ struct ItemDetailView: View {
         .toolbarBackground(.hidden, for: .navigationBar)
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
+        .task(id: version) {
+            guard let client = app.client, let it = shown, it.isPlayable, !it.isLiveChannel else { return }
+            if downloads.records[it.id]?.state == .completed {
+                playability = Playability(kind: .original, detail: "Downloaded to this device.")
+                return
+            }
+            playability = await EngineDecider.playability(for: it, client: client, maxBitrate: app.maxBitrate,
+                                                          mediaSourceId: version)
+        }
         .artColor(from: shown.flatMap { app.client?.backdropURL(for: $0, width: 400) }, into: $artColor)
         .fullScreenCover(item: $playRequest, onDismiss: { Task { await load() } }) { PlayerScreen(request: $0) }
     }
@@ -154,6 +178,41 @@ struct ItemDetailView: View {
             }
         }
         if let p = it.progress { ProgressBar(value: p).frame(maxWidth: 260) }
+        if it.isPlayable, !it.isLiveChannel, let pl = playability, pl.kind != .unknown {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: pl.symbol)
+                    .foregroundStyle(pl.kind == .converted ? AnyShapeStyle(Theme.orange) : AnyShapeStyle(Theme.spectrum))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(pl.title).font(.subheadline.weight(.semibold))
+                    Text(pl.detail).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .padding(10)
+            .background(Theme.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .accessibilityElement(children: .combine)
+        }
+        if let sources = it.mediaSources, sources.count > 1 {
+            Menu {
+                Picker("Version", selection: Binding(get: { version ?? sources[0].id }, set: { version = $0 })) {
+                    ForEach(sources, id: \.id) { src in
+                        Text(versionLabel(src)).tag(src.id)
+                    }
+                }
+            } label: {
+                Label("Version: \(versionLabel(sources.first { $0.id == (version ?? sources[0].id) } ?? sources[0]))",
+                      systemImage: "square.stack.3d.up")
+                    .font(.subheadline.weight(.semibold))
+            }
+            .buttonStyle(SecondaryButtonStyle())
+        }
+    }
+
+    private func versionLabel(_ src: MediaSource) -> String {
+        var parts: [String] = []
+        if let n = src.name, !n.isEmpty { parts.append(n) }
+        if let v = src.videoStream, let h = v.height { parts.append(h >= 2000 ? "4K" : h >= 1000 ? "1080p" : "\(h)p") }
+        if let size = src.size { parts.append(formatBytes(size)) }
+        return parts.isEmpty ? "Version" : parts.joined(separator: " · ")
     }
 
     private var seasonSection: some View {
@@ -230,7 +289,9 @@ struct ItemDetailView: View {
             playRequest = PlaybackRequest(item: it, startTicks: local.needsSync == true ? local.resumeTicks : it.resumeTicks,
                                           localDownload: local)
         } else {
-            playRequest = PlaybackRequest(item: it, startTicks: it.resumeTicks)
+            var req = PlaybackRequest(item: it, startTicks: it.resumeTicks)
+            req.mediaSourceId = version
+            playRequest = req
         }
     }
 
@@ -244,6 +305,11 @@ struct ItemDetailView: View {
             item = full
             error = nil
             if similar.isEmpty, full.type == "Movie" || full.isSeries { similar = await client.similar(full.id) }
+            if full.type == "Movie" || full.isSeries || full.type == "Episode" {
+                async let x = client.specialFeatures(full.id)
+                async let p: [BaseItem] = full.type == "Movie" ? client.additionalParts(full.id) : []
+                (extras, parts) = await (x, p)
+            }
             if full.isSeries {
                 seasons = try await client.seasons(seriesId: full.id)
                 if selectedSeason == nil {

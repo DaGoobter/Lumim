@@ -22,9 +22,7 @@ final class SyncPlayManager {
 
     @ObservationIgnored private weak var model: PlayerModel?
     @ObservationIgnored private var client: JellyfinClient?
-    @ObservationIgnored private var socket: URLSessionWebSocketTask?
-    @ObservationIgnored private var keepAlive: Task<Void, Never>?
-    @ObservationIgnored private var receiveTask: Task<Void, Never>?
+    @ObservationIgnored private var clockTask: Task<Void, Never>?
     @ObservationIgnored private var commandTask: Task<Void, Never>?
     /// serverTime ≈ localTime + offset
     @ObservationIgnored private var offset: TimeInterval = 0
@@ -98,40 +96,27 @@ final class SyncPlayManager {
         participants = []
         status = nil
         playlistItemId = nil
-        keepAlive?.cancel()
-        receiveTask?.cancel()
+        clockTask?.cancel()
         commandTask?.cancel()
-        socket?.cancel(with: .normalClosure, reason: nil)
-        socket = nil
+    }
+
+    func connectionLost() {
+        if groupId != nil { status = "Connection lost. Reconnecting…" }
     }
 
     // MARK: Connection
 
     private func connect(client: JellyfinClient) async throws {
-        if socket != nil, self.client === client { return }
-        reset()
         self.client = client
+        await SessionSocket.shared.connect(client)
+        guard SessionSocket.shared.isConnected else { throw JellyfinError.badURL }
         await syncClock(client)
-        // The server needs to know this device can be remote-controlled.
-        _ = try? await client.send("Sessions/Capabilities/Full", body: [
-            "PlayableMediaTypes": ["Video", "Audio"], "SupportsMediaControl": true,
-            "SupportedCommands": ["Play", "Pause", "Seek"],
-        ])
-        guard var comps = URLComponents(url: client.baseURL.appendingPathComponent("socket"), resolvingAgainstBaseURL: false)
-        else { throw JellyfinError.badURL }
-        comps.scheme = comps.scheme == "https" ? "wss" : "ws"
-        comps.queryItems = [URLQueryItem(name: "api_key", value: client.accessToken),
-                            URLQueryItem(name: "deviceId", value: JellyfinClient.deviceId)]
-        guard let url = comps.url else { throw JellyfinError.badURL }
-        let task = URLSession.shared.webSocketTask(with: url)
-        socket = task
-        task.resume()
-        receiveTask = Task { [weak self] in await self?.receiveLoop(task) }
-        keepAlive = Task { [weak self] in
+        clockTask?.cancel()
+        clockTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(30))
-                try? await task.send(.string(#"{"MessageType":"KeepAlive"}"#))
-                if let self, let c = self.client { await self.syncClock(c) }
+                try? await Task.sleep(for: .seconds(60))
+                guard let self, self.groupId != nil, let c = self.client else { continue }
+                await self.syncClock(c)
             }
         }
     }
@@ -158,31 +143,9 @@ final class SyncPlayManager {
 
     private var serverNow: Date { Date().addingTimeInterval(offset) }
 
-    private func receiveLoop(_ task: URLSessionWebSocketTask) async {
-        while !Task.isCancelled {
-            guard let message = try? await task.receive() else {
-                if groupId != nil { status = "Connection lost. Leave and join again." }
-                return
-            }
-            let data: Data?
-            switch message {
-            case .string(let s): data = s.data(using: .utf8)
-            case .data(let d): data = d
-            @unknown default: data = nil
-            }
-            guard let data, let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let type = obj["MessageType"] as? String else { continue }
-            switch type {
-            case "SyncPlayGroupUpdate": await handleGroupUpdate(obj["Data"] as? [String: Any] ?? [:])
-            case "SyncPlayCommand": handleCommand(obj["Data"] as? [String: Any] ?? [:])
-            default: break
-            }
-        }
-    }
-
     // MARK: Server messages
 
-    private func handleGroupUpdate(_ u: [String: Any]) async {
+    func handleGroupUpdate(_ u: [String: Any]) async {
         let type = u["Type"] as? String ?? ""
         let data = u["Data"]
         switch type {
@@ -257,7 +220,7 @@ final class SyncPlayManager {
         ])
     }
 
-    private func handleCommand(_ c: [String: Any]) {
+    func handleCommand(_ c: [String: Any]) {
         guard let model else { return }
         let command = c["Command"] as? String ?? ""
         let ticks = (c["PositionTicks"] as? NSNumber)?.int64Value

@@ -9,6 +9,8 @@ struct PlaybackRequest: Identifiable {
     let item: BaseItem
     let startTicks: Int64
     var localDownload: DownloadRecord? = nil
+    /// A specific version (e.g. 4K vs 1080p, Director's Cut) to play.
+    var mediaSourceId: String? = nil
 }
 
 /// What is actually being played and why — shown in the player's info panel.
@@ -72,6 +74,12 @@ extension MediaStream {
 
 @MainActor @Observable
 final class PlayerModel {
+    /// The player on screen right now (for remote control from a parent's device).
+    static weak var active: PlayerModel?
+    /// Closes the player screen; set by PlayerScreen.
+    static var closeAction: (() -> Void)?
+    static func requestClose() { closeAction?() }
+
     let player = AVPlayer()
     var isLoading = true
     var errorMessage: String?
@@ -184,6 +192,7 @@ final class PlayerModel {
     var itemId: String { request.item.id }
 
     func start() async {
+        PlayerModel.active = self
         AudioPlayer.shared.stop()   // video takes over from any music/audiobook
         try? AVAudioSession.sharedInstance().setActive(true)
         uiTimeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.5, preferredTimescale: 600),
@@ -234,7 +243,39 @@ final class PlayerModel {
 
     func skipSegment() {
         guard let s = activeSkip else { return }
+        autoSkipIn = nil
         seek(to: s.end)
+    }
+
+    // MARK: Auto-skip
+
+    /// Seconds until an intro/recap is skipped automatically (shown on the Skip button).
+    private(set) var autoSkipIn: Int?
+    @ObservationIgnored private var autoSkipSegment: Double?
+    @ObservationIgnored private var autoSkipSince: Date?
+    @ObservationIgnored private var autoSkipDeclined: Set<Double> = []
+
+    /// "Watch it": don't auto-skip this segment.
+    func cancelAutoSkip() {
+        if let start = activeSkip?.start { autoSkipDeclined.insert(start) }
+        autoSkipIn = nil
+    }
+
+    private func updateAutoSkip() {
+        guard let seg = activeSkip, itemReady, isPlaying, !SyncPlayManager.shared.controls(self) else {
+            if activeSkip == nil { autoSkipIn = nil; autoSkipSegment = nil }
+            return
+        }
+        let wanted = seg.type == "Recap" ? PlaybackPrefs.autoSkipRecap : PlaybackPrefs.autoSkipIntro
+        guard wanted, !autoSkipDeclined.contains(seg.start) else { autoSkipIn = nil; return }
+        if autoSkipSegment != seg.start { autoSkipSegment = seg.start; autoSkipSince = Date() }
+        let left = PlaybackPrefs.autoSkipDelay - Int(Date().timeIntervalSince(autoSkipSince ?? Date()))
+        if left <= 0 {
+            autoSkipDeclined.insert(seg.start)
+            skipSegment()
+        } else {
+            autoSkipIn = left
+        }
     }
 
     /// When the credits start: the server's Outro marker if it has one, otherwise 30 seconds before the end.
@@ -250,7 +291,8 @@ final class PlayerModel {
         }
         async let segs = client.mediaSegments(itemId: item.id)
         async let extras = client.playbackExtras(itemId: item.id)
-        async let next: BaseItem? = item.type == "Episode" ? client.episodeAfter(item) : nil
+        async let next: BaseItem? = item.type == "Episode" ? client.episodeAfter(item)
+            : (item.type == "Movie" ? client.additionalParts(item.id).first : nil)
         let (s1, x1, n1) = await (segs, extras, next)
         segments = s1
         chapters = x1.chapters
@@ -273,6 +315,10 @@ final class PlayerModel {
             return
         }
         _ = next.id
+        if PlaybackPrefs.autoSkipCredits, isPlaying {
+            Task { await playNextEpisode() }
+            return
+        }
         if upNextShownAt == nil { upNextShownAt = Date() }
         guard isPlaying else { return }   // the countdown waits while paused
         let left = Self.upNextSeconds - Int(Date().timeIntervalSince(upNextShownAt ?? Date()))
@@ -329,6 +375,8 @@ final class PlayerModel {
         guard !stopped else { return }
         nextEpisode = nil
         upNextCountdown = nil
+        autoSkipDeclined = []
+        autoSkipIn = nil
         upNextShownAt = nil
         upNextDismissed = false
         player.pause()
@@ -422,6 +470,7 @@ final class PlayerModel {
         if let size = player.currentItem?.presentationSize, size != .zero { videoSize = size }
         updateNowPlaying()
         updateUpNext()
+        updateAutoSkip()
     }
 
     // MARK: Lock screen / Control Center
@@ -551,9 +600,11 @@ final class PlayerModel {
                                                          startTicks: startTicks, audioStreamIndex: audioIndex,
                                                          subtitleStreamIndex: subtitleIndex,
                                                          enableDirectPlay: !customTracks,
-                                                         forAirPlay: airPlayMode)
+                                                         forAirPlay: airPlayMode,
+                                                         mediaSourceId: request.mediaSourceId)
                 guard generation == loadGeneration else { return }
-                guard let src = info.mediaSources.first else { throw JellyfinError.noMediaSource }
+                guard let src = info.mediaSources.first(where: { $0.id == request.mediaSourceId }) ?? info.mediaSources.first
+                else { throw JellyfinError.noMediaSource }
 
                 // First load: apply the user's default languages, then ask again with those tracks.
                 if !appliedPreferences {
@@ -807,6 +858,7 @@ final class PlayerModel {
     func stop() async {
         guard !stopped else { return }
         stopped = true
+        if PlayerModel.active === self { PlayerModel.active = nil }
         sleepTask?.cancel()
         SyncPlayManager.shared.unbind(self)
         liveWatchdog?.cancel()

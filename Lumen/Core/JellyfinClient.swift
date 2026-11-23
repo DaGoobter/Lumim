@@ -230,6 +230,17 @@ final class JellyfinClient {
         ]).items
     }
 
+    /// Behind-the-scenes, trailers, deleted scenes…
+    func specialFeatures(_ itemId: String) async -> [BaseItem] {
+        (try? await get("Items/\(itemId)/SpecialFeatures", query: ["userId": userId])) ?? []
+    }
+
+    /// Parts 2, 3… of a movie split across files.
+    func additionalParts(_ itemId: String) async -> [BaseItem] {
+        let r: ItemsResult? = try? await get("Videos/\(itemId)/AdditionalParts", query: ["userId": userId])
+        return r?.items ?? []
+    }
+
     /// Items related to this one (for "More Like This").
     func similar(_ itemId: String) async -> [BaseItem] {
         let r: ItemsResult? = try? await get("Items/\(itemId)/Similar", query: [
@@ -406,7 +417,8 @@ final class JellyfinClient {
 
     func playbackInfo(itemId: String, maxBitrate: Int, startTicks: Int64 = 0,
                       audioStreamIndex: Int? = nil, subtitleStreamIndex: Int? = -1,
-                      enableDirectPlay: Bool = true, forAirPlay: Bool = false) async throws -> PlaybackInfoResponse {
+                      enableDirectPlay: Bool = true, forAirPlay: Bool = false,
+                      mediaSourceId: String? = nil) async throws -> PlaybackInfoResponse {
         let maxBitrate = forAirPlay ? min(maxBitrate, 10_000_000) : maxBitrate
         var body: [String: Any] = [
             "UserId": userId ?? "",
@@ -423,6 +435,7 @@ final class JellyfinClient {
         ]
         if let audioStreamIndex { body["AudioStreamIndex"] = audioStreamIndex }
         if let subtitleStreamIndex { body["SubtitleStreamIndex"] = subtitleStreamIndex }
+        if let mediaSourceId { body["MediaSourceId"] = mediaSourceId }
         // Some server versions read these from the query string rather than the body, so send both.
         return try await post("Items/\(itemId)/PlaybackInfo", query: [
             "userId": userId,
@@ -430,6 +443,7 @@ final class JellyfinClient {
             "startTimeTicks": String(startTicks),
             "audioStreamIndex": audioStreamIndex.map(String.init),
             "subtitleStreamIndex": subtitleStreamIndex.map(String.init),
+            "mediaSourceId": mediaSourceId,
         ], body: body)
     }
 

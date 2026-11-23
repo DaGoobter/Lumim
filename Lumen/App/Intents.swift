@@ -10,6 +10,8 @@ final class AppRouter {
     var pending: Action?
     /// A video to open full screen from anywhere (Siri, Watch Together).
     var playRequest: PlaybackRequest?
+    /// Open the "Who's watching?" screen.
+    var showProfiles = false
     private init() {}
 
     func perform(_ action: Action, app: AppState) async {
