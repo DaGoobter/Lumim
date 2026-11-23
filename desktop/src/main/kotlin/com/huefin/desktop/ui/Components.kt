@@ -31,6 +31,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.remember
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -53,8 +54,14 @@ fun cardScale(): Float = when (LocalWidthClass.current) { WidthClass.Compact -> 
 @Composable
 fun RemoteImage(url: String?, modifier: Modifier = Modifier, contentScale: ContentScale = ContentScale.Crop) {
     Box(modifier.background(Color.White.copy(alpha = 0.06f))) {
-        if (url != null) AsyncImage(model = url, contentDescription = null, contentScale = contentScale, modifier = Modifier.fillMaxSize(),
-            filterQuality = androidx.compose.ui.graphics.FilterQuality.High)
+        if (url != null) {
+            // Decode the server's image as-is and let Skia scale it with mipmaps (smooth). Letting the image
+            // library shrink it first used nearest-neighbour sampling, which made thumbnails look rough.
+            val ctx = coil3.compose.LocalPlatformContext.current
+            val request = remember(url) { coil3.request.ImageRequest.Builder(ctx).data(url).size(coil3.size.Size.ORIGINAL).build() }
+            AsyncImage(model = request, contentDescription = null, contentScale = contentScale, modifier = Modifier.fillMaxSize(),
+                filterQuality = androidx.compose.ui.graphics.FilterQuality.High)
+        }
     }
 }
 

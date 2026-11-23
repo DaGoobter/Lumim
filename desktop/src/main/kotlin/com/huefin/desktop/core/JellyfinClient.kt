@@ -28,6 +28,11 @@ class HttpError(val code: Int) : Exception(
 /** The Jellyfin REST API (server 10.9+). */
 class JellyfinClient(val baseUrl: String, var accessToken: String? = null, var userId: String? = null) {
     companion object {
+        /** Windows display scaling (1.0 at 100%, 1.5 at 150%…). */
+        val screenScale: Double by lazy {
+            runCatching { java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().screenDevices.maxOf { it.defaultConfiguration.defaultTransform.scaleX } }
+                .getOrDefault(1.0).coerceIn(1.0, 3.0)
+        }
         const val CLIENT_NAME = "Huefin for Windows"
         val VERSION: String = (JellyfinClient::class.java.getResource("/huefin-version.txt")?.readText()?.trim() ?: "0.3")
         const val LIST_FIELDS = "PrimaryImageAspectRatio,Overview,Genres"
@@ -309,9 +314,9 @@ class JellyfinClient(val baseUrl: String, var accessToken: String? = null, var u
 
     // MARK: Images
 
-    /** PC screens are big and often high-DPI: ask for images at twice the phone size, at high quality. */
+    /** Ask the server (which resizes smoothly) for images sized for this screen's scaling, at high quality. */
     fun imageURL(itemId: String, type: String = "Primary", maxWidth: Int = 400, tag: String? = null) =
-        url("Items/$itemId/Images/$type", mapOf("maxWidth" to (maxWidth * 2).coerceAtMost(3840).toString(), "quality" to "96", "tag" to tag))
+        url("Items/$itemId/Images/$type", mapOf("maxWidth" to (maxWidth * screenScale * 1.25).toInt().coerceAtMost(3840).toString(), "quality" to "96", "tag" to tag))
     fun posterURL(item: BaseItem, width: Int = 400): String =
         if (item.type == "Episode" && item.seriesId != null) imageURL(item.seriesId, maxWidth = width, tag = item.seriesPrimaryImageTag)
         else imageURL(item.id, maxWidth = width, tag = item.imageTag("Primary"))
