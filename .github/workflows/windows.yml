@@ -1,0 +1,63 @@
+name: Build Windows app
+
+on:
+  push:
+    branches: [main]
+    paths: ['desktop/**', '.github/workflows/windows.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: desktop
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      - name: Fetch VLC (the playback engine shipped inside Huefin)
+        run: |
+          curl -L --fail -o vlc.zip https://get.videolan.org/vlc/3.0.21/win64/vlc-3.0.21-win64.zip
+          unzip -q vlc.zip -d vlc-src
+          mkdir -p appres/windows/vlc
+          src=$(ls -d vlc-src/vlc-*)
+          cp "$src"/libvlc.dll "$src"/libvlccore.dll appres/windows/vlc/
+          cp -r "$src"/plugins appres/windows/vlc/
+          # Not needed for playback: VLC's own windows, skins, visualizers and scripts.
+          rm -rf appres/windows/vlc/plugins/{gui,visualization,video_splitter,lua,control,services_discovery,stream_out,video_filter/libpuzzle*}
+          du -sh appres/windows/vlc
+
+      - name: Build installer
+        run: gradle packageMsi packageExe --stacktrace --console=plain
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: Huefin-windows
+          path: |
+            desktop/build/compose/binaries/main/msi/*.msi
+            desktop/build/compose/binaries/main/exe/*.exe
+          retention-days: 30
+
+      - name: Publish to the "windows-latest" release (direct download link)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp build/compose/binaries/main/exe/*.exe Huefin-Setup.exe
+          cp build/compose/binaries/main/msi/*.msi Huefin.msi
+          gh release view windows-latest >/dev/null 2>&1 || gh release create windows-latest --title "Huefin for Windows (latest)" --notes "Newest Windows build. Download Huefin-Setup.exe and run it to install or update." --prerelease
+          gh release upload windows-latest Huefin-Setup.exe Huefin.msi --clobber

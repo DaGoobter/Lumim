@@ -3,7 +3,7 @@ name: Build iOS app
 on:
   push:
     branches: [main]
-    paths-ignore: ['android/**', '.github/workflows/android.yml']
+    paths-ignore: ['android/**', '.github/workflows/android.yml', 'desktop/**', '.github/workflows/windows.yml']
   workflow_dispatch:
 
 jobs:

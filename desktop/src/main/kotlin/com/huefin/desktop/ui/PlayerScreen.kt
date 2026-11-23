@@ -1,0 +1,165 @@
+package com.huefin.desktop.ui
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.dp
+import com.huefin.desktop.core.AppState
+import com.huefin.desktop.player.PlayerController
+import kotlinx.coroutines.delay
+import java.awt.Cursor
+
+private fun clock(ms: Long): String { val s = ms / 1000; return if (s >= 3600) "%d:%02d:%02d".format(s / 3600, s / 60 % 60, s % 60) else "%d:%02d".format(s / 60, s % 60) }
+
+/** Full-window player: the picture, and controls that fade away while you watch. */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+@Composable
+fun PlayerScreen(p: PlayerController) {
+    var lastMove by remember { mutableStateOf(System.currentTimeMillis()) }
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    var menuOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { while (true) { delay(300); now = System.currentTimeMillis() } }
+    val show = !p.playing || menuOpen || now - lastMove < 3000 || p.loading
+    val hidden = Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR)
+    Box(Modifier.fillMaxSize().background(Color.Black)
+        .onPointerEvent(PointerEventType.Move) { lastMove = System.currentTimeMillis() }
+        .pointerHoverIcon(if (show) PointerIcon.Default else PointerIcon(java.awt.Toolkit.getDefaultToolkit().createCustomCursor(
+            java.awt.image.BufferedImage(1, 1, java.awt.image.BufferedImage.TYPE_INT_ARGB), java.awt.Point(0, 0), "none")))
+        .pointerInput(Unit) { detectTapGestures(onDoubleTap = { Nav.toggleFullscreen() }, onTap = { p.togglePlay(); lastMove = System.currentTimeMillis() }) }) {
+        // The picture.
+        val surface = p.surface
+        Canvas(Modifier.fillMaxSize()) {
+            surface.frame // redraw on every new frame
+            val img = surface.image ?: return@Canvas
+            synchronized(surface.lock) {
+                val iw = img.width.toFloat(); val ih = img.height.toFloat()
+                val scale = minOf(size.width / iw, size.height / ih)
+                val w = iw * scale; val h = ih * scale
+                drawImage(img, srcOffset = IntOffset.Zero, srcSize = IntSize(img.width, img.height),
+                    dstOffset = IntOffset(((size.width - w) / 2).toInt(), ((size.height - h) / 2).toInt()), dstSize = IntSize(w.toInt(), h.toInt()),
+                    filterQuality = FilterQuality.Medium)
+            }
+        }
+        if (p.surface.image == null && !p.loading && p.error == null && p.item.isAudio) {
+            RemoteImage(AppState.client?.albumArtURL(p.item, 800), Modifier.align(Alignment.Center).size(420.dp).clip(RoundedCornerShape(24.dp)))
+        }
+        if (p.loading && p.error == null) CircularProgressIndicator(Modifier.align(Alignment.Center).size(56.dp), color = Color.White)
+        p.error?.let { e ->
+            Column(Modifier.align(Alignment.Center).clip(RoundedCornerShape(22.dp)).background(Hue.card).padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(Icons.Filled.Warning, null, Modifier.size(40.dp), tint = Hue.sun)
+                Text("Couldn't play this", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+                Text(e, color = Hue.secondaryText, modifier = Modifier.padding(vertical = 8.dp).widthIn(max = 420.dp))
+                SoftButton({ p.close() }) { Text("Close") }
+            }
+        }
+
+        // Skip intro / up next.
+        val skip = p.activeSkip
+        Column(Modifier.align(Alignment.BottomEnd).padding(end = 32.dp, bottom = if (show) 130.dp else 40.dp), horizontalAlignment = Alignment.End) {
+            if (skip != null) SectionHue(Hue.coral) { HueButton({ p.skipSegment() }) { Text(p.skipLabel); Icon(Icons.Filled.SkipNext, null) } }
+            val next = p.nextEpisode
+            if (p.upNextIn != null && next != null) {
+                Row(Modifier.clip(RoundedCornerShape(18.dp)).background(Hue.card.copy(alpha = 0.95f)).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    RemoteImage(AppState.client?.landscapeURL(next, 400), Modifier.size(160.dp, 90.dp).clip(RoundedCornerShape(10.dp)))
+                    Column(Modifier.padding(horizontal = 14.dp).widthIn(max = 260.dp)) {
+                        Eyebrow("Up next in ${p.upNextIn}", Hue.coral)
+                        Text(next.episodeLabel ?: next.displayTitle, fontWeight = FontWeight.SemiBold, maxLines = 2)
+                        Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SectionHue(Hue.coral) { HueButton({ p.playNext() }) { Text("Play now") } }
+                            TextButton({ p.dismissUpNext() }) { Text("Keep watching") }
+                        }
+                    }
+                }
+            }
+        }
+
+        AnimatedVisibility(show, Modifier.fillMaxSize(), enter = fadeIn(), exit = fadeOut()) {
+            Box(Modifier.fillMaxSize()) {
+                // Top bar.
+                Row(Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.75f), Color.Transparent))).padding(20.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    IconButton({ p.close() }) { Icon(Icons.Filled.Close, "Close (Esc)") }
+                    Column(Modifier.weight(1f).padding(start = 8.dp)) {
+                        Text(p.item.displayTitle, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        (p.item.episodeLabel ?: p.item.artistLine)?.let { Text(it, color = Hue.secondaryText) }
+                    }
+                    Text(p.method, style = MaterialTheme.typography.labelMedium, color = Hue.secondaryText, modifier = Modifier.padding(end = 12.dp))
+                    TrackMenu(p) { menuOpen = it }
+                    IconButton({ Nav.toggleFullscreen() }) { Icon(Icons.Filled.Fullscreen, "Full screen (F)") }
+                }
+                // Bottom controls.
+                Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.8f))))
+                    .padding(horizontal = 28.dp, vertical = 18.dp)) {
+                    if (!p.isLive) {
+                        var drag by remember { mutableStateOf<Float?>(null) }
+                        val len = p.lengthMs.coerceAtLeast(1)
+                        Slider(drag ?: (p.positionMs.toFloat() / len), { drag = it }, onValueChangeFinished = { drag?.let { p.seekTo((it * len).toLong()) }; drag = null },
+                            colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Hue.coral, inactiveTrackColor = Color.White.copy(alpha = 0.25f)))
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (!p.isLive) IconButton({ p.seekBy(-10) }) { Icon(Icons.Filled.Replay10, "Back 10 seconds") }
+                        Box(Modifier.size(56.dp).clip(CircleShape).background(Hue.paper).clickable { p.togglePlay() }, Alignment.Center) {
+                            Icon(if (p.playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, if (p.playing) "Pause" else "Play", Modifier.size(32.dp), tint = Hue.ink)
+                        }
+                        if (!p.isLive) IconButton({ p.seekBy(30) }) { Icon(Icons.Filled.Forward30, "Forward 30 seconds") }
+                        if (p.nextEpisode != null) IconButton({ p.playNext() }) { Icon(Icons.Filled.SkipNext, "Next episode") }
+                        Spacer(Modifier.width(12.dp))
+                        if (p.isLive) Text("LIVE", Modifier.clip(RoundedCornerShape(6.dp)).background(Hue.coral).padding(horizontal = 8.dp, vertical = 3.dp), color = Hue.ink, fontWeight = FontWeight.Black)
+                        else Text("${clock(p.positionMs)} / ${clock(p.lengthMs)}", style = MaterialTheme.typography.bodyMedium)
+                        Spacer(Modifier.weight(1f))
+                        IconButton({ p.toggleMute() }) { Icon(if (p.muted || p.volume == 0) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp, "Mute (M)") }
+                        Slider(p.volume.toFloat(), { p.setVolume(it.toInt()) }, Modifier.width(140.dp), valueRange = 0f..200f,
+                            colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White, inactiveTrackColor = Color.White.copy(alpha = 0.25f)))
+                        Text("${p.volume}%", style = MaterialTheme.typography.labelSmall, color = Hue.secondaryText, modifier = Modifier.width(44.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TrackMenu(p: PlayerController, onOpen: (Boolean) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconButton({ open = true; onOpen(true) }) { Icon(Icons.Filled.ClosedCaption, "Audio and subtitles") }
+        DropdownMenu(open, { open = false; onOpen(false) }, Modifier.heightIn(max = 520.dp)) {
+            Text("Audio", Modifier.padding(horizontal = 14.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium, color = Hue.secondaryText)
+            p.audioTracks.forEach { t -> DropdownMenuItem({ Text((if (t.id == p.audioTrack) "✓  " else "     ") + t.label) }, { p.selectAudio(t.id); open = false; onOpen(false) }) }
+            HorizontalDivider()
+            Text("Subtitles", Modifier.padding(horizontal = 14.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium, color = Hue.secondaryText)
+            DropdownMenuItem({ Text((if (p.subtitleTrack < 0) "✓  " else "     ") + "Off") }, { p.selectSubtitle(-1); open = false; onOpen(false) })
+            p.subtitleTracks.forEach { t -> DropdownMenuItem({ Text((if (t.id == p.subtitleTrack) "✓  " else "     ") + t.label) }, { p.selectSubtitle(t.id); open = false; onOpen(false) }) }
+        }
+    }
+}
