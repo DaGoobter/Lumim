@@ -113,6 +113,7 @@ struct AppleVideoPlayerScreen: View {
                         .padding()
                     }
 
+                    CastingOverlay()
                     SkipAndUpNext(model: model, client: app.client, controlsShown: controlsVisible || pinControls)
 
                     controls(model: model, size: geo.size)
@@ -218,6 +219,12 @@ struct AppleVideoPlayerScreen: View {
                         ChapterMenu(model: model, timeString: timeString) { scheduleHide() }
                     }
                     RoutePicker().frame(width: 38, height: 38)
+                    #if canImport(GoogleCast)
+                    if !model.isLive && !model.isOffline {
+                        CastButton().frame(width: 24, height: 24)
+                            .frame(width: 38, height: 38).background(.ultraThinMaterial, in: Circle())
+                    }
+                    #endif
                     if AVPictureInPictureController.isPictureInPictureSupported() {
                         circleButton("pip.enter", label: "Picture in Picture") { surface.startPiP() }
                     }

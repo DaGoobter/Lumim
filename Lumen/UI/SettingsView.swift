@@ -115,6 +115,9 @@ struct SettingsView: View {
                     NavigationLink { QuickConnectAdminView(client: client) } label: {
                         Label("Quick Connect", systemImage: "qrcode")
                     }
+                    NavigationLink { RequestsView() } label: {
+                        Label("Requests", systemImage: "plus.rectangle.on.rectangle")
+                    }
                     Button { showSyncPlay = true } label: {
                         Label(SyncPlayManager.shared.groupId == nil ? "Watch Together" : "Watch Together · in a group",
                               systemImage: "person.2.wave.2")

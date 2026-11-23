@@ -418,6 +418,7 @@ final class DownloadManager {
         guard var r = records[id], r.state == .downloading || r.state == .queued else { return }
         r.state = .downloading
         r.progress = value
+        defer { DownloadActivityController.shared.refresh(Array(records.values)) }
         records[id] = r
     }
 
@@ -450,6 +451,7 @@ final class DownloadManager {
     }
 
     private func save() {
+        DownloadActivityController.shared.refresh(Array(records.values))
         if let data = try? JSONEncoder().encode(Array(records.values)) {
             try? data.write(to: storeURL, options: .atomic)
         }

@@ -349,6 +349,7 @@ struct UserAdminDetailView: View {
             } footer: {
                 Text("The most this person can stream when they're not on your home Wi-Fi. Anything bigger is shrunk to fit. 8 Mbps looks great on a 1080p TV; 4K originals run 25–80 Mbps, so a lower cap stops buffering on slower connections and saves your upload.")
             }
+            PrismDefaultsSection(client: client, userId: user.id)
             if let status { Section { Text(status).font(.footnote).foregroundStyle(.secondary) } }
         }
         .navigationTitle(user.name ?? "User")

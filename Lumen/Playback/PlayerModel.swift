@@ -190,6 +190,8 @@ final class PlayerModel {
     }
 
     var itemId: String { request.item.id }
+    /// For handing playback to a Chromecast.
+    var castClient: JellyfinClient? { client }
 
     func start() async {
         PlayerModel.active = self

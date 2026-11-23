@@ -14,6 +14,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 
         // Bigger image cache so posters don't reload constantly.
         URLCache.shared = URLCache(memoryCapacity: 64 * 1024 * 1024, diskCapacity: 512 * 1024 * 1024)
+        #if canImport(GoogleCast)
+        Task { @MainActor in CastManager.shared.setUp() }
+        #endif
         return true
     }
 
@@ -68,7 +71,10 @@ struct RootView: View {
             }
         }
         .task(id: app.client.map { ObjectIdentifier($0) }) {
-            if let c = app.client { await socket.connect(c) } else { socket.disconnect() }
+            if let c = app.client {
+                await ServerDefaults.apply(app: app)
+                await socket.connect(c)
+            } else { socket.disconnect() }
         }
         .overlay(alignment: .top) {
             if let notice = socket.notice {

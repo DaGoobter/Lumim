@@ -9,6 +9,8 @@ struct SearchView: View {
     @State private var searching = false
     @State private var error: String?
     @State private var playRequest: PlaybackRequest?
+    @State private var requestable: [Seerr.Result] = []
+    @State private var requestPick: Seerr.Result?
     @State private var recent: [String] = UserDefaults.standard.stringArray(forKey: "prism.recentSearches") ?? []
 
     private struct ResultGroup: Identifiable {
@@ -60,12 +62,21 @@ struct SearchView: View {
                     ProgressView().frame(maxWidth: .infinity).padding(.top, 80)
                 } else if let error {
                     ErrorBanner(message: error) { Task { await run() } }
-                } else if results.isEmpty {
-                    ContentUnavailableView.search(text: query).padding(.top, 60)
                 } else {
+                    if results.isEmpty && requestable.isEmpty {
+                        ContentUnavailableView.search(text: query).padding(.top, 60)
+                    }
                     ForEach(groups) { group in
                         Shelf(group.title) {
                             ForEach(group.items) { item in cell(item) }
+                        }
+                    }
+                    if !requestable.isEmpty {
+                        Shelf("Not on your server? Request it") {
+                            ForEach(requestable) { r in
+                                Button { requestPick = r } label: { SeerrPoster(result: r).frame(width: 120) }
+                                    .buttonStyle(CardPressStyle())
+                            }
                         }
                     }
                 }
@@ -85,6 +96,14 @@ struct SearchView: View {
         }
         .navigationDestination(for: BaseItem.self) { ItemRouter(item: $0) }
         .fullScreenCover(item: $playRequest) { PlayerScreen(request: $0) }
+        .sheet(item: $requestPick) { SeerrDetailSheet(result: $0) }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink { RequestsView() } label: { Image(systemName: "plus.rectangle.on.rectangle") }
+                    .accessibilityLabel("Requests")
+            }
+        }
+        .task(id: app.session?.key) { await Seerr.shared.activate(accountKey: app.session?.key) }
     }
 
     @ViewBuilder
@@ -119,7 +138,13 @@ struct SearchView: View {
 
     private func run() async {
         let term = query.trimmingCharacters(in: .whitespaces)
-        guard term.count >= 2, let client = app.client else { results = []; return }
+        guard term.count >= 2, let client = app.client else { results = []; requestable = []; return }
+        if Seerr.shared.isConfigured {
+            Task {
+                let found = await Seerr.shared.search(term)
+                if term == query.trimmingCharacters(in: .whitespaces) { requestable = found.filter { $0.status != 5 } }
+            }
+        }
         searching = true
         defer { searching = false }
         do {
