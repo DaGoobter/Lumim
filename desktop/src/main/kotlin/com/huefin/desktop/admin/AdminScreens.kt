@@ -39,7 +39,6 @@ import com.huefin.desktop.core.AppState
 import com.huefin.desktop.core.ServerDefaults
 import com.huefin.desktop.core.formatBytes
 import com.huefin.desktop.core.parseJellyfinDate
-import com.huefin.desktop.player.PlaybackEngine
 import com.huefin.desktop.ui.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -384,7 +383,7 @@ fun AdminUserScreen(id: String, nav: NavHostController) {
                 FormDivider()
                 FormPicker("Credits", defaults.autoSkipCredits, listOf(null to "Their choice", true to "Go straight to next episode", false to "Show countdown")) { defaults = defaults.copy(autoSkipCredits = it) }
                 FormDivider()
-                FormPicker("Player", defaults.engine, listOf<Pair<String?, String>>(null to "Their choice", "auto" to PlaybackEngine.Auto.label, "apple" to "Built-in player only", "prism" to PlaybackEngine.Prism.label)) {
+                FormPicker("Player", defaults.engine, listOf<Pair<String?, String>>(null to "Their choice", "auto" to "Automatic", "apple" to "Built-in player only", "prism" to "Huefin Engine always")) {
                     defaults = defaults.copy(engine = it) }
                 FormDivider()
                 FormRow("Send to their Huefin", icon = Icons.AutoMirrored.Filled.Send, onClick = {

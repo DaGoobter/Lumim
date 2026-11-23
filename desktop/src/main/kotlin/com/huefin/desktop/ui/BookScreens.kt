@@ -1,6 +1,9 @@
 package com.huefin.desktop.ui
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.text.AnnotatedString
@@ -131,7 +134,7 @@ fun BookScreen(id: String, nav: NavHostController) {
                                 if (downloading) CircularProgressIndicator(Modifier.size(18.dp), color = Hue.ink, strokeWidth = 2.dp) else Icon(Icons.AutoMirrored.Filled.MenuBook, null)
                                 Text(" Read")
                             }
-                            DownloadButton(b)
+                            DesktopDownloadButton(b)
                         }
                     }
                     b.progress?.let { ProgressBar(it, Modifier.width(220.dp)) }
