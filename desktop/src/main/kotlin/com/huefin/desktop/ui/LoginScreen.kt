@@ -39,8 +39,11 @@ fun LoginScreen(adding: Boolean, onDone: () -> Unit) {
     val scope = rememberCoroutineScope()
 
     Box(Modifier.fillMaxSize().background(Hue.night)) {
-        Box(Modifier.size(320.dp).offset((-80).dp, 40.dp).blur(110.dp).background(Hue.violet.copy(alpha = 0.5f), CircleShape))
-        Box(Modifier.size(300.dp).align(Alignment.BottomEnd).offset(80.dp, (-120).dp).blur(120.dp).background(Hue.coral.copy(alpha = 0.4f), CircleShape))
+        // Soft colour glows: radial gradients fade smoothly on every device (blur left square edges on some).
+        Box(Modifier.size(640.dp).offset((-240).dp, (-120).dp)
+            .background(androidx.compose.ui.graphics.Brush.radialGradient(listOf(Hue.violet.copy(alpha = 0.42f), Hue.violet.copy(alpha = 0.12f), androidx.compose.ui.graphics.Color.Transparent))))
+        Box(Modifier.size(600.dp).align(Alignment.BottomEnd).offset(220.dp, 80.dp)
+            .background(androidx.compose.ui.graphics.Brush.radialGradient(listOf(Hue.coral.copy(alpha = 0.34f), Hue.coral.copy(alpha = 0.10f), androidx.compose.ui.graphics.Color.Transparent))))
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(28.dp),
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp),
