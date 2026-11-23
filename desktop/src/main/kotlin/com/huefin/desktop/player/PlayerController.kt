@@ -213,7 +213,7 @@ class PlayerController(start: BaseItem, private val startTicks: Long, val onClos
     fun togglePlay() { mp?.controls()?.pause() }
     fun seekTo(ms: Long) { if (!isLive) mp?.controls()?.setTime(ms.coerceIn(0, (lengthMs - 1000).coerceAtLeast(0))) }
     fun seekBy(sec: Int) = seekTo(positionMs + sec * 1000L)
-    fun setVolume(v: Int) { volume = v.coerceIn(0, 200); mp?.audio()?.setVolume(volume) }
+    fun changeVolume(v: Int) { volume = v.coerceIn(0, 200); mp?.audio()?.setVolume(volume) }
     fun toggleMute() { muted = !muted; mp?.audio()?.isMute = muted }
     fun selectAudio(id: Int) { mp?.audio()?.setTrack(id); audioTrack = id }
     fun selectSubtitle(id: Int) { mp?.subpictures()?.setTrack(id); subtitleTrack = id }

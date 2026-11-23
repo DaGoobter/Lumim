@@ -138,7 +138,7 @@ fun PlayerScreen(p: PlayerController) {
                         else Text("${clock(p.positionMs)} / ${clock(p.lengthMs)}", style = MaterialTheme.typography.bodyMedium)
                         Spacer(Modifier.weight(1f))
                         IconButton({ p.toggleMute() }) { Icon(if (p.muted || p.volume == 0) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp, "Mute (M)") }
-                        Slider(p.volume.toFloat(), { p.setVolume(it.toInt()) }, Modifier.width(140.dp), valueRange = 0f..200f,
+                        Slider(p.volume.toFloat(), { p.changeVolume(it.toInt()) }, Modifier.width(140.dp), valueRange = 0f..200f,
                             colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White, inactiveTrackColor = Color.White.copy(alpha = 0.25f)))
                         Text("${p.volume}%", style = MaterialTheme.typography.labelSmall, color = Hue.secondaryText, modifier = Modifier.width(44.dp))
                     }
