@@ -83,6 +83,7 @@ final class PlayerModel {
     let player = AVPlayer()
     var isLoading = true
     var errorMessage: String?
+    @ObservationIgnored private var reconnecting = false
     /// Live TV: the stream stalled and we're waiting for it (or reconnecting).
     var liveStatus: String?
     var diagnostics = StreamDiagnostics()
@@ -673,6 +674,9 @@ final class PlayerModel {
             player.replaceCurrentItem(with: item)
         } catch {
             guard generation == loadGeneration else { return }
+            // A request cut short by a reconnect or by closing the player isn't a real failure.
+            if error is CancellationError || (error as? URLError)?.code == .cancelled || (error as NSError).code == NSURLErrorCancelled { return }
+            if isLive, !reconnecting, await reconnectLive(reason: "Reconnecting to the channel…") { return }
             errorMessage = error.localizedDescription
             isLoading = false
         }
@@ -695,6 +699,7 @@ final class PlayerModel {
             itemReady = true
             isLoading = false
             liveStatus = nil
+            errorMessage = nil
             if pendingSeekTicks > 0 && !isLive {
                 let t = CMTime(seconds: Double(pendingSeekTicks) / 10_000_000, preferredTimescale: 600)
                 player.seek(to: t, toleranceBefore: .zero, toleranceAfter: .positiveInfinity) { _ in }
@@ -709,6 +714,7 @@ final class PlayerModel {
             if reportedMethod == "Transcode" { Task { await checkServerSession() } }
             if isLive { startLiveWatchdog(item) }
         case .failed:
+            if let e = item.error as NSError?, e.code == NSURLErrorCancelled { return }
             if isLive, await reconnectLive(reason: "The channel dropped. Reconnecting…") { return }
             errorMessage = item.error?.localizedDescription ?? "Playback failed."
             isLoading = false
@@ -843,6 +849,10 @@ final class PlayerModel {
     /// Reopens the live stream. Gives up (returns false) after a few tries in a short time.
     private func reconnectLive(reason: String) async -> Bool {
         guard isLive, !stopped, client != nil else { return false }
+        // The stall watchdog and the end-of-stream notice can both fire; only reconnect once at a time.
+        guard !reconnecting else { return true }
+        reconnecting = true
+        defer { reconnecting = false }
         let now = Date()
         liveReconnects = liveReconnects.filter { now.timeIntervalSince($0) < 120 } + [now]
         guard liveReconnects.count <= 4 else {
