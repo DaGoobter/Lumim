@@ -51,18 +51,32 @@ val LocalWidthClass = compositionLocalOf { WidthClass.Compact }
 @Composable
 fun cardScale(): Float = when (LocalWidthClass.current) { WidthClass.Compact -> 1f; WidthClass.Medium -> 1.15f; WidthClass.Expanded -> 1.3f }
 
+/**
+ * An image from the server, fetched at exactly the size it's drawn on screen (the server resizes with
+ * high quality), so it's shown pixel for pixel with no extra scaling that could make it look grainy.
+ */
 @Composable
 fun RemoteImage(url: String?, modifier: Modifier = Modifier, contentScale: ContentScale = ContentScale.Crop) {
-    Box(modifier.background(Color.White.copy(alpha = 0.06f))) {
-        if (url != null) {
-            // Decode the server's image as-is and let Skia scale it with mipmaps (smooth). Letting the image
-            // library shrink it first used nearest-neighbour sampling, which made thumbnails look rough.
-            val ctx = coil3.compose.LocalPlatformContext.current
-            val request = remember(url) { coil3.request.ImageRequest.Builder(ctx).data(url).size(coil3.size.Size.ORIGINAL).build() }
-            AsyncImage(model = request, contentDescription = null, contentScale = contentScale, modifier = Modifier.fillMaxSize(),
-                filterQuality = androidx.compose.ui.graphics.FilterQuality.High)
-        }
+    androidx.compose.foundation.layout.BoxWithConstraints(if (contentScale == ContentScale.Crop) modifier.background(Color.White.copy(alpha = 0.06f)) else modifier) {
+        if (url == null) return@BoxWithConstraints
+        val w = if (constraints.hasBoundedWidth) constraints.maxWidth else 0
+        val h = if (constraints.hasBoundedHeight) constraints.maxHeight else 0
+        val sized = remember(url, w, h) { sizedURL(url, w, h, contentScale == ContentScale.Crop) }
+        val ctx = coil3.compose.LocalPlatformContext.current
+        val request = remember(sized) { coil3.request.ImageRequest.Builder(ctx).data(sized).size(coil3.size.Size.ORIGINAL).build() }
+        AsyncImage(model = request, contentDescription = null, contentScale = contentScale, modifier = Modifier.fillMaxSize(),
+            filterQuality = androidx.compose.ui.graphics.FilterQuality.Medium)
     }
+}
+
+private val sizeParams = Regex("""([?&])(maxWidth|maxHeight|fillWidth|fillHeight)=\d+""")
+private fun sizedURL(url: String, w: Int, h: Int, crop: Boolean): String {
+    if (w <= 0 || !url.contains("/Images/")) return url
+    fun bucket(v: Int) = ((v + 15) / 16) * 16   // round up a little so nearby sizes share the cache
+    val base = sizeParams.replace(url) { if (it.groupValues[1] == "?") "?" else "" }.replace("?&", "?")
+    val sep = if (base.contains('?')) "&" else "?"
+    return if (crop && h > 0) "$base${sep}fillWidth=${bucket(w)}&fillHeight=${bucket(h)}"
+    else "$base${sep}maxWidth=${bucket(w)}" + (if (h > 0) "&maxHeight=${bucket(h)}" else "")
 }
 
 @Composable
