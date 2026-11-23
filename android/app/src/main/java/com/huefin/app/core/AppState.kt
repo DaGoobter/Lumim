@@ -91,7 +91,9 @@ object AppState {
             val c = JellyfinClient(u)
             try { return c to c.publicInfo() } catch (e: Exception) { last = e }
         }
-        throw Exception("Couldn't reach that server. ${last.message ?: ""}".trim())
+        if (last is kotlinx.serialization.SerializationException)
+            throw Exception("Something answered at that address, but it isn't a Jellyfin server. Check the spelling of the address.")
+        throw Exception("Couldn't reach that server. Check the address and your internet connection.")
     }
 
     suspend fun login(server: String, username: String, password: String) {
