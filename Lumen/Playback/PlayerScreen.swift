@@ -780,7 +780,7 @@ struct SkipAndUpNext: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("Up Next in \(countdown)").font(.caption.weight(.bold)).foregroundStyle(Theme.blue)
-                    .contentTransition(.numericText(countdown: true))
+                    .contentTransition(.numericText(countsDown: true))
                 Text(next.episodeLabel ?? next.displayTitle).font(.subheadline.weight(.semibold)).lineLimit(2)
                 HStack(spacing: 8) {
                     Button { Task { await model.playNextEpisode() } } label: {
