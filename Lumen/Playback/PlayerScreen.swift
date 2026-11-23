@@ -77,6 +77,8 @@ struct PlayerScreen: View {
                         .padding()
                     }
 
+                    SkipAndUpNext(model: model, client: app.client, controlsShown: controlsVisible || pinControls)
+
                     controls(model: model, size: geo.size)
                         .opacity(controlsVisible || pinControls ? 1 : 0)
                         .allowsHitTesting(controlsVisible || pinControls)
@@ -160,8 +162,8 @@ struct PlayerScreen: View {
                 HStack(spacing: 12) {
                     circleButton("xmark", label: "Close") { close() }
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(request.item.displayTitle).font(.headline).lineLimit(1)
-                        if let sub = model.isLive ? model.liveProgramTitle : request.item.episodeLabel {
+                        Text(model.item.displayTitle).font(.headline).lineLimit(1)
+                        if let sub = model.isLive ? model.liveProgramTitle : model.item.episodeLabel {
                             Text(sub).font(.caption).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
                         }
                     }
@@ -720,5 +722,84 @@ struct StreamInfoView: View {
         LabeledContent(label) {
             Text(value).multilineTextAlignment(.trailing).textSelection(.enabled)
         }
+    }
+}
+
+
+// MARK: - Skip Intro / Up Next
+
+/// Floats over the video (shown even when the controls are hidden), like Netflix and Apple TV.
+struct SkipAndUpNext: View {
+    let model: PlayerModel
+    let client: JellyfinClient?
+    let controlsShown: Bool
+
+    var body: some View {
+        VStack {
+            Spacer()
+            HStack(alignment: .bottom) {
+                Spacer()
+                if let countdown = model.upNextCountdown, let next = model.nextEpisode {
+                    upNextCard(next: next, countdown: countdown)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                } else if model.activeSkip != nil {
+                    Button { model.skipSegment() } label: {
+                        HStack(spacing: 8) {
+                            Text(model.skipLabel)
+                            Image(systemName: "forward.end.fill")
+                        }
+                        .font(.headline)
+                        .padding(.horizontal, 20).padding(.vertical, 13)
+                        .foregroundStyle(.black)
+                        .background(.white, in: Capsule())
+                        .shadow(color: .black.opacity(0.35), radius: 14, y: 6)
+                    }
+                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                }
+            }
+            .padding(.trailing, 24)
+            .padding(.bottom, controlsShown ? 120 : 40)
+        }
+        .animation(.spring(duration: 0.35), value: model.upNextCountdown != nil)
+        .animation(.spring(duration: 0.35), value: model.activeSkip != nil)
+        .animation(.easeInOut(duration: 0.25), value: controlsShown)
+    }
+
+    private func upNextCard(next: BaseItem, countdown: Int) -> some View {
+        HStack(spacing: 14) {
+            ZStack {
+                Color.clear
+                    .aspectRatio(16 / 9, contentMode: .fit)
+                    .overlay { if let client { RemoteImage(url: client.imageURL(next.id, type: "Primary", maxWidth: 480)) } }
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                Circle().fill(.black.opacity(0.45)).frame(width: 44, height: 44)
+                Image(systemName: "play.fill").font(.title3).foregroundStyle(.white)
+            }
+            .frame(width: 150)
+            .onTapGesture { Task { await model.playNextEpisode() } }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Up Next in \(countdown)").font(.caption.weight(.bold)).foregroundStyle(Theme.blue)
+                    .contentTransition(.numericText(countdown: true))
+                Text(next.episodeLabel ?? next.displayTitle).font(.subheadline.weight(.semibold)).lineLimit(2)
+                HStack(spacing: 8) {
+                    Button { Task { await model.playNextEpisode() } } label: {
+                        Text("Play Now").font(.caption.weight(.bold))
+                            .padding(.horizontal, 12).padding(.vertical, 7)
+                            .foregroundStyle(.black).background(.white, in: Capsule())
+                    }
+                    Button { model.dismissUpNext() } label: {
+                        Text("Watch Credits").font(.caption.weight(.semibold))
+                            .padding(.horizontal, 12).padding(.vertical, 7)
+                            .background(.white.opacity(0.18), in: Capsule())
+                    }
+                }
+                .padding(.top, 2)
+            }
+            .frame(maxWidth: 230, alignment: .leading)
+        }
+        .padding(12)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .shadow(color: .black.opacity(0.4), radius: 20, y: 8)
     }
 }

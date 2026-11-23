@@ -306,3 +306,21 @@ func formatTicks(_ ticks: Int64) -> String {
 func formatBytes(_ bytes: Int64) -> String {
     ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
 }
+
+
+struct MediaSegment: Codable, Hashable {
+    let type: String?        // Intro, Outro, Recap, Preview, Commercial
+    let startTicks: Int64?
+    let endTicks: Int64?
+
+    var start: Double { Double(startTicks ?? 0) / 10_000_000 }
+    var end: Double { Double(endTicks ?? 0) / 10_000_000 }
+}
+
+struct MediaSegmentsResult: Codable { let items: [MediaSegment] }
+
+struct ChapterMarker: Codable, Hashable {
+    let startPositionTicks: Int64?
+    let name: String?
+    var start: Double { Double(startPositionTicks ?? 0) / 10_000_000 }
+}

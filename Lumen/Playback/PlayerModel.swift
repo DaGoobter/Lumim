@@ -96,7 +96,20 @@ final class PlayerModel {
     /// What's on now (live channels).
     var liveProgramTitle: String? { request.item.currentProgram?.title }
 
-    @ObservationIgnored private let request: PlaybackRequest
+    @ObservationIgnored private var request: PlaybackRequest
+    /// What's playing now (changes when the next episode starts).
+    private(set) var item: BaseItem
+
+    // Skip Intro / Credits and the next-episode countdown.
+    private(set) var segments: [MediaSegment] = []
+    private(set) var chapters: [ChapterMarker] = []
+    private(set) var nextEpisode: BaseItem?
+    /// Seconds left before the next episode starts by itself; nil when the card isn't showing.
+    private(set) var upNextCountdown: Int?
+    @ObservationIgnored private var upNextDismissed = false
+    @ObservationIgnored private var upNextShownAt: Date?
+    @ObservationIgnored private var vodEndObserver: NSObjectProtocol?
+    static let upNextSeconds = 10
     @ObservationIgnored private let client: JellyfinClient?
     @ObservationIgnored private let maxBitrate: Int
     @ObservationIgnored private let prefs: TrackPreferences
@@ -123,6 +136,7 @@ final class PlayerModel {
 
     init(request: PlaybackRequest, client: JellyfinClient?, maxBitrate: Int, prefs: TrackPreferences) {
         self.request = request
+        self.item = request.item
         self.client = client
         self.maxBitrate = maxBitrate
         self.prefs = prefs
@@ -150,7 +164,104 @@ final class PlayerModel {
                                                       queue: .main) { [weak self] _ in
             Task { @MainActor [weak self] in await self?.report(.progress) }
         }
+        vodEndObserver = NotificationCenter.default.addObserver(
+            forName: AVPlayerItem.didPlayToEndTimeNotification, object: nil, queue: .main) { [weak self] note in
+            Task { @MainActor [weak self] in
+                guard let self, !self.isLive, (note.object as? AVPlayerItem) === self.player.currentItem else { return }
+                if self.nextEpisode != nil, !self.upNextDismissed { await self.playNextEpisode() }
+            }
+        }
         await load(startTicks: request.startTicks)
+        await loadEpisodeExtras()
+    }
+
+    // MARK: Skip & next episode
+
+    /// The intro / recap / preview the playhead is inside right now, if any.
+    var activeSkip: MediaSegment? {
+        guard !isLive else { return nil }
+        return segments.first { ["Intro", "Recap", "Preview"].contains($0.type ?? "") &&
+            currentTime >= $0.start && currentTime < $0.end - 1 }
+    }
+
+    var skipLabel: String {
+        switch activeSkip?.type {
+        case "Recap": return "Skip Recap"
+        case "Preview": return "Skip Preview"
+        default: return "Skip Intro"
+        }
+    }
+
+    func skipSegment() {
+        guard let s = activeSkip else { return }
+        seek(to: s.end)
+    }
+
+    /// When the credits start: the server's Outro marker if it has one, otherwise 30 seconds before the end.
+    private var creditsStart: Double? {
+        if let outro = segments.first(where: { $0.type == "Outro" }), outro.start > 0 { return outro.start }
+        guard duration > 120 else { return nil }
+        return duration - 30
+    }
+
+    private func loadEpisodeExtras() async {
+        guard let client, !isLive else {
+            segments = []; chapters = []; nextEpisode = nil; return
+        }
+        async let segs = client.mediaSegments(itemId: item.id)
+        async let chaps = client.chapters(itemId: item.id)
+        async let next: BaseItem? = item.type == "Episode" ? client.episodeAfter(item) : nil
+        let (s1, c1, n1) = await (segs, chaps, next)
+        segments = s1
+        chapters = c1.filter { $0.start > 0 || !($0.name ?? "").isEmpty }
+        nextEpisode = n1
+    }
+
+    private func updateUpNext() {
+        guard let next = nextEpisode, !upNextDismissed, let start = creditsStart, currentTime >= start, itemReady else {
+            if upNextCountdown != nil && (currentTime < (creditsStart ?? .infinity)) { upNextCountdown = nil; upNextShownAt = nil }
+            return
+        }
+        _ = next.id
+        if upNextShownAt == nil { upNextShownAt = Date() }
+        guard isPlaying else { return }   // the countdown waits while paused
+        let left = Self.upNextSeconds - Int(Date().timeIntervalSince(upNextShownAt ?? Date()))
+        upNextCountdown = max(0, left)
+        if left <= 0 { Task { await playNextEpisode() } }
+    }
+
+    func dismissUpNext() {
+        upNextDismissed = true
+        upNextCountdown = nil
+    }
+
+    /// Ends this episode (saving progress) and starts the next one in the same player.
+    func playNextEpisode() async {
+        guard let next = nextEpisode, !stopped else { return }
+        nextEpisode = nil
+        upNextCountdown = nil
+        upNextShownAt = nil
+        upNextDismissed = false
+        player.pause()
+        if reportedStart { await report(.stop) }
+        if let playSessionId, let client { await client.stopEncoding(playSessionId: playSessionId) }
+        playSessionId = nil
+        mediaSourceId = nil
+        reportedStart = false
+        segments = []
+        chapters = []
+        currentTime = 0
+        duration = 0
+        // Keep the same audio/subtitle choices by language, not by track number.
+        appliedPreferences = false
+        audioIndex = nil
+        subtitleIndex = -1
+        let dm = DownloadManager.shared
+        let local = dm.localFile(for: next.id) != nil ? dm.records[next.id] : nil
+        request = PlaybackRequest(item: next, startTicks: 0, localDownload: local)
+        item = next
+        await load(startTicks: 0)
+        await loadEpisodeExtras()
     }
 
     // MARK: Transport
@@ -182,6 +293,7 @@ final class PlayerModel {
         isPlaying = player.timeControlStatus != .paused
         if let size = player.currentItem?.presentationSize, size != .zero { videoSize = size }
         updateNowPlaying()
+        updateUpNext()
     }
 
     // MARK: Lock screen / Control Center
@@ -568,6 +680,7 @@ final class PlayerModel {
         guard !stopped else { return }
         stopped = true
         liveWatchdog?.cancel()
+        if let vodEndObserver { NotificationCenter.default.removeObserver(vodEndObserver) }
         if let liveEndObserver { NotificationCenter.default.removeObserver(liveEndObserver) }
         if let timeObserver { player.removeTimeObserver(timeObserver) }
         timeObserver = nil

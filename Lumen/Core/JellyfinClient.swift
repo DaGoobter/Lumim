@@ -125,6 +125,29 @@ final class JellyfinClient {
         return r.items
     }
 
+    /// Intro / credits / recap markers (Jellyfin 10.10+, filled in by a segment plugin such as Intro Skipper).
+    func mediaSegments(itemId: String) async -> [MediaSegment] {
+        let r: MediaSegmentsResult? = try? await get("MediaSegments/\(itemId)")
+        return r?.items ?? []
+    }
+
+    /// Chapter markers for an item.
+    func chapters(itemId: String) async -> [ChapterMarker] {
+        struct R: Codable { let chapters: [ChapterMarker]? }
+        let r: R? = try? await get("Users/\(userId ?? "")/Items/\(itemId)", query: ["Fields": "Chapters"])
+        return r?.chapters ?? []
+    }
+
+    /// The episode that comes after this one, across seasons.
+    func episodeAfter(_ episode: BaseItem) async -> BaseItem? {
+        guard let seriesId = episode.seriesId else { return nil }
+        let r: ItemsResult? = try? await get("Shows/\(seriesId)/Episodes", query: [
+            "userId": userId, "startItemId": episode.id, "limit": "2",
+            "Fields": Self.listFields, "EnableUserData": "true",
+        ])
+        return r?.items.first { $0.id != episode.id }
+    }
+
     func nextUp(seriesId: String? = nil) async throws -> [BaseItem] {
         let r: ItemsResult = try await get("Shows/NextUp", query: [
             "userId": userId, "limit": "20", "seriesId": seriesId, "fields": Self.listFields,
