@@ -100,6 +100,7 @@ object AppState {
         val (c, info) = connect(server)
         val auth = c.authenticate(username, password)
         adopt(c, info, auth)
+        session?.let { s -> scope.launch { Seerr.autoConnect(s.key, s.serverURL, username, password) } }
     }
 
     suspend fun quickConnectStart(server: String): Triple<Pair<JellyfinClient, PublicSystemInfo>, String, String> {
@@ -200,5 +201,6 @@ object AppState {
         } else localStatus = "No home address yet"
         route = newRoute
         if (client?.baseUrl != target) client = JellyfinClient(target, s.token, s.userId)
+        client?.let { com.huefin.desktop.downloads.DownloadManager.attach(it) }
     }
 }

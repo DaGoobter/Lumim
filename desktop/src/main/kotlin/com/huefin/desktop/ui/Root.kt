@@ -25,15 +25,19 @@ import com.huefin.desktop.core.AppState
 import com.huefin.desktop.core.BaseItem
 import com.huefin.desktop.player.PlayerController
 
+private var askedProfiles = false
+
 enum class Tab(val label: String, val icon: ImageVector, val hue: Color) {
     Home("Home", Icons.Filled.Home, Hue.home), Library("Library", Icons.Filled.GridView, Hue.library),
-    Live("Live TV", Icons.Filled.LiveTv, Hue.live), Search("Search", Icons.Filled.Search, Hue.search),
+    Live("Live TV", Icons.Filled.LiveTv, Hue.live), Downloads("Downloads", Icons.Filled.ArrowCircleDown, Hue.downloads),
+    Search("Search", Icons.Filled.Search, Hue.search),
 }
 
 sealed interface Route {
     data object Root : Route
     data class Item(val id: String, val preview: BaseItem? = null) : Route
     data object Settings : Route
+    data class Path(val path: String) : Route
 }
 
 /** Where you are: a tab, a back stack per tab, and the player on top when something plays. */
@@ -53,6 +57,8 @@ object Nav {
     fun reset() { Tab.entries.forEach { t -> stacks.getValue(t).apply { clear(); add(Route.Root) } }; tab = Tab.Home }
 
     fun play(item: BaseItem, startTicks: Long = 0) {
+        if (item.isAudio) { com.huefin.desktop.player.AudioPlayer.play(null, listOf(item)); return }
+        com.huefin.desktop.player.AudioPlayer.pauseForVideo()
         player?.close()
         val p = PlayerController(item, startTicks) {
             player = null
@@ -60,6 +66,19 @@ object Nav {
         }
         player = p
         p.start()
+    }
+
+    var focused = true
+    /** A Windows notification when Huefin is in the background (Family messages). */
+    fun notify(header: String, text: String) {
+        if (focused) return
+        runCatching {
+            if (!java.awt.SystemTray.isSupported()) return
+            val tray = java.awt.SystemTray.getSystemTray()
+            val icon = tray.trayIcons.firstOrNull() ?: java.awt.TrayIcon(
+                javax.imageio.ImageIO.read(Nav::class.java.getResource("/huefin.png")), "Huefin").apply { isImageAutoSize = true; tray.add(this) }
+            icon.displayMessage(header, text, java.awt.TrayIcon.MessageType.INFO)
+        }
     }
 
     fun toggleFullscreen() {
@@ -94,7 +113,11 @@ fun HuefinRoot() {
             Box(Modifier.fillMaxSize()) {
                 val client = AppState.client
                 if (client == null) LoginScreen(adding = false) {} else key(AppState.session?.key) { MainScaffold() }
+                if (client != null && com.huefin.desktop.player.AudioPlayer.showNowPlaying) Surface(Modifier.fillMaxSize(), color = Hue.night) {
+                    NowPlayingContent { com.huefin.desktop.player.AudioPlayer.showNowPlaying = false }
+                }
                 Nav.player?.let { PlayerScreen(it) }
+                NoticeOverlay()
             }
         }
     }
@@ -102,7 +125,17 @@ fun HuefinRoot() {
 
 @Composable
 private fun MainScaffold() {
-    LaunchedEffect(Unit) { Nav.reset() }
+    var profiles by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        Nav.reset()
+        if (com.huefin.desktop.core.Prefs.bool(com.huefin.desktop.core.Prefs.Keys.askWho, true) && AppState.accounts.size > 1 && !askedProfiles) { askedProfiles = true; profiles = true }
+    }
+    LaunchedEffect(AppState.client) {
+        val c = AppState.client ?: return@LaunchedEffect
+        com.huefin.desktop.core.ServerDefaults.apply()
+        com.huefin.desktop.core.SessionSocket.connect(c)
+    }
+    if (profiles) { ProfilePickerDialog { profiles = false }; return }
     Row(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxHeight().width(96.dp).background(Hue.card).padding(vertical = 18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text("huefin", fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleLarge)
@@ -123,15 +156,19 @@ private fun MainScaffold() {
             Text("Settings", style = MaterialTheme.typography.labelSmall, color = Hue.secondaryText, modifier = Modifier.padding(top = 4.dp))
         }
         SectionHue(Nav.tab.hue) {
-            Box(Modifier.weight(1f).fillMaxHeight()) {
+          Column(Modifier.weight(1f).fillMaxHeight()) {
+            Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (val r = Nav.stack.last()) {
                     Route.Root -> when (Nav.tab) {
-                        Tab.Home -> HomeScreen(); Tab.Library -> LibrariesScreen(); Tab.Live -> LiveTVScreen(); Tab.Search -> SearchScreen()
+                        Tab.Home -> HomeScreen(); Tab.Library -> LibrariesScreen(); Tab.Live -> LiveTVScreen(); Tab.Downloads -> DownloadsScreen(nav); Tab.Search -> SearchScreen(nav)
                     }
                     is Route.Item -> key(r.id) { ItemScreen(r.id, r.preview) }
-                    Route.Settings -> SettingsScreen()
+                    Route.Settings -> SettingsScreen(nav)
+                    is Route.Path -> key(r.path) { PathScreen(r.path) }
                 }
             }
+            MiniPlayer()
+          }
         }
     }
 }
@@ -143,5 +180,19 @@ fun PageHeader(title: String, actions: @Composable RowScope.() -> Unit = {}) {
         if (Nav.stack.size > 1) IconButton({ Nav.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } else Spacer(Modifier.width(8.dp))
         Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f).padding(start = 4.dp))
         actions()
+    }
+}
+
+/** A message from the family (or the server) on screen for a few seconds. */
+@Composable
+fun NoticeOverlay() {
+    val n = com.huefin.desktop.core.SessionSocket.notice ?: return
+    LaunchedEffect(n.id) { kotlinx.coroutines.delay(8000); if (com.huefin.desktop.core.SessionSocket.notice?.id == n.id) com.huefin.desktop.core.SessionSocket.notice = null }
+    Box(Modifier.fillMaxSize().padding(top = 28.dp), contentAlignment = Alignment.TopCenter) {
+        Row(Modifier.widthIn(max = 560.dp).clip(RoundedCornerShape(20.dp)).background(Hue.card).clickable { com.huefin.desktop.core.SessionSocket.notice = null }.padding(18.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Notifications, null, tint = Hue.coral)
+            Column(Modifier.padding(start = 14.dp)) { Text(n.header, fontWeight = FontWeight.Bold); Text(n.text) }
+        }
     }
 }

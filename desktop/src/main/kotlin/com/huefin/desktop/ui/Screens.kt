@@ -37,6 +37,8 @@ import com.huefin.desktop.core.BaseItem
 import com.huefin.desktop.core.JellyfinClient
 import com.huefin.desktop.core.Prefs
 import com.huefin.desktop.core.ProgramInfo
+import com.huefin.desktop.downloads.DownloadManager
+import com.huefin.desktop.downloads.DownloadState
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -240,50 +242,14 @@ fun ItemScreen(id: String, preview: BaseItem?) {
     val it = item ?: preview?.takeIf { p -> p.type in setOf("CollectionFolder", "UserView", "Folder", "BoxSet") }
     when {
         it == null -> Column { PageHeader(preview?.displayTitle ?: ""); Box(Modifier.fillMaxSize(), Alignment.Center) { if (error != null) ErrorBanner(error!!) else CircularProgressIndicator() } }
-        it.type == "MusicAlbum" || it.type == "Playlist" && it.mediaType == "Audio" -> AlbumScreen(it)
-        it.type == "MusicArtist" -> ArtistScreen(it)
+        (it.type == "CollectionFolder" || it.type == "UserView") && it.collectionType == "music" -> MusicLibraryScreen(it, nav)
+        (it.type == "CollectionFolder" || it.type == "UserView") && it.collectionType == "books" -> BooksLibraryScreen(it, nav)
+        (it.type == "CollectionFolder" || it.type == "UserView") && it.collectionType == "livetv" -> LiveTVScreen()
+        it.type == "Book" || it.type == "AudioBook" -> BookScreen(it.id, nav)
+        it.type == "MusicAlbum" || it.type == "Playlist" && it.mediaType == "Audio" -> AlbumScreen(it, nav)
+        it.type == "MusicArtist" -> ArtistScreen(it, nav)
         it.type in setOf("CollectionFolder", "Folder", "BoxSet", "UserView", "Playlist") -> LibraryGrid(it)
         else -> DetailScreen(it)
-    }
-}
-
-@Composable
-private fun ArtistScreen(artist: BaseItem) {
-    var albums by remember { mutableStateOf<List<BaseItem>>(emptyList()) }
-    LaunchedEffect(artist.id) { albums = runCatching { AppState.client!!.artistAlbums(artist.id) }.getOrDefault(emptyList()) }
-    Column {
-        PageHeader(artist.name ?: "")
-        LazyVerticalGrid(GridCells.Adaptive(168.dp), contentPadding = PaddingValues(24.dp), horizontalArrangement = Arrangement.spacedBy(18.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
-            gridItems(albums, key = { it.id }) { a -> SquareCard(a, { Nav.open(a) }, Dp.Unspecified) }
-        }
-    }
-}
-
-@Composable
-private fun AlbumScreen(album: BaseItem) {
-    var tracks by remember { mutableStateOf<List<BaseItem>>(emptyList()) }
-    LaunchedEffect(album.id) { tracks = runCatching { AppState.client!!.browse(mapOf("parentId" to album.id, "includeItemTypes" to "Audio", "recursive" to "true", "sortBy" to "ParentIndexNumber,IndexNumber,SortName")).items }.getOrDefault(emptyList()) }
-    Column {
-        PageHeader(album.name ?: "")
-        LazyColumn(contentPadding = PaddingValues(24.dp)) {
-            item {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 20.dp)) {
-                    RemoteImage(AppState.client?.albumArtURL(album, 600), Modifier.size(220.dp).clip(RoundedCornerShape(16.dp)))
-                    Column(Modifier.padding(start = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(album.name ?: "", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
-                        album.artistLine?.let { Text(it, color = LocalHue.current) }
-                        Text("Plays one song at a time on Windows for now; full music, DJ and stations are coming.", color = Hue.secondaryText, style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-            }
-            items(tracks, key = { it.id }) { t ->
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { Nav.play(t) }.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("${t.indexNumber ?: ""}", Modifier.width(36.dp), color = Hue.secondaryText)
-                    Text(t.name ?: "", Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                    Text(t.runtimeText ?: "", color = Hue.secondaryText)
-                }
-            }
-        }
     }
 }
 
@@ -336,6 +302,7 @@ private fun DetailScreen(start: BaseItem) {
                         SoftButton({ scope.launch { c?.markPlayed(item.id, !played); refresh() } }, padding = PaddingValues(12.dp)) {
                             Icon(if (played) Icons.Filled.CheckCircle else Icons.Filled.CheckCircleOutline, if (played) "Mark unwatched" else "Mark watched", tint = if (played) LocalHue.current else Color.White)
                         }
+                        if (item.isPlayable && !item.isLiveChannel) DesktopDownloadButton(item)
                         val fav = item.userData?.isFavorite == true
                         SoftButton({ scope.launch { c?.setFavorite(item.id, !fav); refresh() } }, padding = PaddingValues(12.dp)) {
                             Icon(if (fav) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, if (fav) "Remove from My List" else "Add to My List", tint = if (fav) Hue.coral else Color.White)
@@ -346,6 +313,20 @@ private fun DetailScreen(start: BaseItem) {
             }
         }
         if (seasons.isNotEmpty()) {
+            item {
+                Row(Modifier.padding(horizontal = 40.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    val pending = episodes.filter { DownloadManager.records[it.id] == null }
+                    SoftButton({ pending.forEach { DownloadManager.start(it) } }, enabled = pending.isNotEmpty()) {
+                        Icon(Icons.Filled.Download, null, Modifier.size(18.dp)); Text(if (pending.isEmpty()) " Season downloaded" else " Download season")
+                    }
+                    showId?.let { sid ->
+                        val rule = DownloadManager.smartRules[sid]
+                        Menu(if (rule == null) "Smart downloads: off" else "Keep next ${rule.count} downloaded", Icons.Filled.AutoMode,
+                            listOf("Off" to { DownloadManager.setSmart(sid, item.seriesName ?: item.name ?: "Show", 0) }) +
+                            listOf(1, 3, 5, 10).map { n -> "Next $n unwatched" to { DownloadManager.setSmart(sid, item.seriesName ?: item.name ?: "Show", n) } })
+                    }
+                }
+            }
             item {
                 LazyRow(contentPadding = PaddingValues(horizontal = 40.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(seasons, key = { it.id }) { s ->
@@ -368,6 +349,7 @@ private fun DetailScreen(start: BaseItem) {
                         Text(ep.runtimeText ?: "", color = Hue.secondaryText, style = MaterialTheme.typography.bodySmall)
                         ep.overview?.let { Text(it, maxLines = 2, overflow = TextOverflow.Ellipsis, color = Hue.secondaryText) }
                     }
+                    if (DownloadManager.records[ep.id]?.state == DownloadState.Completed) Icon(Icons.Filled.DownloadDone, "Downloaded", tint = Hue.mint)
                     IconButton({ Nav.open(ep) }) { Icon(Icons.Filled.Info, "Episode details", tint = Hue.secondaryText) }
                 }
             }
@@ -378,49 +360,6 @@ private fun DetailScreen(start: BaseItem) {
 }
 
 private fun formatLeft(ticks: Long): String { val m = (ticks / 600_000_000L).toInt(); return if (m >= 60) "· ${m / 60}h ${m % 60}m left" else "· ${m}m left" }
-
-// MARK: Search
-
-@Composable
-fun SearchScreen() {
-    var query by remember { mutableStateOf("") }
-    var results by remember { mutableStateOf<List<BaseItem>>(emptyList()) }
-    var searching by remember { mutableStateOf(false) }
-    LaunchedEffect(query) {
-        val q = query.trim()
-        if (q.length < 2) { results = emptyList(); return@LaunchedEffect }
-        delay(300); searching = true
-        results = runCatching { AppState.client!!.search(q) }.getOrDefault(emptyList()); searching = false
-    }
-    val groups = listOf("Movies" to setOf("Movie"), "Shows" to setOf("Series"), "Episodes" to setOf("Episode"), "Collections" to setOf("BoxSet"),
-        "Channels" to setOf("TvChannel"), "Artists" to setOf("MusicArtist"), "Albums" to setOf("MusicAlbum"), "Songs" to setOf("Audio"), "Books" to setOf("Book", "AudioBook"))
-    Column {
-        PageHeader("Search")
-        OutlinedTextField(query, { query = it }, Modifier.padding(horizontal = 24.dp).widthIn(max = 720.dp).fillMaxWidth(), singleLine = true,
-            placeholder = { Text("Movies, shows, episodes, people, channels…") }, leadingIcon = { Icon(Icons.Filled.Search, null) },
-            trailingIcon = { if (searching) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) }, shape = RoundedCornerShape(16.dp))
-        LazyColumn(contentPadding = PaddingValues(vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
-            if (query.trim().length >= 2 && !searching && results.isEmpty()) item { Text("Nothing on your server matches \"${query.trim()}\".", Modifier.padding(24.dp), color = Hue.secondaryText) }
-            groups.forEach { (title, types) ->
-                val list = results.filter { it.type in types }
-                if (list.isNotEmpty()) item(key = title) {
-                    Shelf(title) {
-                        items(list, key = { it.id }) { r ->
-                            when (r.type) {
-                                "Episode" -> LandscapeCard(r, { Nav.open(r) }, subtitle = r.episodeLabel)
-                                "TvChannel" -> SquareCard(r, { Nav.play(r) })
-                                "Audio" -> SquareCard(r, { Nav.play(r) })
-                                "MusicArtist" -> SquareCard(r, { Nav.open(r) }, circle = true)
-                                "MusicAlbum" -> SquareCard(r, { Nav.open(r) })
-                                else -> PosterCard(r, { Nav.open(r) })
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
 
 // MARK: Live TV
 
@@ -476,62 +415,6 @@ fun LiveTVScreen() {
     }
 }
 
-// MARK: Settings
-
-@Composable
-fun SettingsScreen() {
-    val scope = rememberCoroutineScope()
-    var adding by remember { mutableStateOf(false) }
-    var local by remember { mutableStateOf(if (AppState.session?.localURLIsManual == true) AppState.session?.localURL ?: "" else "") }
-    var tick by remember { mutableIntStateOf(0) }
-    if (adding) { LoginScreen(adding = true) { adding = false }; return }
-    key(tick) {
-    Column {
-        PageHeader("Settings")
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(24.dp).widthIn(max = 760.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
-            Section("Accounts") {
-                AppState.accounts.forEach { a ->
-                    val current = a.key == AppState.session?.key
-                    Row(Modifier.fillMaxWidth().clickable { if (!current) AppState.switchTo(a) }.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Avatar(a.userName, 36.dp)
-                        Column(Modifier.weight(1f).padding(start = 12.dp)) { Text(a.userName, fontWeight = FontWeight.SemiBold); Text(a.serverName ?: a.serverURL, color = Hue.secondaryText, style = MaterialTheme.typography.bodySmall) }
-                        if (current) Icon(Icons.Filled.CheckCircle, "Current", tint = LocalHue.current) else TextButton({ AppState.switchTo(a) }) { Text("Switch") }
-                        TextButton({ scope.launch { AppState.remove(a) } }) { Text("Sign out", color = Hue.coral) }
-                    }
-                }
-                Row(Modifier.fillMaxWidth().clickable { adding = true }.padding(14.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Filled.PersonAdd, null); Text("  Add user or server") }
-            }
-            Section("Connection", "At home Huefin talks to your server directly (faster, full quality); away it uses your remote address. Leave the home address empty to detect it.") {
-                Row(Modifier.padding(14.dp)) { Text("Using", Modifier.weight(1f)); Text(if (AppState.route == AppState.Route.Local) "Home network" else "Remote address", color = Hue.secondaryText) }
-                Row(Modifier.padding(14.dp)) { Text("Home address check", Modifier.weight(1f)); Text(AppState.localStatus, color = Hue.secondaryText) }
-                Toggle("Use home network when available", AppState.preferLocal) { AppState.preferLocal = it; AppState.persistSettings(); scope.launch { AppState.refreshRoute() }; tick++ }
-                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(local, { local = it }, Modifier.weight(1f), singleLine = true, label = { Text("Home network address") }, placeholder = { Text("Auto-detect") })
-                    TextButton({ AppState.setLocalURL(local) }) { Text("Save & reconnect") }
-                }
-            }
-            Section("Playback", "Keep Maximum for the original file. Lower it only if playback away from home stutters.") {
-                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Max streaming quality", Modifier.weight(1f))
-                    Menu(if (AppState.maxBitrate >= 200_000_000) "Maximum" else "${AppState.maxBitrate / 1_000_000} Mbps", Icons.Filled.Speed,
-                        listOf(200, 80, 40, 20, 10, 8, 4).map { m -> (if (m == 200) "Maximum" else "$m Mbps") to { AppState.maxBitrate = m * 1_000_000; AppState.persistSettings(); tick++ } })
-                }
-                Toggle("Skip intros automatically", Prefs.autoSkipIntro) { Prefs.set(Prefs.Keys.autoIntro, it); tick++ }
-                Toggle("Skip credits to the next episode", Prefs.autoSkipCredits) { Prefs.set(Prefs.Keys.autoCredits, it); tick++ }
-            }
-            Section("Keyboard in the player") {
-                Text("Space pause · ← → 10 seconds · ↑ ↓ volume · F full screen · M mute · S skip intro · Esc back", Modifier.padding(14.dp), color = Hue.secondaryText)
-            }
-            Section(footer = "Huefin for Windows ${JellyfinClient.VERSION}") {
-                Row(Modifier.fillMaxWidth().clickable { scope.launch { AppState.logout() } }.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.AutoMirrored.Filled.Logout, null, tint = Hue.coral); Text("  Sign out", color = Hue.coral)
-                }
-            }
-        }
-    }
-    }
-}
-
 @Composable
 private fun Section(title: String? = null, footer: String? = null, content: @Composable ColumnScope.() -> Unit) {
     Column {
@@ -546,5 +429,38 @@ private fun Toggle(title: String, on: Boolean, change: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth().clickable { change(!on) }.padding(horizontal = 14.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(title, Modifier.weight(1f))
         Switch(on, change, colors = SwitchDefaults.colors(checkedTrackColor = LocalHue.current, checkedThumbColor = Hue.ink))
+    }
+}
+
+/** Pages reached by name from shared screens (Settings → Family, Requests, Admin…). */
+@Composable
+fun PathScreen(path: String) {
+    when {
+        path == "settings" -> SettingsScreen(nav)
+        path == "requests" -> RequestsScreen(nav)
+        path == "family" -> FamilyScreen(nav)
+        path == "quickconnect" -> QuickConnectApproveScreen(nav)
+        path == "nowplaying" -> NowPlayingScreen(nav)
+        path == "admin" -> com.huefin.desktop.admin.AdminDashboardScreen(nav)
+        path.startsWith("admin/user/") -> com.huefin.desktop.admin.AdminUserScreen(path.removePrefix("admin/user/"), nav)
+        path.startsWith("admin/") -> com.huefin.desktop.admin.AdminSectionScreen(path.removePrefix("admin/"), nav)
+        path.startsWith("book/") -> BookScreen(path.removePrefix("book/"), nav)
+        else -> PageHeader("Not found")
+    }
+}
+
+/** Save to this PC: tap to download, shows progress, tap again to retry if it failed. */
+@Composable
+fun DesktopDownloadButton(item: BaseItem) {
+    val rec = DownloadManager.records[item.id]
+    SoftButton({ when (rec?.state) { null -> DownloadManager.start(item); DownloadState.Failed -> DownloadManager.retry(item.id); DownloadState.Paused -> DownloadManager.resume(item.id); else -> {} } },
+        padding = PaddingValues(12.dp)) {
+        when (rec?.state) {
+            null -> Icon(Icons.Filled.Download, "Download to this PC")
+            DownloadState.Completed -> Icon(Icons.Filled.DownloadDone, "Downloaded", tint = Hue.mint)
+            DownloadState.Failed -> Icon(Icons.Filled.Sync, "Download failed, click to retry", tint = Hue.coral)
+            DownloadState.Paused -> Icon(Icons.Filled.Pause, "Paused, click to resume")
+            else -> Box(Modifier.size(24.dp), Alignment.Center) { CircularProgressIndicator({ rec.progress }, Modifier.size(22.dp), color = Hue.mint, strokeWidth = 3.dp) }
+        }
     }
 }

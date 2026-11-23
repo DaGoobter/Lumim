@@ -19,6 +19,7 @@ dependencies {
     implementation("io.coil-kt.coil3:coil-compose:3.0.4")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.0.4")
     implementation("uk.co.caprica:vlcj:4.8.3")
+    implementation("org.apache.pdfbox:pdfbox:3.0.3")
 }
 
 kotlin { jvmToolchain(17) }

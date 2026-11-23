@@ -11,6 +11,7 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.window.rememberWindowState
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
@@ -24,6 +25,7 @@ import okio.Path.Companion.toOkioPath
 import java.io.File
 
 fun main() {
+    com.huefin.desktop.downloads.DownloadManager.init()
     AppState.init()
     SingletonImageLoader.setSafe { ctx ->
         ImageLoader.Builder(ctx)
@@ -47,6 +49,12 @@ fun main() {
                 }
             }) {
             window.minimumSize = java.awt.Dimension(900, 600)
+            LaunchedEffect(window) {
+                window.addWindowFocusListener(object : java.awt.event.WindowFocusListener {
+                    override fun windowGainedFocus(e: java.awt.event.WindowEvent?) { Nav.focused = true }
+                    override fun windowLostFocus(e: java.awt.event.WindowEvent?) { Nav.focused = false }
+                })
+            }
             HuefinRoot()
         }
     }
