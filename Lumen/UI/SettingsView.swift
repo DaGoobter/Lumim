@@ -34,6 +34,8 @@ struct SettingsView: View {
     @State private var localField = ""
     @State private var savingAddresses = false
     @State private var isAdmin = false
+    @State private var showAddAccount = false
+    @State private var showSyncPlay = false
 
     var body: some View {
         @Bindable var app = app
@@ -57,6 +59,48 @@ struct SettingsView: View {
                     }
                 }
             }
+            Section {
+                ForEach(app.accounts, id: \.key) { account in
+                    Button { app.switchTo(account) } label: {
+                        HStack(spacing: 12) {
+                            Text(String(account.userName.prefix(1)).uppercased())
+                                .font(.headline.weight(.heavy)).foregroundStyle(.white)
+                                .frame(width: 36, height: 36)
+                                .background(Circle().fill(Theme.gradient))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(account.userName).font(.body.weight(.semibold)).foregroundStyle(.primary)
+                                Text(account.serverName ?? URL(string: account.serverURL)?.host ?? "Jellyfin")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if account.key == app.session?.key {
+                                Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.accent)
+                            }
+                        }
+                    }
+                    .swipeActions {
+                        Button("Sign Out", role: .destructive) { Task { await app.remove(account) } }
+                    }
+                }
+                Button { showAddAccount = true } label: {
+                    Label("Add user or server", systemImage: "person.crop.circle.badge.plus")
+                }
+                if let client = app.client {
+                    NavigationLink { QuickConnectAdminView(client: client) } label: {
+                        Label("Quick Connect", systemImage: "qrcode")
+                    }
+                    Button { showSyncPlay = true } label: {
+                        Label(SyncPlayManager.shared.groupId == nil ? "Watch Together" : "Watch Together · in a group",
+                              systemImage: "person.2.wave.2")
+                    }
+                    .sheet(isPresented: $showSyncPlay) { SyncPlaySheet(model: nil, client: client) }
+                }
+            } header: {
+                Text("Accounts")
+            } footer: {
+                Text("Tap to switch. Quick Connect approves a code shown on a TV or another device so it signs in as you, no password typing.")
+            }
+
             if let s = app.session {
                 Section("Server") {
                     LabeledContent("Name", value: s.serverName ?? "Jellyfin")
@@ -256,6 +300,7 @@ struct SettingsView: View {
             }
         }
         .onDisappear { saveVoice() }
+        .fullScreenCover(isPresented: $showAddAccount) { LoginView(adding: true) }
         .onChange(of: djEngine) { saveVoice() }
     }
 

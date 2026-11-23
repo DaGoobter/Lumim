@@ -2,7 +2,12 @@ import SwiftUI
 
 struct LoginView: View {
     @Environment(AppState.self) private var app
+    @Environment(\.dismiss) private var dismiss
+    /// Adding another account from Settings (shows Cancel, prefills the current server).
+    var adding = false
     @State private var server = ""
+    @State private var quickCode: String?
+    @State private var quickTask: Task<Void, Never>?
     @State private var username = ""
     @State private var password = ""
     @State private var busy = false
@@ -26,7 +31,7 @@ struct LoginView: View {
                         .shadow(color: Theme.violet.opacity(0.45), radius: 30, y: 12)
                     VStack(spacing: 6) {
                         Text("prism").font(.system(size: 46, weight: .heavy)).tracking(-1.5)
-                        Text("Connect to your Jellyfin server").foregroundStyle(.secondary)
+                        Text(adding ? "Add a user or another server" : "Connect to your Jellyfin server").foregroundStyle(.secondary)
                     }
 
                     VStack(spacing: 12) {
@@ -60,8 +65,14 @@ struct LoginView: View {
                     .disabled(busy || server.isEmpty || username.isEmpty)
                     .opacity(server.isEmpty || username.isEmpty ? 0.6 : 1)
 
+                    quickConnectSection
+
                     Text("Works with local addresses (192.168.x.x:8096) or your remote domain.")
                         .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+
+                    if adding {
+                        Button("Cancel") { quickTask?.cancel(); dismiss() }.buttonStyle(SecondaryButtonStyle())
+                    }
                 }
                 .padding(24)
                 .frame(maxWidth: 460)
@@ -70,6 +81,61 @@ struct LoginView: View {
         }
         .onAppear {
             withAnimation(.easeInOut(duration: 6).repeatForever(autoreverses: true)) { glow = true }
+            if adding, server.isEmpty, let s = app.session { server = s.serverURL }
+        }
+        .onDisappear { quickTask?.cancel() }
+    }
+
+    /// Sign in without typing a password: approve the code on any device that's already signed in.
+    @ViewBuilder
+    private var quickConnectSection: some View {
+        if let quickCode {
+            VStack(spacing: 10) {
+                Text("Quick Connect code").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Text(quickCode)
+                    .font(.system(size: 44, weight: .heavy, design: .rounded).monospacedDigit())
+                    .tracking(6)
+                    .foregroundStyle(Theme.spectrum)
+                    .textSelection(.enabled)
+                Text("On a device that's already signed in, open Quick Connect and enter this code. In Prism it's Settings → Quick Connect; in Jellyfin's web app it's your profile → Quick Connect.")
+                    .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Waiting for approval…").font(.caption)
+                }
+                Button("Cancel") { quickTask?.cancel(); self.quickCode = nil; busy = false }
+                    .font(.footnote.weight(.semibold))
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        } else {
+            Button { startQuickConnect() } label: {
+                Label("Sign in with Quick Connect", systemImage: "qrcode")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(SecondaryButtonStyle())
+            .disabled(busy || server.isEmpty)
+            .opacity(server.isEmpty ? 0.6 : 1)
+        }
+    }
+
+    private func startQuickConnect() {
+        guard !busy else { return }
+        busy = true
+        error = nil
+        quickTask = Task {
+            do {
+                let start = try await app.quickConnectStart(server: server)
+                quickCode = start.code
+                try await app.quickConnectFinish(client: start.client, info: start.info, secret: start.secret)
+                if adding { dismiss() }
+            } catch is CancellationError {
+            } catch {
+                self.error = error.localizedDescription
+            }
+            quickCode = nil
+            busy = false
         }
     }
 
@@ -89,6 +155,7 @@ struct LoginView: View {
         error = nil
         do {
             try await app.login(server: server, username: username, password: password)
+            if adding { dismiss() }
         } catch {
             self.error = error.localizedDescription
         }

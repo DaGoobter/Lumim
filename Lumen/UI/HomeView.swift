@@ -13,6 +13,8 @@ struct HomeView: View {
     @State private var resume: [BaseItem] = []
     @State private var nextUp: [BaseItem] = []
     @State private var latest: [LatestRow] = []
+    @State private var myList: [BaseItem] = []
+    @State private var collections: [BaseItem] = []
     @State private var error: String?
     @State private var loaded = false
     @State private var playRequest: PlaybackRequest?
@@ -67,9 +69,27 @@ struct HomeView: View {
                         }
                     }
 
+                    if !myList.isEmpty {
+                        Shelf("My List") {
+                            ForEach(myList) { item in
+                                NavigationLink(value: item) { PosterCard(item: item) }
+                                    .buttonStyle(CardPressStyle())
+                            }
+                        }
+                    }
+
                     ForEach(latest) { row in
                         Shelf("New in \(row.library.name ?? "Library")") {
                             ForEach(row.items) { item in
+                                NavigationLink(value: item) { PosterCard(item: item) }
+                                    .buttonStyle(CardPressStyle())
+                            }
+                        }
+                    }
+
+                    if !collections.isEmpty {
+                        Shelf("Collections") {
+                            ForEach(collections) { item in
                                 NavigationLink(value: item) { PosterCard(item: item) }
                                     .buttonStyle(CardPressStyle())
                             }
@@ -93,6 +113,7 @@ struct HomeView: View {
             }
         }
         .background(Theme.background)
+        .overlay(alignment: .topTrailing) { AccountButton().padding(.trailing, 18).padding(.top, 6) }
         .toolbar(.hidden, for: .navigationBar)
         .refreshable { await load() }
         .task { if !loaded { await load() } }
@@ -147,6 +168,9 @@ struct HomeView: View {
                 }
             }
             latest = rows
+            async let fav = client.favorites()
+            async let col = client.collections()
+            (myList, collections) = await (fav, col)
             error = nil
         } catch {
             self.error = "Can't reach your server. Downloads still work offline."

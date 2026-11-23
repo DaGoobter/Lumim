@@ -106,6 +106,20 @@ final class DownloadManager {
 
     private(set) var records: [String: DownloadRecord] = [:]
 
+    /// Smart downloads: shows that keep their next few unwatched episodes on the device.
+    struct SmartRule: Codable, Hashable {
+        var seriesId: String
+        var name: String
+        var count: Int
+    }
+    private(set) var smartRules: [String: SmartRule] = {
+        guard let data = UserDefaults.standard.data(forKey: "prism.smartRules"),
+              let list = try? JSONDecoder().decode([SmartRule].self, from: data) else { return [:] }
+        return Dictionary(uniqueKeysWithValues: list.map { ($0.seriesId, $0) })
+    }()
+    @ObservationIgnored private var lastSmartRun: Date?
+    @ObservationIgnored private var smartRunning = false
+
     @ObservationIgnored private let delegate: DownloadDelegate
     @ObservationIgnored private let fileSession: URLSession
     @ObservationIgnored private let assetSession: AVAssetDownloadURLSession
@@ -149,7 +163,54 @@ final class DownloadManager {
     func attach(client: JellyfinClient) {
         self.client = client
         pumpQueue()
-        Task { await syncOfflineProgress() }
+        Task {
+            await syncOfflineProgress()
+            await runSmartDownloads()
+        }
+    }
+
+    // MARK: Smart downloads
+
+    func setSmart(seriesId: String, name: String, count: Int) {
+        if count <= 0 { smartRules[seriesId] = nil } else { smartRules[seriesId] = SmartRule(seriesId: seriesId, name: name, count: count) }
+        if let data = try? JSONEncoder().encode(Array(smartRules.values)) {
+            UserDefaults.standard.set(data, forKey: "prism.smartRules")
+        }
+        Task { await runSmartDownloads(force: true) }
+    }
+
+    /// Downloads the next unwatched episodes of each smart show and removes ones you've finished.
+    /// Runs when the app connects and after you watch something (at most every few minutes).
+    func runSmartDownloads(force: Bool = false) async {
+        guard let client, !smartRules.isEmpty, !smartRunning else { return }
+        if !force, let last = lastSmartRun, Date().timeIntervalSince(last) < 300 { return }
+        smartRunning = true
+        lastSmartRun = Date()
+        defer { smartRunning = false }
+        for rule in smartRules.values {
+            let base: [String: String?] = [
+                "parentId": rule.seriesId, "includeItemTypes": "Episode", "recursive": "true",
+                "sortBy": "ParentIndexNumber,IndexNumber", "sortOrder": "Ascending",
+            ]
+            var unplayedQ = base
+            unplayedQ["filters"] = "IsUnplayed"
+            unplayedQ["limit"] = String(rule.count)
+            unplayedQ["fields"] = JellyfinClient.listFields + ",MediaSources"
+            var playedQ = base
+            playedQ["filters"] = "IsPlayed"
+            playedQ["fields"] = "ParentId"
+            guard let upcoming = try? await client.browse(unplayedQ).items,
+                  let watched = try? await client.browse(playedQ).items else { continue }
+
+            // Remove finished episodes (unless their offline progress still needs to reach the server).
+            let watchedIds = Set(watched.map(\.id))
+            for r in records.values where r.item.seriesId == rule.seriesId && r.state == .completed
+                && r.needsSync != true && (watchedIds.contains(r.itemId) || r.localPlayed == true) {
+                delete(r.itemId)
+            }
+            // Keep the next N ready.
+            for ep in upcoming where records[ep.id] == nil { await start(item: ep, client: client) }
+        }
     }
 
     // MARK: Queue

@@ -48,6 +48,12 @@ struct AuthResult: Codable {
     let serverId: String?
 }
 
+struct QuickConnectState: Codable {
+    let secret: String
+    let code: String?
+    let authenticated: Bool?
+}
+
 struct ItemsResult: Codable {
     let items: [BaseItem]
     let totalRecordCount: Int?

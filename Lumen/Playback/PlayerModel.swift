@@ -139,6 +139,40 @@ final class PlayerModel {
     /// True while video is going to an AirPlay screen (car, TV); we then send a stream any receiver can decode.
     private(set) var airPlayMode = false
 
+    // MARK: Speed & sleep timer
+    private(set) var speed: Float = 1
+    /// When the sleep timer pauses playback (nil = off).
+    private(set) var sleepAt: Date?
+    /// Pause when this episode/movie ends instead of playing the next one.
+    private(set) var sleepAtEnd = false
+    @ObservationIgnored private var sleepTask: Task<Void, Never>?
+
+    func setSpeed(_ value: Float) {
+        speed = value
+        player.defaultRate = value
+        if player.rate != 0 { player.rate = value }
+    }
+
+    func setSleepTimer(minutes: Int?) {
+        sleepTask?.cancel()
+        sleepAtEnd = false
+        guard let minutes, minutes > 0 else { sleepAt = nil; return }
+        let at = Date().addingTimeInterval(Double(minutes) * 60)
+        sleepAt = at
+        sleepTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Double(minutes) * 60))
+            guard !Task.isCancelled else { return }
+            self?.player.pause()
+            self?.sleepAt = nil
+        }
+    }
+
+    func setSleepAtEnd() {
+        sleepTask?.cancel()
+        sleepAt = nil
+        sleepAtEnd = true
+    }
+
     init(request: PlaybackRequest, client: JellyfinClient?, maxBitrate: Int, prefs: TrackPreferences) {
         self.request = request
         self.item = request.item
@@ -173,6 +207,7 @@ final class PlayerModel {
             forName: AVPlayerItem.didPlayToEndTimeNotification, object: nil, queue: .main) { [weak self] note in
             Task { @MainActor [weak self] in
                 guard let self, !self.isLive, (note.object as? AVPlayerItem) === self.player.currentItem else { return }
+                if self.sleepAtEnd { self.sleepAtEnd = false; return }
                 if self.nextEpisode != nil, !self.upNextDismissed { await self.playNextEpisode() }
             }
         }
@@ -233,7 +268,7 @@ final class PlayerModel {
     }
 
     private func updateUpNext() {
-        guard let next = nextEpisode, !upNextDismissed, let start = creditsStart, currentTime >= start, itemReady else {
+        guard let next = nextEpisode, !upNextDismissed, !sleepAtEnd, let start = creditsStart, currentTime >= start, itemReady else {
             if upNextCountdown != nil && (currentTime < (creditsStart ?? .infinity)) { upNextCountdown = nil; upNextShownAt = nil }
             return
         }
@@ -286,6 +321,12 @@ final class PlayerModel {
     /// Ends this episode (saving progress) and starts the next one in the same player.
     func playNextEpisode() async {
         guard let next = nextEpisode, !stopped else { return }
+        await switchItem(next, startTicks: 0)
+    }
+
+    /// Swap what's playing without closing the player (next episode, or Watch Together changing the video).
+    func switchItem(_ next: BaseItem, startTicks: Int64) async {
+        guard !stopped else { return }
         nextEpisode = nil
         upNextCountdown = nil
         upNextShownAt = nil
@@ -308,16 +349,22 @@ final class PlayerModel {
         subtitleIndex = -1
         let dm = DownloadManager.shared
         let local = dm.localFile(for: next.id) != nil ? dm.records[next.id] : nil
-        request = PlaybackRequest(item: next, startTicks: 0, localDownload: local)
+        request = PlaybackRequest(item: next, startTicks: startTicks, localDownload: local)
         item = next
-        await load(startTicks: 0)
+        await load(startTicks: startTicks)
         await loadEpisodeExtras()
     }
 
     // MARK: Transport
 
     func togglePlay() {
-        if player.timeControlStatus == .paused { player.play() } else { player.pause() }
+        let wantsPlay = player.timeControlStatus == .paused
+        // In a Watch Together group the server decides when everyone plays or pauses.
+        if SyncPlayManager.shared.controls(self) {
+            Task { await SyncPlayManager.shared.request(wantsPlay ? .unpause : .pause) }
+            return
+        }
+        if wantsPlay { player.play() } else { player.pause() }
         refreshClock()
     }
 
@@ -326,9 +373,40 @@ final class PlayerModel {
     }
 
     func seek(to seconds: Double) {
+        if SyncPlayManager.shared.controls(self) {
+            currentTime = seconds
+            Task { await SyncPlayManager.shared.request(.seek(Int64(seconds * 10_000_000))) }
+            return
+        }
         currentTime = seconds
         player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
     }
+
+    // MARK: Watch Together (applied locally, bypassing the group)
+
+    var positionTicks: Int64 {
+        let t = player.currentTime().seconds
+        return t.isFinite ? Int64(t * 10_000_000) : 0
+    }
+
+    func syncPlay() { player.play(); refreshClock() }
+    func syncPause() { player.pause(); refreshClock() }
+
+    func syncSeek(ticks: Int64) async {
+        let seconds = Double(ticks) / 10_000_000
+        currentTime = seconds
+        _ = await player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600),
+                              toleranceBefore: .zero, toleranceAfter: .zero)
+    }
+
+    /// Waits until the current video can play (up to 45 seconds).
+    func waitUntilReady() async {
+        for _ in 0..<225 where !itemReady && !stopped {
+            try? await Task.sleep(for: .milliseconds(200))
+        }
+    }
+
+    func disableAutoNext() { upNextDismissed = true; upNextCountdown = nil }
 
     private func refreshClock() {
         let t = player.currentTime().seconds
@@ -729,6 +807,8 @@ final class PlayerModel {
     func stop() async {
         guard !stopped else { return }
         stopped = true
+        sleepTask?.cancel()
+        SyncPlayManager.shared.unbind(self)
         liveWatchdog?.cancel()
         if let vodEndObserver { NotificationCenter.default.removeObserver(vodEndObserver) }
         if let liveEndObserver { NotificationCenter.default.removeObserver(liveEndObserver) }
@@ -743,5 +823,6 @@ final class PlayerModel {
         player.replaceCurrentItem(with: nil)
         if let playSessionId, let client { await client.stopEncoding(playSessionId: playSessionId) }
         if let liveStreamId, let client { await client.closeLiveStream(liveStreamId) }
+        if item.type == "Episode" { await DownloadManager.shared.runSmartDownloads(force: true) }
     }
 }

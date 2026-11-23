@@ -9,6 +9,7 @@ struct LiveTVView: View {
     @State private var error: String?
     @State private var search = ""
     @State private var playRequest: PlaybackRequest?
+    @AppStorage("prism.liveLayout") private var layout = "list"
 
     private var filtered: [BaseItem] {
         let q = search.trimmingCharacters(in: .whitespaces)
@@ -32,6 +33,9 @@ struct LiveTVView: View {
                 } actions: {
                     Button("Reload") { Task { await load() } }.buttonStyle(SecondaryButtonStyle())
                 }
+            } else if layout == "guide" {
+                LiveGuideGrid(channels: filtered, guide: guide) { play($0) }
+                    .searchable(text: $search, prompt: "Channels or shows")
             } else {
                 ScrollView {
                     LazyVStack(spacing: 12) {
@@ -57,6 +61,18 @@ struct LiveTVView: View {
         }
         .background(TintedBackdrop(color: ArtColor(hue: 0.98, saturation: 0.7, brightness: 0.8)))
         .navigationTitle("Live TV")
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Picker("Layout", selection: $layout) {
+                    Image(systemName: "list.bullet").tag("list")
+                    Image(systemName: "calendar.day.timeline.left").tag("guide")
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 110)
+                .accessibilityLabel("Channel list or guide")
+            }
+            ToolbarItem(placement: .topBarTrailing) { AccountButton() }
+        }
         .task { if channels.isEmpty { await load() } }
         .refreshable { await load() }
         .fullScreenCover(item: $playRequest) { PlayerScreen(request: $0) }
@@ -67,7 +83,7 @@ struct LiveTVView: View {
         loading = true
         do {
             channels = try await client.liveChannels()
-            guide = (try? await client.liveGuide()) ?? [:]
+            guide = (try? await client.liveGuide(hours: 6)) ?? [:]
             error = nil
         } catch {
             self.error = "Couldn't load channels: \(error.localizedDescription)"

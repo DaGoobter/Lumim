@@ -12,6 +12,7 @@ struct PlayerScreen: View {
     @State private var model: PlayerModel?
     @State private var showInfo = false
     @State private var showSubtitleSearch = false
+    @State private var showSyncPlay = false
     @State private var controlsVisible = true
     @State private var hideTask: Task<Void, Never>?
     @State private var surface = VideoSurfaceHandle()
@@ -32,7 +33,7 @@ struct PlayerScreen: View {
 
     private var pinControls: Bool {
         model == nil || model?.isLoading == true || model?.errorMessage != nil || showInfo || showSubtitleSearch
-            || scrubbing || model?.isPlaying == false
+            || scrubbing || model?.isPlaying == false || showSyncPlay
     }
 
     var body: some View {
@@ -109,6 +110,7 @@ struct PlayerScreen: View {
             model = m
             await m.start()
             scheduleHide()
+            await SyncPlayManager.shared.playerOpened(m)
         }
         .onDisappear {
             Task { await model?.stop() }
@@ -121,6 +123,9 @@ struct PlayerScreen: View {
             if let model, let client = app.client {
                 SubtitleSearchView(model: model, client: client, language: app.trackPrefs.subtitleLanguage)
             }
+        }
+        .sheet(isPresented: $showSyncPlay) {
+            if let model, let client = app.client { SyncPlaySheet(model: model, client: client) }
         }
         .sheet(isPresented: $showInfo) {
             if let model { StreamInfoView(diagnostics: model.diagnostics) }
@@ -181,7 +186,8 @@ struct PlayerScreen: View {
                     if AVPictureInPictureController.isPictureInPictureSupported() {
                         circleButton("pip.enter", label: "Picture in Picture") { surface.startPiP() }
                     }
-                    circleButton("info.circle", label: "Stream info") { showInfo = true }
+                    PlayerMoreMenu(model: model, onSyncPlay: { showSyncPlay = true }, onInfo: { showInfo = true },
+                                   onPick: { scheduleHide() })
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
@@ -915,5 +921,77 @@ struct ChapterMenu: View {
                 .foregroundStyle(.white)
         }
         .accessibilityLabel("Chapters")
+    }
+}
+
+
+/// Playback speed, sleep timer and Watch Together.
+struct PlayerMoreMenu: View {
+    let model: PlayerModel
+    let onSyncPlay: () -> Void
+    let onInfo: () -> Void
+    let onPick: () -> Void
+
+    private let speeds: [Float] = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
+
+    var body: some View {
+        Menu {
+            if !model.isLive {
+                Menu {
+                    ForEach(speeds, id: \.self) { s in
+                        Button { model.setSpeed(s); onPick() } label: {
+                            if s == model.speed { Label(label(s), systemImage: "checkmark") } else { Text(label(s)) }
+                        }
+                    }
+                } label: { Label("Speed · \(label(model.speed))", systemImage: "gauge.with.dots.needle.50percent") }
+            }
+            Menu {
+                Button { model.setSleepTimer(minutes: nil); onPick() } label: {
+                    if model.sleepAt == nil && !model.sleepAtEnd { Label("Off", systemImage: "checkmark") } else { Text("Off") }
+                }
+                ForEach([15, 30, 45, 60, 90], id: \.self) { m in
+                    Button("\(m) minutes") { model.setSleepTimer(minutes: m); onPick() }
+                }
+                if !model.isLive {
+                    Button { model.setSleepAtEnd(); onPick() } label: {
+                        if model.sleepAtEnd { Label("End of this \(model.item.type == "Episode" ? "episode" : "video")", systemImage: "checkmark") }
+                        else { Text("End of this \(model.item.type == "Episode" ? "episode" : "video")") }
+                    }
+                }
+            } label: { Label(sleepLabel, systemImage: "moon.zzz") }
+            if !model.isLive && !model.isOffline {
+                Button { onSyncPlay() } label: {
+                    Label(SyncPlayManager.shared.groupId == nil ? "Watch Together" : "Watch Together · On",
+                          systemImage: "person.2.wave.2")
+                }
+            }
+            Divider()
+            Button { onInfo() } label: { Label("Stream Info", systemImage: "info.circle") }
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 17, weight: .bold))
+                    .frame(width: 38, height: 38)
+                    .background(.ultraThinMaterial, in: Circle())
+                if model.sleepAt != nil || model.sleepAtEnd || model.speed != 1 || SyncPlayManager.shared.groupId != nil {
+                    Circle().fill(Theme.accent).frame(width: 9, height: 9)
+                }
+            }
+            .foregroundStyle(.white)
+        }
+        .accessibilityLabel("More options")
+    }
+
+    private var sleepLabel: String {
+        if model.sleepAtEnd { return "Sleep · end of video" }
+        if let at = model.sleepAt {
+            let mins = max(1, Int(ceil(at.timeIntervalSinceNow / 60)))
+            return "Sleep · \(mins) min left"
+        }
+        return "Sleep Timer"
+    }
+
+    private func label(_ s: Float) -> String {
+        s == 1 ? "Normal" : (s.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(s))×" : String(format: "%g×", s))
     }
 }

@@ -18,6 +18,8 @@ struct ItemDetailView: View {
     @State private var playRequest: PlaybackRequest?
     @State private var error: String?
     @State private var artColor: ArtColor?
+    @State private var favorite: Bool?
+    @State private var similar: [BaseItem] = []
 
     private var shown: BaseItem? { item ?? preview }
 
@@ -65,6 +67,14 @@ struct ItemDetailView: View {
                         }
                         .padding()
                         .frame(maxWidth: 900, alignment: .leading)
+                        if !similar.isEmpty {
+                            Shelf("More Like This") {
+                                ForEach(similar) { s in
+                                    NavigationLink(value: s) { PosterCard(item: s) }.buttonStyle(CardPressStyle())
+                                }
+                            }
+                            .padding(.vertical, 20)
+                        }
                     }
                 } else {
                     ProgressView().padding(.top, 200).frame(maxWidth: .infinity)
@@ -123,6 +133,25 @@ struct ItemDetailView: View {
             .buttonStyle(PlayButtonStyle())
 
             if it.isPlayable && !it.isLiveChannel { DownloadButton(item: it) }
+
+            if !it.isLiveChannel, app.client != nil {
+                let on = favorite ?? it.userData?.isFavorite ?? false
+                Button {
+                    Task {
+                        guard let client = app.client else { return }
+                        favorite = !on
+                        if !(await client.setFavorite(it.id, !on)) { favorite = on }
+                    }
+                } label: {
+                    Image(systemName: on ? "heart.fill" : "heart")
+                        .font(.title3).frame(width: 22, height: 22)
+                        .foregroundStyle(on ? Theme.red : .white)
+                        .contentTransition(.symbolEffect(.replace))
+                }
+                .buttonStyle(SecondaryButtonStyle())
+                .accessibilityLabel(on ? "Remove from My List" : "Add to My List")
+                .sensoryFeedback(.impact, trigger: on)
+            }
         }
         if let p = it.progress { ProgressBar(value: p).frame(maxWidth: 260) }
     }
@@ -155,6 +184,26 @@ struct ItemDetailView: View {
                 }
                 .buttonStyle(SecondaryButtonStyle())
                 .disabled(pending.isEmpty)
+            }
+            if let series = shown, app.client != nil {
+                let rule = downloads.smartRules[series.id]
+                Menu {
+                    Picker("Smart downloads", selection: Binding(
+                        get: { rule?.count ?? 0 },
+                        set: { downloads.setSmart(seriesId: series.id, name: series.name ?? "Show", count: $0) })) {
+                        Text("Off").tag(0)
+                        ForEach([1, 2, 3, 5, 10], id: \.self) { n in
+                            Text("Next \(n) unwatched").tag(n)
+                        }
+                    }
+                } label: {
+                    Label(rule.map { "Smart: keeping next \($0.count)" } ?? "Smart downloads",
+                          systemImage: rule == nil ? "sparkles" : "sparkles.rectangle.stack.fill")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .buttonStyle(SecondaryButtonStyle())
+                Text("Smart downloads keep the next unwatched episodes on this device and remove ones you've finished.")
+                    .font(.caption2).foregroundStyle(.secondary)
             }
             LazyVStack(alignment: .leading, spacing: 14) {
                 ForEach(episodes) { ep in EpisodeRow(episode: ep) { playRequest = PlaybackRequest(item: ep, startTicks: ep.resumeTicks) } }
@@ -194,6 +243,7 @@ struct ItemDetailView: View {
             let full = try await client.item(itemId)
             item = full
             error = nil
+            if similar.isEmpty, full.type == "Movie" || full.isSeries { similar = await client.similar(full.id) }
             if full.isSeries {
                 seasons = try await client.seasons(seriesId: full.id)
                 if selectedSeason == nil {

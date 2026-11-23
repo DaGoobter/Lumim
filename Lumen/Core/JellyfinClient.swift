@@ -108,6 +108,26 @@ final class JellyfinClient {
         try await post("Users/AuthenticateByName", body: ["Username": username, "Pw": password])
     }
 
+    // MARK: Quick Connect
+
+    func quickConnectEnabled() async -> Bool {
+        let on: Bool? = try? await get("QuickConnect/Enabled")
+        return on ?? false
+    }
+
+    func quickConnectInitiate() async throws -> QuickConnectState {
+        let data = try await send("QuickConnect/Initiate", method: "POST")
+        return try JSONDecoder.jellyfin.decode(QuickConnectState.self, from: data)
+    }
+
+    func quickConnectState(secret: String) async throws -> QuickConnectState {
+        try await get("QuickConnect/Connect", query: ["secret": secret])
+    }
+
+    func quickConnectAuthenticate(secret: String) async throws -> AuthResult {
+        try await post("Users/AuthenticateWithQuickConnect", body: ["Secret": secret])
+    }
+
     // MARK: Library
 
     static let listFields = "PrimaryImageAspectRatio,Overview,Genres"
@@ -166,13 +186,56 @@ final class JellyfinClient {
     }
 
     func items(parentId: String?, types: String?, recursive: Bool, sortBy: String, sortOrder: String,
-               start: Int, limit: Int) async throws -> ItemsResult {
+               start: Int, limit: Int, filters: String? = nil, genres: String? = nil) async throws -> ItemsResult {
         try await get("Items", query: [
             "userId": userId, "parentId": parentId, "includeItemTypes": types,
             "recursive": recursive ? "true" : "false", "sortBy": sortBy, "sortOrder": sortOrder,
             "startIndex": String(start), "limit": String(limit), "fields": Self.listFields,
-            "enableImageTypes": "Primary,Backdrop,Thumb",
+            "enableImageTypes": "Primary,Backdrop,Thumb", "filters": filters, "genres": genres,
         ])
+    }
+
+    func genres(parentId: String?) async -> [String] {
+        let r: ItemsResult? = try? await get("Genres", query: ["userId": userId, "parentId": parentId, "sortBy": "SortName"])
+        return r?.items.compactMap(\.name) ?? []
+    }
+
+    // MARK: Favorites, collections, search
+
+    func setFavorite(_ itemId: String, _ on: Bool) async -> Bool {
+        (try? await send("UserFavoriteItems/\(itemId)", query: ["userId": userId], method: on ? "POST" : "DELETE")) != nil
+    }
+
+    /// "My List": favorited movies and shows, newest first.
+    func favorites() async -> [BaseItem] {
+        (try? await browse([
+            "filters": "IsFavorite", "includeItemTypes": "Movie,Series", "recursive": "true",
+            "sortBy": "DateCreated", "sortOrder": "Descending", "limit": "40",
+            "enableImageTypes": "Primary,Backdrop,Thumb",
+        ]).items) ?? []
+    }
+
+    func collections() async -> [BaseItem] {
+        (try? await browse([
+            "includeItemTypes": "BoxSet", "recursive": "true", "sortBy": "SortName", "limit": "60",
+        ]).items) ?? []
+    }
+
+    static let searchTypes = "Movie,Series,Episode,BoxSet,MusicArtist,MusicAlbum,Audio,Book,AudioBook,TvChannel,Playlist"
+
+    func search(_ term: String) async throws -> [BaseItem] {
+        try await browse([
+            "searchTerm": term, "recursive": "true", "includeItemTypes": Self.searchTypes,
+            "limit": "120", "enableImageTypes": "Primary,Backdrop,Thumb",
+        ]).items
+    }
+
+    /// Items related to this one (for "More Like This").
+    func similar(_ itemId: String) async -> [BaseItem] {
+        let r: ItemsResult? = try? await get("Items/\(itemId)/Similar", query: [
+            "userId": userId, "limit": "16", "fields": Self.listFields,
+        ])
+        return r?.items ?? []
     }
 
     /// Generic Items query (music, books, playlists…).

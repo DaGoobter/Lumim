@@ -20,6 +20,28 @@ struct DownloadsView: View {
                         StorageBar(used: used, free: free)
                             .listRowBackground(Theme.card)
                     }
+                    if !downloads.smartRules.isEmpty {
+                        Section {
+                            ForEach(downloads.smartRules.values.sorted { $0.name < $1.name }, id: \.seriesId) { rule in
+                                HStack {
+                                    Image(systemName: "sparkles").foregroundStyle(Theme.accent)
+                                    Text(rule.name)
+                                    Spacer()
+                                    Text("Next \(rule.count)").foregroundStyle(.secondary)
+                                }
+                                .listRowBackground(Theme.card)
+                                .swipeActions {
+                                    Button("Stop", role: .destructive) {
+                                        downloads.setSmart(seriesId: rule.seriesId, name: rule.name, count: 0)
+                                    }
+                                }
+                            }
+                        } header: {
+                            Text("Smart downloads")
+                        } footer: {
+                            Text("These shows keep their next unwatched episodes downloaded and clear out watched ones. Swipe to stop.")
+                        }
+                    }
                     ForEach(downloads.groups) { group in
                         Section {
                             ForEach(group.records) { record in
@@ -60,6 +82,7 @@ struct DownloadsView: View {
         }
         .background(TintedBackdrop(color: nil))
         .navigationTitle("Downloads")
+        .toolbar { ToolbarItem(placement: .topBarTrailing) { AccountButton() } }
         .fullScreenCover(item: $playRequest) { PlayerScreen(request: $0) }
         .fullScreenCover(isPresented: $showReader) {
             if let reading { BookReaderScreen(book: reading.book, file: reading.file) }

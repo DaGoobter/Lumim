@@ -14,6 +14,9 @@ struct StoredSession: Codable {
     /// The server's home-network address, used automatically when it's reachable.
     var localURL: String?
     var localURLIsManual: Bool?
+
+    /// Identifies one user on one server.
+    var key: String { (serverId ?? serverURL) + "|" + userId }
 }
 
 @MainActor @Observable
@@ -21,6 +24,8 @@ final class AppState {
     enum Route: Equatable { case local, remote }
 
     private(set) var session: StoredSession? = nil
+    /// Every account signed in on this device (any number of users and servers).
+    private(set) var accounts: [StoredSession] = []
     private(set) var client: JellyfinClient? = nil
     private(set) var route: Route = .remote
     /// Why the home address is or isn't being used (shown in Settings).
@@ -61,11 +66,19 @@ final class AppState {
         if UserDefaults.standard.object(forKey: "lumen.preferLocal") != nil {
             preferLocal = UserDefaults.standard.bool(forKey: "lumen.preferLocal")
         }
+        if let data = Keychain.load("accounts"),
+           let list = try? JSONDecoder().decode([StoredSession].self, from: data) {
+            accounts = list
+        }
         if let data = Keychain.load("session"),
            let s = try? JSONDecoder().decode(StoredSession.self, from: data),
            let url = URL(string: s.serverURL) {
             session = s
             client = JellyfinClient(baseURL: url, deviceName: UIDevice.current.name, token: s.token, userId: s.userId)
+            if !accounts.contains(where: { $0.key == s.key }) {
+                accounts.append(s)
+                persistAccounts()
+            }
         }
         monitor.pathUpdateHandler = { [weak self] _ in
             Task { @MainActor [weak self] in self?.scheduleRouteCheck() }
@@ -208,12 +221,92 @@ final class AppState {
     private func save(_ s: StoredSession) {
         session = s
         if let data = try? JSONEncoder().encode(s) { Keychain.save(data, key: "session") }
+        if let i = accounts.firstIndex(where: { $0.key == s.key }) { accounts[i] = s } else { accounts.append(s) }
+        persistAccounts()
+    }
+
+    private func persistAccounts() {
+        if let data = try? JSONEncoder().encode(accounts) { Keychain.save(data, key: "accounts") }
+    }
+
+    // MARK: Accounts
+
+    /// Switch to another saved user or server.
+    func switchTo(_ account: StoredSession) {
+        guard account.key != session?.key, let url = URL(string: account.serverURL) else { return }
+        AudioPlayer.shared.stop()
+        save(account)
+        client = JellyfinClient(baseURL: url, deviceName: UIDevice.current.name, token: account.token, userId: account.userId)
+        route = .remote
+        retriedAfterPrompt = false
+        localStatus = "Checking…"
+        Task { await refreshRoute() }
+    }
+
+    /// Forget a saved account (signs it out on the server too).
+    func remove(_ account: StoredSession) async {
+        if account.key == session?.key { await logout(); return }
+        if let url = URL(string: account.serverURL) {
+            let c = JellyfinClient(baseURL: url, deviceName: UIDevice.current.name, token: account.token, userId: account.userId)
+            _ = try? await c.send("Sessions/Logout")
+        }
+        accounts.removeAll { $0.key == account.key }
+        persistAccounts()
     }
 
     // MARK: Sign in / out
 
     func login(server: String, username: String, password: String) async throws {
-        // 1. Find a reachable address (try https first if no scheme was typed).
+        let (client, info) = try await connect(server: server)
+        let auth = try await client.authenticate(username: username, password: password)
+        adopt(client: client, info: info, auth: auth)
+    }
+
+    /// Quick Connect: ask the server for a code that a signed-in device approves.
+    func quickConnectStart(server: String) async throws -> (client: JellyfinClient, info: PublicSystemInfo, secret: String, code: String) {
+        let (client, info) = try await connect(server: server)
+        guard await client.quickConnectEnabled() else { throw QuickConnectError.disabled }
+        let r = try await client.quickConnectInitiate()
+        return (client, info, r.secret, r.code ?? "")
+    }
+
+    /// Waits (up to 5 minutes) for the code to be approved, then signs in.
+    func quickConnectFinish(client: JellyfinClient, info: PublicSystemInfo, secret: String) async throws {
+        let deadline = Date().addingTimeInterval(300)
+        while Date() < deadline {
+            try Task.checkCancellation()
+            if let state = try? await client.quickConnectState(secret: secret), state.authenticated == true {
+                let auth = try await client.quickConnectAuthenticate(secret: secret)
+                adopt(client: client, info: info, auth: auth)
+                return
+            }
+            try await Task.sleep(for: .seconds(3))
+        }
+        throw QuickConnectError.expired
+    }
+
+    private func adopt(client: JellyfinClient, info: PublicSystemInfo, auth: AuthResult) {
+        AudioPlayer.shared.stop()
+        client.accessToken = auth.accessToken
+        client.userId = auth.user.id
+        let s = StoredSession(serverURL: client.baseURL.absoluteString, serverName: info.serverName,
+                              userId: auth.user.id, userName: auth.user.name, token: auth.accessToken,
+                              serverId: info.id, localURL: nil, localURLIsManual: nil)
+        // Signing in again as someone already saved keeps their learned home address.
+        var merged = s
+        if let old = accounts.first(where: { $0.key == s.key }) {
+            merged.localURL = old.localURL
+            merged.localURLIsManual = old.localURLIsManual
+        }
+        save(merged)
+        self.client = client
+        route = .remote
+        retriedAfterPrompt = false
+        Task { await refreshRoute() }
+    }
+
+    private func connect(server: String) async throws -> (JellyfinClient, PublicSystemInfo) {
+        // Find a reachable address (try https first if no scheme was typed).
         var reachable: (JellyfinClient, PublicSystemInfo)?
         var lastError: Error = JellyfinError.badURL
         for url in Self.candidateURLs(server) {
@@ -227,26 +320,20 @@ final class AppState {
             }
         }
         guard let found = reachable else { throw lastError }
-        let (client, info) = found
-
-        // 2. Sign in.
-        let auth = try await client.authenticate(username: username, password: password)
-        client.accessToken = auth.accessToken
-        client.userId = auth.user.id
-        let s = StoredSession(serverURL: client.baseURL.absoluteString, serverName: info.serverName,
-                              userId: auth.user.id, userName: auth.user.name, token: auth.accessToken,
-                              serverId: info.id, localURL: nil, localURLIsManual: nil)
-        save(s)
-        self.client = client
-        route = .remote
-        Task { await refreshRoute() }
+        return found
     }
 
+    /// Signs out the current account; switches to another saved one if there is one.
     func logout() async {
         if let client { _ = try? await client.send("Sessions/Logout") }
+        AudioPlayer.shared.stop()
+        let current = session?.key
+        accounts.removeAll { $0.key == current }
+        persistAccounts()
         Keychain.delete("session")
         session = nil
         client = nil
+        if let next = accounts.first { switchTo(next) }
     }
 
     static func candidateURLs(_ raw: String) -> [URL] {
@@ -258,6 +345,16 @@ final class AppState {
         guard !s.isEmpty else { return [] }
         let candidates = s.contains("://") ? [s] : ["https://" + s, "http://" + s]
         return candidates.compactMap(URL.init(string:))
+    }
+}
+
+enum QuickConnectError: LocalizedError {
+    case disabled, expired
+    var errorDescription: String? {
+        switch self {
+        case .disabled: return "Quick Connect is turned off on this server. An admin can turn it on in Dashboard → General."
+        case .expired: return "The code expired. Get a new one and try again."
+        }
     }
 }
 
