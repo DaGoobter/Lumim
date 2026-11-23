@@ -1,0 +1,76 @@
+name: Build Apple TV app
+
+on:
+  push:
+    branches: [main]
+    paths: ['HuefinTV/**', 'Lumen/Core/**', 'Lumen/Playback/**', 'project.yml', '.github/workflows/tvos.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15-intel, macos-26-intel, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use newest Xcode
+        run: |
+          X=$(ls -d /Applications/Xcode_*.app | grep -v -i beta | sort -V | tail -1)
+          echo "Using $X"
+          sudo xcode-select -s "$X"
+
+      - name: Make sure the tvOS SDK is installed
+        run: |
+          xcodebuild -showsdks | grep -i appletvos || xcodebuild -downloadPlatform tvOS
+          xcodebuild -showsdks | grep -i appletvos
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build (unsigned)
+        run: |
+          xcodebuild \
+            -project Lumen.xcodeproj \
+            -scheme HuefinTV \
+            -configuration Release \
+            -sdk appletvos \
+            -destination 'generic/platform=tvOS' \
+            -derivedDataPath build \
+            -quiet \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Package IPA
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-appletvos/HuefinTV.app Payload/
+          zip -qry HuefinTV.ipa Payload
+          ls -la HuefinTV.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: HuefinTV-ipa-${{ matrix.os }}
+          path: HuefinTV.ipa
+          retention-days: 30
+
+      - name: Publish to the "appletv-latest" release (direct download link)
+        if: matrix.os == 'macos-latest' || matrix.os == 'macos-15-intel'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view appletv-latest >/dev/null 2>&1 || gh release create appletv-latest --title "Huefin for Apple TV (latest)" --notes "Newest Apple TV build. Install HuefinTV.ipa with Sideloadly (choose your Apple TV as the device)." --prerelease || true
+          gh release upload appletv-latest HuefinTV.ipa --clobber

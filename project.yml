@@ -3,6 +3,7 @@ options:
   bundleIdPrefix: com.lumenplayer
   deploymentTarget:
     iOS: "17.0"
+    tvOS: "17.0"
 settings:
   base:
     SWIFT_VERSION: "5.0"
@@ -84,7 +85,42 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         CODE_SIGN_STYLE: Automatic
         SKIP_INSTALL: YES
+  HuefinTV:
+    type: application
+    platform: tvOS
+    sources:
+      - path: HuefinTV
+      - path: Lumen/Core
+      - path: Lumen/Playback/AudioPlayer.swift
+      - path: Lumen/Playback/DJVoice.swift
+      - path: Lumen/Playback/Stations.swift
+      - path: Lumen/Playback/SyncPlay.swift
+      - path: Lumen/Playback/Engine.swift
+      - path: Lumen/Playback/PlaybackPrefs.swift
+    info:
+      path: HuefinTV/Info.plist
+      properties:
+        CFBundleDisplayName: Huefin
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UIBackgroundModes: [audio]
+        UIUserInterfaceStyle: Dark
+        NSLocalNetworkUsageDescription: Huefin connects to Jellyfin servers on your local network.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        UIRequiredDeviceCapabilities: [arm64]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.lumenplayer.tv
+        TARGETED_DEVICE_FAMILY: "3"
+        CODE_SIGN_STYLE: Automatic
+        ASSETCATALOG_COMPILER_APPICON_NAME: "App Icon & Top Shelf Image"
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: ""
 schemes:
+  HuefinTV:
+    build:
+      targets:
+        HuefinTV: all
   Lumen:
     build:
       targets:
