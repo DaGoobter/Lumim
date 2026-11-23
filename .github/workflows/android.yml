@@ -6,6 +6,9 @@ on:
     paths: ['android/**', '.github/workflows/android.yml']
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -34,3 +37,11 @@ jobs:
           name: Huefin-android-apk
           path: android/app/build/outputs/apk/release/*.apk
           retention-days: 30
+
+      - name: Publish to the "android-latest" release (direct download link for phones)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/outputs/apk/release/*.apk Huefin.apk
+          gh release view android-latest >/dev/null 2>&1 || gh release create android-latest --title "Huefin for Android (latest)" --notes "Newest Android build. Download Huefin.apk on your phone and open it to install or update." --prerelease
+          gh release upload android-latest Huefin.apk --clobber

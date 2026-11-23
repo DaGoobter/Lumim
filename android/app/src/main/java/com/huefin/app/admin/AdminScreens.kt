@@ -20,6 +20,8 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Message
+import androidx.compose.material.icons.automirrored.filled.Article
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -167,7 +169,7 @@ fun AdminDashboardScreen(nav: NavHostController) {
                     Triple("users", "Users" to "Access, downloads, remote, parents", Icons.Filled.Group to Hue.coral),
                     Triple("activity", "Activity" to "Logins, plays, changes", Icons.Filled.MonitorHeart to Hue.mint),
                     Triple("tasks", "Scheduled Tasks" to "Run or stop server jobs", Icons.Filled.Schedule to Hue.sky),
-                    Triple("logs", "Logs" to "Read server and FFmpeg logs", Icons.Filled.Article to Hue.amber),
+                    Triple("logs", "Logs" to "Read server and FFmpeg logs", Icons.AutoMirrored.Filled.Article to Hue.amber),
                     Triple("devices", "Devices" to "Everything signed in", Icons.Filled.Devices to Hue.sky),
                     Triple("plugins", "Plugins" to "What's installed", Icons.Filled.Extension to Hue.sun),
                     Triple("quickconnect", "Quick Connect" to "Approve a TV sign-in code", Icons.Filled.QrCode to Hue.mint),
@@ -388,7 +390,7 @@ fun AdminUserScreen(id: String, nav: NavHostController) {
                 FormPicker("Player", defaults.engine, listOf<Pair<String?, String>>(null to "Their choice", "auto" to PlaybackEngine.Auto.label, "apple" to "Built-in player only", "prism" to PlaybackEngine.Prism.label)) {
                     defaults = defaults.copy(engine = it) }
                 FormDivider()
-                FormRow("Send to their Huefin", icon = Icons.Filled.Send, onClick = {
+                FormRow("Send to their Huefin", icon = Icons.AutoMirrored.Filled.Send, onClick = {
                     scope.launch { status = runCatching { ServerDefaults.write(c, id, defaults); "Saved. Their Huefin picks it up next time it opens." }.getOrElse { "Couldn't save: ${it.message}" } }
                 })
             }
