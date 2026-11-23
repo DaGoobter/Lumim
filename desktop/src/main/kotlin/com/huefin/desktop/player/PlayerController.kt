@@ -76,7 +76,7 @@ class PlayerController(start: BaseItem, private val startTicks: Long, val onClos
             override fun stopped(mediaPlayer: MediaPlayer) { scope.launch { playing = false } }
             override fun buffering(mediaPlayer: MediaPlayer, newCache: Float) { scope.launch { loading = newCache < 100f && !playing } }
             override fun lengthChanged(mediaPlayer: MediaPlayer, newLength: Long) { scope.launch { lengthMs = newLength } }
-            override fun elementaryStreamAdded(mediaPlayer: MediaPlayer, type: uk.co.caprica.vlcj.player.base.TrackType, id: Int) { scope.launch { refreshTracks() } }
+            override fun elementaryStreamAdded(mediaPlayer: MediaPlayer, type: uk.co.caprica.vlcj.media.TrackType, id: Int) { scope.launch { refreshTracks() } }
             override fun finished(mediaPlayer: MediaPlayer) { scope.launch { onFinished() } }
             override fun error(mediaPlayer: MediaPlayer) { scope.launch { if (isLive) reload() else { error = "This couldn't be played."; loading = false } } }
         })
