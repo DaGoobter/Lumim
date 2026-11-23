@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sc_resume">Resume watching</string>
+    <string name="sc_live">Watch live TV</string>
+    <string name="sc_dj">Start Huefin DJ</string>
+</resources>

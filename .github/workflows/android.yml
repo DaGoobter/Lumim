@@ -26,11 +26,11 @@ jobs:
           gradle-version: "8.14.3"
 
       - name: Build APK
-        run: gradle :app:assembleDebug --stacktrace --console=plain
+        run: gradle :app:assembleRelease --stacktrace --console=plain
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Lumen-android-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
-          retention-days: 14
+          name: Huefin-android-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          retention-days: 30

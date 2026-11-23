@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut android:shortcutId="resume" android:enabled="true" android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/sc_resume" android:shortcutLongLabel="@string/sc_resume">
+        <intent android:action="com.huefin.app.RESUME" android:targetPackage="com.huefin.app"
+            android:targetClass="com.huefin.app.MainActivity" />
+    </shortcut>
+    <shortcut android:shortcutId="live" android:enabled="true" android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/sc_live" android:shortcutLongLabel="@string/sc_live">
+        <intent android:action="com.huefin.app.LIVE" android:targetPackage="com.huefin.app"
+            android:targetClass="com.huefin.app.MainActivity" />
+    </shortcut>
+    <shortcut android:shortcutId="dj" android:enabled="true" android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/sc_dj" android:shortcutLongLabel="@string/sc_dj">
+        <intent android:action="com.huefin.app.DJ" android:targetPackage="com.huefin.app"
+            android:targetClass="com.huefin.app.MainActivity" />
+    </shortcut>
+</shortcuts>
