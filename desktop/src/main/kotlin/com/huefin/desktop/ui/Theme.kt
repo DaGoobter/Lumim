@@ -136,6 +136,7 @@ fun Eyebrow(text: String, color: Color = LocalHue.current) =
     Text(text.uppercase(), color = color, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.4.sp)
 
 /** Windows' own UI font (Segoe UI), so text is as crisp as the rest of the system. */
+@OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
 private val Segoe = androidx.compose.ui.text.font.FontFamily(
     listOf(FontWeight.Light, FontWeight.Normal, FontWeight.Medium, FontWeight.SemiBold, FontWeight.Bold, FontWeight.ExtraBold, FontWeight.Black).map {
         androidx.compose.ui.text.platform.SystemFont("Segoe UI", it)
