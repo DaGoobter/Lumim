@@ -158,7 +158,7 @@ struct SeerrDetailSheet: View {
                 }
                 if let o = result.overview { Text(o).font(.callout) }
                 if result.status == 5 {
-                    Text("It's already on your server. Search for it in Prism to watch.").font(.footnote).foregroundStyle(.secondary)
+                    Text("It's already on your server. Search for it in Huefin to watch.").font(.footnote).foregroundStyle(.secondary)
                 } else {
                     Button {
                         busy = true
@@ -200,7 +200,7 @@ struct SeerrSetupView: View {
             } header: {
                 Text("Connect requests")
             } footer: {
-                Text("Requests use Seerr (Jellyseerr). Sign in once with your Jellyfin password; Prism doesn't keep it.")
+                Text("Requests use Seerr (Jellyseerr). Sign in once with your Jellyfin password; Huefin doesn't keep it.")
             }
             Button {
                 busy = true

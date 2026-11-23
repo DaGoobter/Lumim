@@ -83,10 +83,11 @@ actor ArtworkPalette {
 
 /// Full-screen backdrop that washes the page in the artwork's color, fading to near-black.
 struct TintedBackdrop: View {
+    @Environment(\.hue) private var hue
     let color: ArtColor?
 
     var body: some View {
-        let base = color?.background ?? Theme.accent.opacity(0.35)
+        let base = color?.background ?? hue.opacity(0.28)
         LinearGradient(stops: [
             .init(color: base, location: 0),
             .init(color: base.opacity(0.55), location: 0.45),

@@ -95,7 +95,7 @@ struct ForYouView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 28) {
-            DJCard(playing: audio.station?.name == "Prism DJ", busy: starting == "Prism DJ") {
+            DJCard(playing: audio.station?.name == "Huefin DJ", busy: starting == "Huefin DJ") {
                 start(Stations.dj(libraryId: library.id))
             }
 
@@ -202,7 +202,7 @@ struct ForYouView: View {
     }
 }
 
-/// The big, animated Prism DJ card.
+/// The big, animated Huefin DJ card.
 struct DJCard: View {
     let playing: Bool
     let busy: Bool
@@ -219,7 +219,7 @@ struct DJCard: View {
                 Circle().fill(.white.opacity(0.18)).frame(width: 220).blur(radius: 40)
                     .offset(x: animate ? 160 : 60, y: animate ? -40 : -90)
                 VStack(alignment: .leading, spacing: 6) {
-                    Label("PRISM DJ", systemImage: "waveform.and.mic").font(.caption.weight(.heavy))
+                    Label("HUEFIN DJ", systemImage: "waveform.and.mic").font(.caption.weight(.heavy))
                     Text("Your music, mixed for you").font(.title2.weight(.heavy))
                     Text("Heavy rotation, favorites, throwbacks and new finds, with a voice between sets.")
                         .font(.footnote.weight(.medium)).opacity(0.9).lineLimit(2)
@@ -249,7 +249,7 @@ struct DJCard: View {
         .onAppear {
             withAnimation(.easeInOut(duration: 6).repeatForever(autoreverses: true)) { animate = true }
         }
-        .accessibilityLabel(playing ? "Prism DJ, playing" : "Play Prism DJ")
+        .accessibilityLabel(playing ? "Huefin DJ, playing" : "Play Huefin DJ")
     }
 }
 

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Prism settings an admin sets per person on the server (stored in Jellyfin's per-user display
+/// Huefin settings an admin sets per person on the server (stored in Jellyfin's per-user display
 /// preferences). Each phone applies them when the admin changes them; people can still adjust after.
 enum ServerDefaults {
     static let prefsId = "usersettings"
@@ -61,7 +61,7 @@ enum ServerDefaults {
     }
 }
 
-/// Admin screen section: Prism defaults for one person.
+/// Admin screen section: Huefin defaults for one person.
 struct PrismDefaultsSection: View {
     let client: JellyfinClient
     let userId: String
@@ -87,17 +87,17 @@ struct PrismDefaultsSection: View {
                 Text("Their choice").tag("")
                 ForEach(PlaybackEngine.allCases) { Text($0.label).tag($0.rawValue) }
             }
-            Button("Send to their Prism") {
+            Button("Send to their Huefin") {
                 Task {
-                    do { try await ServerDefaults.write(client, userId: userId, values: values); status = "Saved. Their Prism picks it up next time it opens." }
+                    do { try await ServerDefaults.write(client, userId: userId, values: values); status = "Saved. Their Huefin picks it up next time it opens." }
                     catch { status = "Couldn't save: \(error.localizedDescription)" }
                 }
             }
             if let status { Text(status).font(.footnote).foregroundStyle(.secondary) }
         } header: {
-            Text("Prism defaults")
+            Text("Huefin defaults")
         } footer: {
-            Text("Set up Prism for them from here. They can still change things on their phone afterward.")
+            Text("Set up Huefin for them from here. They can still change things on their phone afterward.")
         }
         .task {
             guard !loaded else { return }

@@ -3,7 +3,7 @@ import AVKit
 
 import MediaPlayer
 
-/// Opens the right player: Apple's (HDR, Dolby Vision, AirPlay, PiP) or the Prism Engine for files
+/// Opens the right player: Apple's (HDR, Dolby Vision, AirPlay, PiP) or the Huefin Engine for files
 /// Apple can't play, so the server doesn't have to convert them.
 struct PlayerScreen: View {
     let request: PlaybackRequest
@@ -733,7 +733,7 @@ struct RoutePicker: UIViewRepresentable {
     func makeUIView(context: Context) -> AVRoutePickerView {
         let v = AVRoutePickerView()
         v.tintColor = .white
-        v.activeTintColor = UIColor(Theme.accent)
+        v.activeTintColor = UIColor(Color.accentColor)
         v.prioritizesVideoDevices = true
         v.backgroundColor = UIColor.white.withAlphaComponent(0.12)
         v.layer.cornerRadius = 19
@@ -1026,7 +1026,7 @@ struct PlayerMoreMenu: View {
                     .frame(width: 38, height: 38)
                     .background(.ultraThinMaterial, in: Circle())
                 if model.sleepAt != nil || model.sleepAtEnd || model.speed != 1 || SyncPlayManager.shared.groupId != nil {
-                    Circle().fill(Theme.accent).frame(width: 9, height: 9)
+                    Circle().fill(Color.accentColor).frame(width: 9, height: 9)
                 }
             }
             .foregroundStyle(.white)

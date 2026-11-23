@@ -146,7 +146,7 @@ struct LiveGuideGrid: View {
                     image.resizable().scaledToFit().padding(8)
                 } else {
                     VStack(spacing: 2) {
-                        if let n = ch.channelNumber { Text(n).font(.caption2.weight(.bold)).foregroundStyle(Theme.accent) }
+                        if let n = ch.channelNumber { Text(n).font(.caption2.weight(.bold)).foregroundStyle(Color.accentColor) }
                         Text(String((ch.name ?? "TV").prefix(4)).uppercased())
                             .font(.caption.weight(.heavy)).foregroundStyle(.white.opacity(0.7))
                     }
@@ -164,7 +164,7 @@ struct ProgramDetailSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(channel.name ?? "Channel").font(.caption.weight(.bold)).foregroundStyle(Theme.accent)
+            Text(channel.name ?? "Channel").font(.caption.weight(.bold)).foregroundStyle(Color.accentColor)
             Text(program.name ?? "Program").font(.title2.weight(.bold))
             if let ep = program.episodeTitle, !ep.isEmpty { Text(ep).font(.headline).foregroundStyle(.secondary) }
             if let s = program.start, let e = program.end {

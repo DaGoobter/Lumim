@@ -40,7 +40,7 @@ struct LumenApp: App {
                 .environment(downloads)
                 .environment(AudioPlayer.shared)
                 .preferredColorScheme(.dark)
-                .tint(Theme.accent)
+                .tint(Color.accentColor)
         }
     }
 }
@@ -111,31 +111,57 @@ struct RootView: View {
 }
 
 struct MainTabView: View {
+    enum TabID: Hashable { case home, library, live, downloads, search }
+    @State private var selection: TabID = .home
+
+    /// The tab bar takes the color of the section you're in.
+    private var hue: Color {
+        switch selection {
+        case .home: return Theme.home
+        case .library: return Theme.library
+        case .live: return Theme.live
+        case .downloads: return Theme.downloads
+        case .search: return Theme.search
+        }
+    }
+
     var body: some View {
         if #available(iOS 18.0, *) {
             // Tab bar on iPhone; on iPad it can expand into a sidebar.
-            TabView {
-                Tab("Home", systemImage: "house.fill") { NavigationStack { HomeView() }.withMiniPlayer() }
-                Tab("Library", systemImage: "square.grid.2x2.fill") { NavigationStack { LibrariesView() }.withMiniPlayer() }
-                Tab("Live TV", systemImage: "tv") { NavigationStack { LiveTVView() }.withMiniPlayer() }
-                Tab("Downloads", systemImage: "arrow.down.circle.fill") { NavigationStack { DownloadsView() }.withMiniPlayer() }
-                Tab(role: .search) { NavigationStack { SearchView() }.withMiniPlayer() }
+            TabView(selection: $selection) {
+                Tab("Home", systemImage: "house.fill", value: TabID.home) {
+                    NavigationStack { HomeView() }.withMiniPlayer().sectionHue(Theme.home)
+                }
+                Tab("Library", systemImage: "square.grid.2x2.fill", value: TabID.library) {
+                    NavigationStack { LibrariesView() }.withMiniPlayer().sectionHue(Theme.library)
+                }
+                Tab("Live TV", systemImage: "tv", value: TabID.live) {
+                    NavigationStack { LiveTVView() }.withMiniPlayer().sectionHue(Theme.live)
+                }
+                Tab("Downloads", systemImage: "arrow.down.circle.fill", value: TabID.downloads) {
+                    NavigationStack { DownloadsView() }.withMiniPlayer().sectionHue(Theme.downloads)
+                }
+                Tab(value: TabID.search, role: .search) {
+                    NavigationStack { SearchView() }.withMiniPlayer().sectionHue(Theme.search)
+                }
             }
             .tabViewStyle(.sidebarAdaptable)
+            .tint(hue)
             .withNowPlaying()
         } else {
-            TabView {
-                NavigationStack { HomeView() }.withMiniPlayer()
-                    .tabItem { Label("Home", systemImage: "house.fill") }
-                NavigationStack { LibrariesView() }.withMiniPlayer()
-                    .tabItem { Label("Library", systemImage: "square.grid.2x2.fill") }
-                NavigationStack { LiveTVView() }.withMiniPlayer()
-                    .tabItem { Label("Live TV", systemImage: "tv") }
-                NavigationStack { DownloadsView() }.withMiniPlayer()
-                    .tabItem { Label("Downloads", systemImage: "arrow.down.circle.fill") }
-                NavigationStack { SearchView() }.withMiniPlayer()
-                    .tabItem { Label("Search", systemImage: "magnifyingglass") }
+            TabView(selection: $selection) {
+                NavigationStack { HomeView() }.withMiniPlayer().sectionHue(Theme.home)
+                    .tabItem { Label("Home", systemImage: "house.fill") }.tag(TabID.home)
+                NavigationStack { LibrariesView() }.withMiniPlayer().sectionHue(Theme.library)
+                    .tabItem { Label("Library", systemImage: "square.grid.2x2.fill") }.tag(TabID.library)
+                NavigationStack { LiveTVView() }.withMiniPlayer().sectionHue(Theme.live)
+                    .tabItem { Label("Live TV", systemImage: "tv") }.tag(TabID.live)
+                NavigationStack { DownloadsView() }.withMiniPlayer().sectionHue(Theme.downloads)
+                    .tabItem { Label("Downloads", systemImage: "arrow.down.circle.fill") }.tag(TabID.downloads)
+                NavigationStack { SearchView() }.withMiniPlayer().sectionHue(Theme.search)
+                    .tabItem { Label("Search", systemImage: "magnifyingglass") }.tag(TabID.search)
             }
+            .tint(hue)
             .withNowPlaying()
         }
     }

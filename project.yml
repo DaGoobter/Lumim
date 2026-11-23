@@ -6,7 +6,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.2.0"
+    MARKETING_VERSION: "0.3.0"
     CURRENT_PROJECT_VERSION: "1"
 packages:
   ZIPFoundation:
@@ -33,7 +33,7 @@ targets:
     info:
       path: Lumen/Info.plist
       properties:
-        CFBundleDisplayName: Prism
+        CFBundleDisplayName: Huefin
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
@@ -45,7 +45,7 @@ targets:
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
         UIApplicationSupportsIndirectInputEvents: true
-        NSLocalNetworkUsageDescription: Prism connects to Jellyfin servers on your local network.
+        NSLocalNetworkUsageDescription: Huefin connects to Jellyfin servers on your local network.
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
         UISupportedInterfaceOrientations:
@@ -73,7 +73,7 @@ targets:
     info:
       path: PrismActivity/Info.plist
       properties:
-        CFBundleDisplayName: Prism
+        CFBundleDisplayName: Huefin
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:

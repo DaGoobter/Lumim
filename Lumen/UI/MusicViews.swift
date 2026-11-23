@@ -197,14 +197,14 @@ struct TrackRow: View {
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(track.name ?? "Track").font(.body)
-                        .foregroundStyle(audio.current?.id == track.id ? Theme.accent : .white).lineLimit(1)
+                        .foregroundStyle(audio.current?.id == track.id ? Color.accentColor : .white).lineLimit(1)
                     if showArt, let artist = track.artistLine {
                         Text(artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
                 }
                 Spacer()
                 if audio.current?.id == track.id && audio.isPlaying {
-                    Image(systemName: "waveform").foregroundStyle(Theme.accent).symbolEffect(.variableColor.iterative)
+                    Image(systemName: "waveform").foregroundStyle(Color.accentColor).symbolEffect(.variableColor.iterative)
                 } else if let rt = track.runTimeTicks {
                     Text(clock(Double(rt) / 10_000_000)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                 }
@@ -248,7 +248,7 @@ struct AlbumView: View {
                 VStack(spacing: 4) {
                     Text(album.name ?? "").font(.title2.weight(.bold)).multilineTextAlignment(.center)
                     if let artist = album.artistLine {
-                        Text(artist).font(.title3).foregroundStyle(color?.accent ?? Theme.accent)
+                        Text(artist).font(.title3).foregroundStyle(color?.accent ?? Color.accentColor)
                     }
                     Text([album.productionYear.map(String.init), tracks.isEmpty ? nil : "\(tracks.count) songs",
                           totalTime].compactMap { $0 }.joined(separator: " · "))
@@ -501,7 +501,7 @@ struct NowPlayingView: View {
             }
             if let station = audio.station {
                 HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: station.name == "Prism DJ" ? "waveform.and.mic" : "dot.radiowaves.left.and.right")
+                    Image(systemName: station.name == "Huefin DJ" ? "waveform.and.mic" : "dot.radiowaves.left.and.right")
                     Text(audio.djLine ?? station.name).lineLimit(2)
                 }
                 .font(.caption.weight(.semibold))
@@ -616,7 +616,7 @@ struct NowPlayingView: View {
             if let station = audio.station {
                 Section {
                     HStack(spacing: 10) {
-                        Image(systemName: "dot.radiowaves.left.and.right").foregroundStyle(Theme.accent)
+                        Image(systemName: "dot.radiowaves.left.and.right").foregroundStyle(Color.accentColor)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Playing from \(station.name)").font(.subheadline.weight(.semibold))
                             Text("Keeps going with more music automatically").font(.caption).foregroundStyle(.white.opacity(0.6))

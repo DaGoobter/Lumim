@@ -39,7 +39,7 @@ final class AppRouter {
 
 struct ResumeWatchingIntent: AppIntent {
     static let title: LocalizedStringResource = "Resume Watching"
-    static let description = IntentDescription("Continue the last thing you were watching in Prism.")
+    static let description = IntentDescription("Continue the last thing you were watching in Huefin.")
     static let openAppWhenRun = true
 
     @MainActor func perform() async throws -> some IntentResult {
@@ -50,7 +50,7 @@ struct ResumeWatchingIntent: AppIntent {
 
 struct WatchChannelIntent: AppIntent {
     static let title: LocalizedStringResource = "Watch Live TV"
-    static let description = IntentDescription("Tune to a live TV channel in Prism.")
+    static let description = IntentDescription("Tune to a live TV channel in Huefin.")
     static let openAppWhenRun = true
 
     @Parameter(title: "Channel", requestValueDialog: "Which channel?")
@@ -63,8 +63,8 @@ struct WatchChannelIntent: AppIntent {
 }
 
 struct StartDJIntent: AppIntent {
-    static let title: LocalizedStringResource = "Start Prism DJ"
-    static let description = IntentDescription("Start the Prism DJ radio station.")
+    static let title: LocalizedStringResource = "Start Huefin DJ"
+    static let description = IntentDescription("Start the Huefin DJ radio station.")
     static let openAppWhenRun = true
 
     @MainActor func perform() async throws -> some IntentResult {

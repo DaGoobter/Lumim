@@ -339,7 +339,7 @@ struct UserAdminDetailView: View {
             Section {
                 Toggle("Parent", isOn: $parent)
             } footer: {
-                Text("Parents get Family in Prism: they can see what everyone is watching, pause or stop it, and send a message to their screen (\"Bedtime in 10 minutes\"). Admins always have it.")
+                Text("Parents get Family in Huefin: they can see what everyone is watching, pause or stop it, and send a message to their screen (\"Bedtime in 10 minutes\"). Admins always have it.")
             }
             Section {
                 Picker("Away-from-home quality", selection: $remoteLimit) {

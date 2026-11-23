@@ -84,7 +84,7 @@ struct BookDetailView: View {
                     .padding(.top, 12)
                 Text(book.name ?? "").font(.title2.weight(.bold)).multilineTextAlignment(.center).padding(.horizontal)
                 if let artist = book.artistLine {
-                    Text(artist).font(.headline).foregroundStyle(color?.accent ?? Theme.accent)
+                    Text(artist).font(.headline).foregroundStyle(color?.accent ?? Color.accentColor)
                 }
                 Text([book.productionYear.map(String.init), book.runtimeText].compactMap { $0 }.joined(separator: " · "))
                     .font(.caption).foregroundStyle(.secondary)
@@ -251,7 +251,7 @@ struct BookReaderScreen: View {
                     ContentUnavailableView {
                         Label("Can't open this format here", systemImage: "book.closed")
                     } description: {
-                        Text("Prism reads EPUB, PDF and CBZ. Use Open in… to read this \(file.url.pathExtension.uppercased()) in another app.")
+                        Text("Huefin reads EPUB, PDF and CBZ. Use Open in… to read this \(file.url.pathExtension.uppercased()) in another app.")
                     } actions: {
                         ShareLink(item: file.url) { Label("Open in…", systemImage: "square.and.arrow.up") }
                             .buttonStyle(PlayButtonStyle())

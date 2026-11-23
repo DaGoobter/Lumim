@@ -3,7 +3,7 @@ import AVFoundation
 #if canImport(VLCKitSPM)
 import VLCKitSPM
 
-/// The Prism Engine: VLC's decoders play MKV, AVI, DTS, TrueHD, PGS subtitles and other files that
+/// The Huefin Engine: VLC's decoders play MKV, AVI, DTS, TrueHD, PGS subtitles and other files that
 /// Apple's player can't, straight from the original file, so the server doesn't convert anything.
 @MainActor @Observable
 final class EnginePlayerModel {
@@ -108,7 +108,7 @@ final class EnginePlayerModel {
             if !startedReport { startedReport = true; Task { await report("Sessions/Playing") } }
         case .error:
             isLoading = false
-            errorMessage = "The Prism Engine couldn't open this file."
+            errorMessage = "The Huefin Engine couldn't open this file."
         case .ended:
             Task { await finished() }
         case .buffering, .opening:
@@ -203,7 +203,7 @@ struct EngineVideoSurface: UIViewRepresentable {
     func updateUIView(_ uiView: UIView, context: Context) {}
 }
 
-/// Full-screen player for the Prism Engine.
+/// Full-screen player for the Huefin Engine.
 struct EnginePlayerScreen: View {
     let request: PlaybackRequest
     @Environment(AppState.self) private var app
@@ -278,7 +278,7 @@ struct EnginePlayerScreen: View {
                         Text(m.item.displayTitle).font(.headline).lineLimit(1)
                         HStack(spacing: 4) {
                             Image(systemName: "sparkles")
-                            Text([m.item.episodeLabel, "Prism Engine"].compactMap { $0 }.joined(separator: " · "))
+                            Text([m.item.episodeLabel, "Huefin Engine"].compactMap { $0 }.joined(separator: " · "))
                         }
                         .font(.caption).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
                     }

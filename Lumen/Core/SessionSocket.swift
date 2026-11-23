@@ -1,7 +1,7 @@
 import SwiftUI
 import Observation
 
-/// Prism's live line to the server. It lets a parent (or admin) pause, stop or message this device,
+/// Huefin's live line to the server. It lets a parent (or admin) pause, stop or message this device,
 /// and carries Watch Together (SyncPlay) updates.
 @MainActor @Observable
 final class SessionSocket {

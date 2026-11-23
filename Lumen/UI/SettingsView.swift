@@ -100,7 +100,7 @@ struct SettingsView: View {
                             }
                             Spacer()
                             if account.key == app.session?.key {
-                                Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.accent)
+                                Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.accentColor)
                             }
                         }
                     }
@@ -137,7 +137,7 @@ struct SettingsView: View {
                     LabeledContent("Connected via") {
                         Label(app.route == .local ? "Home network" : "Remote",
                               systemImage: app.route == .local ? "house.fill" : "globe")
-                            .foregroundStyle(app.route == .local ? Theme.accent : .secondary)
+                            .foregroundStyle(app.route == .local ? Color.accentColor : .secondary)
                     }
                     if app.route == .remote, app.preferLocal {
                         VStack(alignment: .leading, spacing: 4) {
@@ -178,7 +178,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Connection")
                 } footer: {
-                    Text("At home Prism talks to your server directly over Wi‑Fi (faster, full quality, no internet needed); everywhere else it uses your remote address. It switches automatically. Leave the home address empty to auto-detect it.")
+                    Text("At home Huefin talks to your server directly over Wi‑Fi (faster, full quality, no internet needed); everywhere else it uses your remote address. It switches automatically. Leave the home address empty to auto-detect it.")
                 }
             }
 
@@ -278,7 +278,7 @@ struct SettingsView: View {
                     testingVoice = true
                     voiceTestResult = nil
                     Task {
-                        await DJVoice.shared.say("Hey, hey! It's your Prism DJ." + Stations.breath
+                        await DJVoice.shared.say("Hey, hey! It's your Huefin DJ." + Stations.breath
                             + "So, here's how I sound." + Stations.beat + "Not bad, right? Okay, let's get you some music.")
                         voiceTestResult = DJVoice.shared.lastError.map { "Couldn't reach the voice: \($0)" }
                         testingVoice = false
@@ -301,7 +301,7 @@ struct SettingsView: View {
             } header: {
                 Text("Playback engine")
             } footer: {
-                Text("Automatic uses Apple's player whenever it can play the original (best for Dolby Vision, HDR, AirPlay and Picture in Picture). For files it can't, like many MKV, AVI, DTS or TrueHD files, Prism switches to its own engine and plays the original instead of making your server convert it. Each title's page shows which will happen.")
+                Text("Automatic uses Apple's player whenever it can play the original (best for Dolby Vision, HDR, AirPlay and Picture in Picture). For files it can't, like many MKV, AVI, DTS or TrueHD files, Huefin switches to its own engine and plays the original instead of making your server convert it. Each title's page shows which will happen.")
             }
 
             Section {
@@ -337,7 +337,7 @@ struct SettingsView: View {
             Section {
                 Button("Sign Out", role: .destructive) { Task { await app.logout() } }
             } footer: {
-                Text("Prism \(JellyfinClient.version) (build \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?")) · Downloads stay on this device after signing out.")
+                Text("Huefin \(JellyfinClient.version) (build \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?")) · Downloads stay on this device after signing out.")
             }
         }
         .scrollContentBackground(.hidden)
@@ -402,7 +402,7 @@ struct SettingsView: View {
     private func capability(_ name: String, _ supported: Bool) -> some View {
         LabeledContent(name) {
             Image(systemName: supported ? "checkmark.circle.fill" : "xmark.circle")
-                .foregroundStyle(supported ? Theme.accent : .secondary)
+                .foregroundStyle(supported ? Color.accentColor : .secondary)
         }
     }
 }

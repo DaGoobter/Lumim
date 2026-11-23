@@ -25,12 +25,12 @@ struct LoginView: View {
             ScrollView {
                 VStack(spacing: 22) {
                     Spacer(minLength: 70)
-                    Image("PrismMark")
+                    Image("HuefinMark")
                         .resizable()
                         .frame(width: 112, height: 112)
                         .shadow(color: Theme.violet.opacity(0.45), radius: 30, y: 12)
                     VStack(spacing: 6) {
-                        Text("prism").font(.system(size: 46, weight: .heavy)).tracking(-1.5)
+                        Text("huefin").font(.system(size: 46, weight: .heavy)).tracking(-1.5)
                         Text(adding ? "Add a user or another server" : "Connect to your Jellyfin server").foregroundStyle(.secondary)
                     }
 
@@ -97,7 +97,7 @@ struct LoginView: View {
                     .tracking(6)
                     .foregroundStyle(Theme.spectrum)
                     .textSelection(.enabled)
-                Text("On a device that's already signed in, open Quick Connect and enter this code. In Prism it's Settings → Quick Connect; in Jellyfin's web app it's your profile → Quick Connect.")
+                Text("On a device that's already signed in, open Quick Connect and enter this code. In Huefin it's Settings → Quick Connect; in Jellyfin's web app it's your profile → Quick Connect.")
                     .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)

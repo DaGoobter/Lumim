@@ -177,11 +177,11 @@ final class AppState {
         } catch let error as URLError {
             switch error.code {
             case .timedOut:
-                return "Timed out. Check the address and port, and that Local Network access is on for Prism (iPhone Settings → Privacy & Security → Local Network)"
+                return "Timed out. Check the address and port, and that Local Network access is on for Huefin (iPhone Settings → Privacy & Security → Local Network)"
             case .cannotConnectToHost:
                 return "Connection refused at \(url.host ?? "")\(url.port.map { ":\($0)" } ?? ""). Wrong port? Jellyfin's default is 8096"
             case .notConnectedToInternet, .networkConnectionLost:
-                return "Can't reach the home network. Are you on your home Wi‑Fi, and is Local Network access on for Prism (iPhone Settings → Privacy & Security → Local Network)?"
+                return "Can't reach the home network. Are you on your home Wi‑Fi, and is Local Network access on for Huefin (iPhone Settings → Privacy & Security → Local Network)?"
             case .cannotFindHost, .dnsLookupFailed:
                 return "Couldn't find \(url.host ?? "that host"). Try the server's IP address instead"
             case .appTransportSecurityRequiresSecureConnection:

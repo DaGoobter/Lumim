@@ -66,7 +66,7 @@ struct FamilyView: View {
                     .frame(width: 52, height: 78)
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(s.userName ?? "Someone").font(.caption.weight(.bold)).foregroundStyle(Theme.accent)
+                    Text(s.userName ?? "Someone").font(.caption.weight(.bold)).foregroundStyle(Color.accentColor)
                     Text(s.nowPlayingItem?.displayTitle ?? "").font(.body.weight(.semibold)).lineLimit(1)
                     if let ep = s.nowPlayingItem?.episodeLabel { Text(ep).font(.caption).foregroundStyle(.secondary) }
                     Text([s.deviceName, s.client].compactMap { $0 }.joined(separator: " · "))

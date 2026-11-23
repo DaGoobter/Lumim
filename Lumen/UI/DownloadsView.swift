@@ -24,7 +24,7 @@ struct DownloadsView: View {
                         Section {
                             ForEach(downloads.smartRules.values.sorted { $0.name < $1.name }, id: \.seriesId) { rule in
                                 HStack {
-                                    Image(systemName: "sparkles").foregroundStyle(Theme.accent)
+                                    Image(systemName: "sparkles").foregroundStyle(Color.accentColor)
                                     Text(rule.name)
                                     Spacer()
                                     Text("Next \(rule.count)").foregroundStyle(.secondary)
@@ -58,7 +58,7 @@ struct DownloadsView: View {
                                         } else if record.state == .paused {
                                             Button { downloads.resume(record.itemId) } label: {
                                                 Label("Resume", systemImage: "play.fill")
-                                            }.tint(Theme.accent)
+                                            }.tint(Color.accentColor)
                                         }
                                     }
                             }
@@ -157,7 +157,7 @@ struct DownloadRow: View {
                 status
             }
             Spacer()
-            if record.state == .completed { Image(systemName: record.item.isBook ? "book.circle.fill" : "play.circle.fill").font(.title2).foregroundStyle(Theme.accent) }
+            if record.state == .completed { Image(systemName: record.item.isBook ? "book.circle.fill" : "play.circle.fill").font(.title2).foregroundStyle(Color.accentColor) }
         }
         .foregroundStyle(.white)
     }

@@ -45,7 +45,7 @@ final class Seerr {
     private(set) var userName: String?
 
     @ObservationIgnored private var accountKey: String?
-    /// Each Prism profile keeps its own Seerr sign-in (cookies aren't shared between profiles).
+    /// Each Huefin profile keeps its own Seerr sign-in (cookies aren't shared between profiles).
     @ObservationIgnored private let session: URLSession = {
         let c = URLSessionConfiguration.ephemeral
         c.httpShouldSetCookies = false
@@ -60,7 +60,7 @@ final class Seerr {
     /// Found Seerr, but this profile hasn't signed in to it yet.
     var needsSignIn: Bool { baseURL != nil && !signedIn }
 
-    /// Find Seerr for this Prism profile (saved, or found next to the Jellyfin server) and check the sign-in.
+    /// Find Seerr for this Huefin profile (saved, or found next to the Jellyfin server) and check the sign-in.
     func activate(accountKey: String?, jellyfinURL: String? = nil) async {
         guard accountKey != self.accountKey || baseURL == nil else { return }
         self.accountKey = accountKey
@@ -98,7 +98,7 @@ final class Seerr {
         return nil
     }
 
-    /// Sign in to requests with the same username and password used for Prism (right after Prism sign-in).
+    /// Sign in to requests with the same username and password used for Huefin (right after Huefin sign-in).
     func autoConnect(accountKey: String, jellyfinURL: String, username: String, password: String) async {
         self.accountKey = nil
         await activate(accountKey: accountKey, jellyfinURL: jellyfinURL)

@@ -43,7 +43,7 @@ struct ProfilePickerView: View {
                         Button(editing ? "Done" : "Manage profiles") { withAnimation { editing.toggle() } }
                             .buttonStyle(SecondaryButtonStyle())
                     }
-                    Toggle("Ask every time Prism opens", isOn: $askOnLaunch)
+                    Toggle("Ask every time Huefin opens", isOn: $askOnLaunch)
                         .font(.footnote).frame(maxWidth: 300)
                     Spacer(minLength: 40)
                 }

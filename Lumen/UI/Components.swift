@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum Theme {
-    // Prism palette: midnight glass with a full spectrum of light.
+    // Huefin palette: six hues on a deep, warm night. Each part of the app owns one hue.
     static let red = Color(red: 1.0, green: 0.30, blue: 0.43)        // #FF4D6D
     static let orange = Color(red: 1.0, green: 0.65, blue: 0.17)     // #FFA62B
     static let yellow = Color(red: 1.0, green: 0.89, blue: 0.36)     // #FFE45C
@@ -9,11 +9,17 @@ enum Theme {
     static let blue = Color(red: 0.24, green: 0.66, blue: 1.0)       // #3DA9FF
     static let violet = Color(red: 0.61, green: 0.36, blue: 1.0)     // #9B5CFF
 
-    static let accent = Color(red: 0.42, green: 0.55, blue: 1.0)     // #6B8CFF, the tint for controls
+    static let accent = red                                             // default when no section hue applies
     static let accent2 = red
-    static let midnight = Color(red: 0.114, green: 0.102, blue: 0.239) // #1D1A3D
-    static let background = Color(red: 0.035, green: 0.031, blue: 0.067) // #09080F
-    static let card = Color.white.opacity(0.06)
+    static let midnight = Color(red: 0.098, green: 0.090, blue: 0.141) // #191724, raised surfaces
+    static let background = Color(red: 0.055, green: 0.051, blue: 0.078) // #0E0D14, warm night
+    static let card = Color(red: 0.098, green: 0.090, blue: 0.141)      // #191724
+    static let ink = Color(red: 0.078, green: 0.067, blue: 0.122)       // #14111F, text on bright hues
+    static let paper = Color(red: 1.0, green: 0.973, blue: 0.933)       // #FFF8EE, the light button
+    static let hairline = Color.white.opacity(0.09)
+
+    /// Each section's hue.
+    static let home = red, library = blue, live = orange, downloads = green, search = violet
 
     /// The full rainbow: progress, highlights, the brand mark.
     static let spectrum = LinearGradient(colors: [red, orange, yellow, green, blue, violet],
@@ -21,6 +27,36 @@ enum Theme {
     /// Cool side of the spectrum: fills that carry white text stay readable.
     static let gradient = LinearGradient(colors: [blue, violet, red],
                                          startPoint: .topLeading, endPoint: .bottomTrailing)
+}
+
+// MARK: - Section hue
+
+private struct HueKey: EnvironmentKey { static let defaultValue: Color = Theme.red }
+extension EnvironmentValues {
+    /// The hue of the section you're in (Home coral, Library sky, Live TV amber…).
+    var hue: Color {
+        get { self[HueKey.self] }
+        set { self[HueKey.self] = newValue }
+    }
+}
+
+extension View {
+    /// Colors this part of the app: buttons, tab icon, heading dots and the soft tint at the top.
+    func sectionHue(_ color: Color) -> some View {
+        environment(\.hue, color).tint(color).accentColor(color)
+    }
+}
+
+/// Huefin's signature: a hard little shadow in the section's hue under the main buttons.
+struct HueLift: ViewModifier {
+    @Environment(\.hue) private var hue
+    var pressed: Bool
+    func body(content: Content) -> some View {
+        content
+            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(hue.opacity(0.55))
+                .offset(x: pressed ? 0 : 3, y: pressed ? 0 : 3))
+            .offset(x: pressed ? 2 : 0, y: pressed ? 2 : 0)
+    }
 }
 
 // MARK: - Images
@@ -136,7 +172,8 @@ struct PosterCard: View {
             Color.clear
                 .aspectRatio(2 / 3, contentMode: .fit)
                 .overlay { RemoteImage(url: app.client?.posterURL(for: item)) }
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 1))
                 .overlay(alignment: .topTrailing) { WatchedBadge(item: item) }
                 .shadow(color: .black.opacity(0.5), radius: 12, y: 6)
             Text(item.displayTitle).font(.caption.weight(.semibold)).lineLimit(1)
@@ -161,6 +198,7 @@ struct LandscapeCard: View {
                     if let p = item.progress { ProgressBar(value: p).padding(10) }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 1))
                 .shadow(color: .black.opacity(0.5), radius: 12, y: 6)
             Text(item.displayTitle).font(.subheadline.weight(.semibold)).lineLimit(1)
             if let ep = item.episodeLabel {
@@ -176,7 +214,7 @@ struct ProgressBar: View {
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
-                Capsule().fill(.white.opacity(0.25))
+                Capsule().fill(.white.opacity(0.18))
                 Capsule().fill(Theme.spectrum).frame(width: geo.size.width * value)
             }
         }
@@ -189,11 +227,11 @@ struct WatchedBadge: View {
     var body: some View {
         if item.userData?.played == true {
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 18)).foregroundStyle(.white, Theme.accent)
+                .font(.system(size: 18)).foregroundStyle(.white, Color.accentColor)
                 .padding(6)
         } else if let n = item.userData?.unplayedItemCount, n > 0 {
             Text("\(n)").font(.caption2.bold()).padding(.horizontal, 7).padding(.vertical, 3)
-                .background(Theme.accent, in: Capsule()).padding(6)
+                .background(Color.accentColor, in: Capsule()).padding(6)
         }
     }
 }
@@ -223,7 +261,7 @@ struct Shelf<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(title).font(.title2.weight(.bold)).padding(.horizontal, 20)
+            ShelfTitle(title).padding(.horizontal, 20)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: 16) { content }
                     .scrollTargetLayout()
@@ -231,6 +269,19 @@ struct Shelf<Content: View>: View {
             }
             .scrollTargetBehavior(.viewAligned)
         }
+    }
+}
+
+struct ShelfTitle: View {
+    @Environment(\.hue) private var hue
+    let title: String
+    init(_ title: String) { self.title = title }
+    var body: some View {
+        HStack(spacing: 9) {
+            RoundedRectangle(cornerRadius: 3, style: .continuous).fill(hue).frame(width: 10, height: 10)
+            Text(title).font(.title2.weight(.bold))
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -251,29 +302,36 @@ struct ErrorBanner: View {
 
 // MARK: - Buttons
 
+/// Filled with the section's hue, dark text, a small hue shadow.
 struct PrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.headline)
-            .padding(.horizontal, 22).padding(.vertical, 12)
-            .background(Theme.gradient, in: Capsule())
-            .foregroundStyle(.white)
-            .scaleEffect(configuration.isPressed ? 0.95 : 1)
-            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: configuration.isPressed)
+        HuePrimary(configuration: configuration)
+    }
+    private struct HuePrimary: View {
+        @Environment(\.hue) private var hue
+        let configuration: Configuration
+        var body: some View {
+            configuration.label
+                .font(.headline)
+                .padding(.horizontal, 22).padding(.vertical, 13)
+                .background(hue, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .foregroundStyle(Theme.ink)
+                .modifier(HueLift(pressed: configuration.isPressed))
+                .animation(.spring(response: 0.22, dampingFraction: 0.7), value: configuration.isPressed)
+        }
     }
 }
 
-/// Apple TV–style white "Play" button.
+/// The main "Play": warm paper button with the section's hue as its shadow.
 struct PlayButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.headline)
             .padding(.horizontal, 26).padding(.vertical, 13)
-            .background(.white, in: Capsule())
-            .foregroundStyle(.black)
-            .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
-            .scaleEffect(configuration.isPressed ? 0.95 : 1)
-            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: configuration.isPressed)
+            .background(Theme.paper, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .foregroundStyle(Theme.ink)
+            .modifier(HueLift(pressed: configuration.isPressed))
+            .animation(.spring(response: 0.22, dampingFraction: 0.7), value: configuration.isPressed)
     }
 }
 
@@ -292,7 +350,8 @@ struct SecondaryButtonStyle: ButtonStyle {
         configuration.label
             .font(.headline)
             .padding(.horizontal, 18).padding(.vertical, 12)
-            .background(.ultraThinMaterial, in: Capsule())
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 1.5))
             .foregroundStyle(.white)
             .scaleEffect(configuration.isPressed ? 0.95 : 1)
             .animation(.spring(response: 0.25, dampingFraction: 0.7), value: configuration.isPressed)

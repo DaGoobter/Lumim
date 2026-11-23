@@ -288,12 +288,12 @@ struct SyncPlaySheet: View {
                         Section {
                             Button {
                                 run { try await sync.create(client: client, model: model,
-                                                            name: "\(app.session?.userName ?? "Prism")'s room") }
+                                                            name: "\(app.session?.userName ?? "Huefin")'s room") }
                             } label: {
                                 Label("Start a group with “\(model.item.displayTitle)”", systemImage: "plus.circle.fill")
                             }
                         } footer: {
-                            Text("Others join from Prism (More → Watch Together) or Jellyfin's web app (the SyncPlay button).")
+                            Text("Others join from Huefin (More → Watch Together) or Jellyfin's web app (the SyncPlay button).")
                         }
                     }
                     Section("Join a group") {

@@ -354,7 +354,7 @@ struct EpisodeRow: View {
                         .font(.subheadline.weight(.semibold)).lineLimit(2)
                     HStack(spacing: 6) {
                         if let rt = episode.runtimeText { Text(rt) }
-                        if episode.userData?.played == true { Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.accent) }
+                        if episode.userData?.played == true { Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.accentColor) }
                     }
                     .font(.caption).foregroundStyle(.secondary)
                     if let o = episode.overview { Text(o).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
@@ -393,7 +393,7 @@ struct DownloadButton: View {
                 ZStack {
                     Circle().stroke(.white.opacity(0.2), lineWidth: 3)
                     Circle().trim(from: 0, to: record?.progress ?? 0)
-                        .stroke(Theme.accent, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                        .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                         .rotationEffect(.degrees(-90))
                 }
                 .frame(width: 20, height: 20)

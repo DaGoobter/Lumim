@@ -47,7 +47,7 @@ struct LibraryTile: View {
             .aspectRatio(16 / 9, contentMode: .fit)
             .overlay { RemoteImage(url: url) }
             .overlay {
-                LinearGradient(colors: [.clear, (color?.background ?? Theme.accent.opacity(0.5)).opacity(0.95)],
+                LinearGradient(colors: [.clear, (color?.background ?? Color.accentColor.opacity(0.5)).opacity(0.95)],
                                startPoint: .center, endPoint: .bottom)
             }
             .overlay(alignment: .bottomLeading) {

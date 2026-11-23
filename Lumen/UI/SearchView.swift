@@ -188,7 +188,7 @@ struct SeerrInlineConnect: View {
         VStack(alignment: .leading, spacing: 10) {
             Label("Not finding it? Request it", systemImage: "plus.rectangle.on.rectangle")
                 .font(.headline)
-            Text("Enter your Prism password once to turn on requests for movies and shows that aren't on the server yet.")
+            Text("Enter your Huefin password once to turn on requests for movies and shows that aren't on the server yet.")
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
                 SecureField("Password", text: $password)

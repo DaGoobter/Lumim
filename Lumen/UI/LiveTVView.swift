@@ -133,7 +133,7 @@ struct ChannelRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     if let n = channel.channelNumber, !n.isEmpty {
-                        Text(n).font(.caption.weight(.bold)).foregroundStyle(Theme.accent)
+                        Text(n).font(.caption.weight(.bold)).foregroundStyle(Color.accentColor)
                     }
                     Text(channel.name ?? "Channel").font(.caption.weight(.semibold)).foregroundStyle(.secondary).lineLimit(1)
                 }
