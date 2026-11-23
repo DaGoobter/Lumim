@@ -207,7 +207,7 @@ object AudioPlayer {
     fun jump(to: Int) { exo?.seekTo(to, 0) }
     fun toggleShuffle() { shuffle = !shuffle; exo?.shuffleModeEnabled = shuffle && station == null }
     fun toggleRepeat() { repeat = !repeat; exo?.repeatMode = if (repeat) M3Player.REPEAT_MODE_ALL else M3Player.REPEAT_MODE_OFF }
-    fun setSpeed(s: Float) { speed = s; exo?.setPlaybackSpeed(s) }
+    fun changeSpeed(s: Float) { speed = s; exo?.setPlaybackSpeed(s) }
     fun addToQueue(items: List<BaseItem>) {
         if (exo == null || queue.isEmpty()) return play(HuefinApp.instance, items)
         queue = queue + items.map { QueueEntry(it) }; exo?.addMediaItems(items.map { mediaItem(QueueEntry(it)) })

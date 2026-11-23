@@ -261,7 +261,7 @@ private fun TopBar(m: PlayerModel, onClose: () -> Unit, onPip: () -> Unit, onSyn
                 if (!m.isLive) {
                     Text("Speed", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), color = Hue.secondaryText)
                     listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f).forEach { s ->
-                        DropdownMenuItem({ Text((if (s == m.speed) "✓ " else "") + if (s == 1f) "Normal" else "${s}×") }, { m.setSpeed(s); more = false })
+                        DropdownMenuItem({ Text((if (s == m.speed) "✓ " else "") + if (s == 1f) "Normal" else "${s}×") }, { m.changeSpeed(s); more = false })
                     }
                     HorizontalDivider()
                 }

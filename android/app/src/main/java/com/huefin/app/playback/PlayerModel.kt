@@ -262,7 +262,7 @@ class PlayerModel(var request: PlaybackRequest, val backend: Backend) {
     val positionTicks get() = backend.positionMs * 10_000
     suspend fun waitUntilReady() { repeat(225) { if (!loading || stopped) return; delay(200) } }
 
-    fun setSpeed(s: Float) { speed = s; backend.setSpeed(s) }
+    fun changeSpeed(s: Float) { speed = s; backend.setSpeed(s) }
     fun setBoost(p: Int) { volumeBoost = p; backend.setVolumeBoost(p) }
     fun toggleFill() { fill = !fill; backend.setFill(fill) }
 

@@ -151,7 +151,7 @@ private fun Controls(item: BaseItem) {
             Box {
                 TextButton({ speedMenu = true }) { Text("${AudioPlayer.speed}×", color = Hue.secondaryText) }
                 DropdownMenu(speedMenu, { speedMenu = false }) {
-                    listOf(0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f).forEach { s -> DropdownMenuItem({ Text("$s×") }, { AudioPlayer.setSpeed(s); speedMenu = false }) }
+                    listOf(0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f).forEach { s -> DropdownMenuItem({ Text("$s×") }, { AudioPlayer.changeSpeed(s); speedMenu = false }) }
                 }
             }
             val ctx = LocalContext.current
