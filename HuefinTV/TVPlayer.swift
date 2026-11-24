@@ -322,7 +322,7 @@ struct TVPlayerScreen: View {
                         Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 60)).foregroundStyle(Theme.yellow)
                         Text("Couldn't play this").font(.title2.bold())
                         Text(e).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 900)
-                        Button("Close") { dismiss() }
+                        Button("Close") { dismiss() }.hueAction()
                     }
                     .padding(60).background(Theme.card, in: RoundedRectangle(cornerRadius: 30))
                 }

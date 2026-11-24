@@ -168,8 +168,8 @@ struct TVHomeView: View {
                     .foregroundStyle(.secondary)
                 Text(f.overview ?? "").lineLimit(3).frame(maxWidth: 900, alignment: .leading)
                 HStack(spacing: 30) {
-                    Button { play(f) } label: { Label((f.progress ?? 0) > 0 ? "Resume" : "Play", systemImage: "play.fill") }
-                    NavigationLink(value: f) { Label("Details", systemImage: "info.circle") }
+                    Button { play(f) } label: { Label((f.progress ?? 0) > 0 ? "Resume" : "Play", systemImage: "play.fill") }.hueAction(primary: true)
+                    NavigationLink(value: f) { Label("Details", systemImage: "info.circle") }.hueAction()
                 }
             }.padding(.horizontal, 80).padding(.bottom, 40)
         }
@@ -319,17 +319,17 @@ struct TVDetailView: View {
                         Text(i.overview ?? "").lineLimit(4).frame(maxWidth: 1000, alignment: .leading)
                         HStack(spacing: 30) {
                             if i.isPlayable || i.isSeries {
-                                Button { Task { await play() } } label: { Label((i.progress ?? 0) > 0 ? "Resume" : "Play", systemImage: "play.fill") }
+                                Button { Task { await play() } } label: { Label((i.progress ?? 0) > 0 ? "Resume" : "Play", systemImage: "play.fill") }.hueAction(primary: true)
                             }
                             if (i.progress ?? 0) > 0 {
-                                Button { AppRouter.shared.playRequest = PlaybackRequest(item: i, startTicks: 0) } label: { Label("From Start", systemImage: "arrow.counterclockwise") }
+                                Button { AppRouter.shared.playRequest = PlaybackRequest(item: i, startTicks: 0) } label: { Label("From Start", systemImage: "arrow.counterclockwise") }.hueAction()
                             }
                             Button { Task { await toggleWatched() } } label: {
                                 Image(systemName: i.userData?.played == true ? "checkmark.circle.fill" : "checkmark.circle")
-                            }
+                            }.hueAction()
                             Button { Task { _ = await app.client?.setFavorite(i.id, !(i.userData?.isFavorite ?? false)); await reload() } } label: {
                                 Image(systemName: i.userData?.isFavorite == true ? "heart.fill" : "heart")
-                            }
+                            }.hueAction()
                         }
                         if let p = i.progress { TVProgress(value: p).frame(width: 400) }
                     }.padding(.horizontal, 80).padding(.bottom, 30)
@@ -339,7 +339,7 @@ struct TVDetailView: View {
                         HStack(spacing: 20) {
                             ForEach(seasons) { s in
                                 Button(s.name ?? "Season") { season = s }
-                                    .tint(s.id == season?.id ? Theme.blue : nil)
+                                    .hueAction(primary: s.id == season?.id, hue: Theme.blue)
                             }
                         }.padding(.horizontal, 80).padding(.vertical, 20)
                     }

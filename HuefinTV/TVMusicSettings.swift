@@ -91,9 +91,9 @@ struct TVAlbumView: View {
                 Text(album.name ?? "").font(.title2.bold())
                 Text(album.artistLine ?? "").foregroundStyle(Theme.violet)
                 HStack(spacing: 24) {
-                    Button { audio.play(tracks, client: app.client) } label: { Label("Play", systemImage: "play.fill") }
-                    Button { audio.play(tracks, shuffle: true, client: app.client) } label: { Label("Shuffle", systemImage: "shuffle") }
-                    Button { if let c = app.client { Task { await audio.play(station: Stations.radio(name: "\(album.name ?? "Album") Radio", seedId: album.id), client: c) } } } label: { Image(systemName: "dot.radiowaves.left.and.right") }
+                    Button { audio.play(tracks, client: app.client) } label: { Label("Play", systemImage: "play.fill") }.hueAction(primary: true, hue: Theme.violet)
+                    Button { audio.play(tracks, shuffle: true, client: app.client) } label: { Label("Shuffle", systemImage: "shuffle") }.hueAction()
+                    Button { if let c = app.client { Task { await audio.play(station: Stations.radio(name: "\(album.name ?? "Album") Radio", seedId: album.id), client: c) } } } label: { Image(systemName: "dot.radiowaves.left.and.right") }.hueAction()
                 }
             }.frame(width: 500)
             List {
@@ -126,7 +126,7 @@ struct TVArtistView: View {
                     Text(artist.name ?? "").font(.largeTitle.bold())
                     Button { if let c = app.client { Task { await audio.play(station: Stations.radio(name: "\(artist.name ?? "Artist") Radio", seedId: artist.id), client: c) } } } label: {
                         Label("Artist Radio", systemImage: "dot.radiowaves.left.and.right")
-                    }
+                    }.hueAction(primary: true, hue: Theme.violet)
                 }
                 LazyVGrid(columns: Array(repeating: GridItem(.fixed(260), spacing: 44), count: 6), spacing: 50) {
                     ForEach(albums) { a in
@@ -162,10 +162,10 @@ struct TVNowPlaying: View {
                         }
                         if audio.duration > 0 { ProgressView(value: min(audio.currentTime, audio.duration), total: audio.duration).tint(Theme.violet) }
                         HStack(spacing: 40) {
-                            Button { audio.previous() } label: { Image(systemName: "backward.fill") }
-                            Button { audio.togglePlay() } label: { Image(systemName: audio.isPlaying ? "pause.fill" : "play.fill") }
-                            Button { audio.next() } label: { Image(systemName: "forward.fill") }
-                            Button { audio.stop() } label: { Image(systemName: "stop.fill") }
+                            Button { audio.previous() } label: { Image(systemName: "backward.fill") }.hueAction()
+                            Button { audio.togglePlay() } label: { Image(systemName: audio.isPlaying ? "pause.fill" : "play.fill") }.hueAction(primary: true, hue: Theme.violet)
+                            Button { audio.next() } label: { Image(systemName: "forward.fill") }.hueAction()
+                            Button { audio.stop() } label: { Image(systemName: "stop.fill") }.hueAction()
                         }.font(.title)
                     }.frame(maxWidth: 900, alignment: .leading)
                 }

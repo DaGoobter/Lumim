@@ -57,8 +57,8 @@ struct TVRequestsView: View {
                             }
                             Spacer()
                             if seerr.canManage && r.status == 1 {
-                                Button { Task { try? await seerr.approve(r.id); requests = await seerr.requests() } } label: { Label("Approve", systemImage: "checkmark") }
-                                Button { Task { try? await seerr.decline(r.id); requests = await seerr.requests() } } label: { Label("Decline", systemImage: "xmark") }
+                                Button { Task { try? await seerr.approve(r.id); requests = await seerr.requests() } } label: { Label("Approve", systemImage: "checkmark") }.hueAction(primary: true, hue: Theme.green)
+                                Button { Task { try? await seerr.decline(r.id); requests = await seerr.requests() } } label: { Label("Decline", systemImage: "xmark") }.hueAction()
                             }
                         }
                         .padding(20).background(Theme.card, in: RoundedRectangle(cornerRadius: 20))
@@ -114,10 +114,11 @@ struct TVSeerrDetail: View {
                         Label(done || alreadyRequested ? "Requested!" : (result.mediaType == "tv" ? "Request all seasons" : "Request"),
                               systemImage: done || alreadyRequested ? "checkmark.circle.fill" : "plus.circle.fill").font(.title3)
                     }
+                    .hueAction(primary: true, hue: Theme.violet)
                     .disabled(busy || done || alreadyRequested || (result.status ?? 0) >= 2)
                 }
                 if let error { Text(error).foregroundStyle(Theme.red) }
-                Button("Close") { dismiss() }
+                Button("Close") { dismiss() }.hueAction()
             }.frame(maxWidth: 1000, alignment: .leading)
         }
         .padding(100)
@@ -148,7 +149,8 @@ struct TVSeerrConnect: View {
                     catch { self.error = "Couldn't sign in. Check the address and password." }
                     password = ""; busy = false
                 }
-            } label: { HStack { if busy { ProgressView() }; Text("Connect").bold() }.frame(maxWidth: .infinity) }
+            } label: { HStack { if busy { ProgressView() }; Text("Connect").bold() } }
+            .buttonStyle(TVHueButtonStyle(filled: true, hue: Theme.violet))
             .disabled(busy || address.isEmpty || password.isEmpty)
             if let error { Text(error).foregroundStyle(Theme.red) }
         }

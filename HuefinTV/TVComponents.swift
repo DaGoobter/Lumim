@@ -110,20 +110,23 @@ extension View {
 struct TVHueButtonStyle: ButtonStyle {
     var filled = false
     var hue: Color = Theme.red
-    func makeBody(configuration: Configuration) -> some View { StyledButton(configuration: configuration, filled: filled, hue: hue) }
+    /// Fill the width (forms) or hug the label (rows of actions).
+    var expand = true
+    func makeBody(configuration: Configuration) -> some View { StyledButton(configuration: configuration, filled: filled, hue: hue, expand: expand) }
 
     private struct StyledButton: View {
         let configuration: Configuration
         let filled: Bool
         let hue: Color
+        let expand: Bool
         @Environment(\.isFocused) private var focused
         @Environment(\.isEnabled) private var enabled
         var body: some View {
             configuration.label
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(filled || focused ? Theme.ink : Color.white)
-                .padding(.horizontal, 40).padding(.vertical, 22)
-                .frame(maxWidth: .infinity)
+                .padding(.horizontal, expand ? 40 : 34).padding(.vertical, expand ? 22 : 18)
+                .frame(maxWidth: expand ? .infinity : nil)
                 .background(
                     RoundedRectangle(cornerRadius: 22, style: .continuous)
                         .fill(focused ? (filled ? hue : Theme.paper) : (filled ? hue.opacity(0.85) : Color.white.opacity(0.12)))
@@ -133,5 +136,12 @@ struct TVHueButtonStyle: ButtonStyle {
                 .opacity(enabled ? 1 : 0.45)
                 .animation(.easeOut(duration: 0.18), value: focused)
         }
+    }
+}
+
+extension View {
+    /// A Huefin action button that hugs its label (Play, Shuffle, ♥…). `primary` fills it with the section hue.
+    func hueAction(primary: Bool = false, hue: Color = Theme.red) -> some View {
+        buttonStyle(TVHueButtonStyle(filled: primary, hue: hue, expand: false))
     }
 }
