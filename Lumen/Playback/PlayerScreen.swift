@@ -78,6 +78,11 @@ struct AppleVideoPlayerScreen: View {
                 if let model {
                     VideoSurface(player: model.player, zoom: zoom, handle: surface)
                         .ignoresSafeArea()
+                        .allowsHitTesting(false)
+                    // Taps and pinches land on this clear layer above the video so they always reach the controls.
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .ignoresSafeArea()
                         .gesture(pinch(fillScale: fillScale(model: model, size: geo.size)))
                         .onTapGesture(count: 2) { toggleFill(model: model, size: geo.size) }
                         .onTapGesture { toggleControls() }

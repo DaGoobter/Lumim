@@ -197,6 +197,8 @@ struct EngineVideoSurface: UIViewRepresentable {
     func makeUIView(context: Context) -> UIView {
         let v = UIView()
         v.backgroundColor = .black
+        // VLC adds its own video views inside this one; they must not swallow taps meant for the controls.
+        v.isUserInteractionEnabled = false
         player.drawable = v
         return v
     }
@@ -221,6 +223,11 @@ struct EnginePlayerScreen: View {
             if let model {
                 EngineVideoSurface(player: model.player)
                     .scaleEffect(fill ? 1.33 : 1)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+                // Taps land on this clear layer above the video, so they always reach Huefin (not VLC's views).
+                Color.clear
+                    .contentShape(Rectangle())
                     .ignoresSafeArea()
                     .onTapGesture(count: 2) { withAnimation(.spring) { fill.toggle() } }
                     .onTapGesture { controlsVisible.toggle(); scheduleHide() }
