@@ -42,7 +42,7 @@ private struct EngineRemoteSurface: UIViewControllerRepresentable {
                 g.allowedPressTypes = [NSNumber(value: type.rawValue)]
                 root.addGestureRecognizer(g)
             }
-            press(.select, #selector(select))
+            press(.select, #selector(onSelectPress))
             press(.playPause, #selector(playPause))
             press(.menu, #selector(menu))
             press(.leftArrow, #selector(left))
@@ -61,7 +61,7 @@ private struct EngineRemoteSurface: UIViewControllerRepresentable {
             super.viewDidAppear(animated)
             setNeedsFocusUpdate(); updateFocusIfNeeded()
         }
-        @objc private func select() { surface?.onSelect() }
+        @objc private func onSelectPress() { surface?.onSelect() }
         @objc private func playPause() { surface?.onPlayPause() }
         @objc private func menu() { surface?.onMenu() }
         @objc private func left() { surface?.onLeft() }
