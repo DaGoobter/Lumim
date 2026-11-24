@@ -16,10 +16,10 @@ struct TVMusicView: View {
                 if let cur = audio.current {
                     Button { nowPlaying = true } label: {
                         HStack(spacing: 30) {
-                            TVImage(url: app.client?.albumArtURL(for: cur, width: 300)).frame(width: 140, height: 140).clipShape(RoundedRectangle(cornerRadius: 14))
+                            TVImage(url: app.client?.albumArtURL(for: cur, width: 300)).frame(width: 110, height: 110).clipShape(RoundedRectangle(cornerRadius: 12))
                             VStack(alignment: .leading, spacing: 6) {
                                 Text(audio.station.map { "Playing from \($0.name)" } ?? "Now playing").font(.caption).foregroundStyle(Theme.violet)
-                                Text(cur.name ?? "").font(.title3.bold())
+                                Text(cur.name ?? "").font(.headline)
                                 Text(cur.artistLine ?? "").foregroundStyle(.secondary)
                             }
                             Spacer()
@@ -38,14 +38,14 @@ struct TVMusicView: View {
                     }.padding(.horizontal, 80).padding(.vertical, 30)
                 }.scrollClipDisabled()
                 if !albums.isEmpty {
-                    Text("Recently added albums").font(.title3.bold()).padding(.horizontal, 80)
-                    LazyVGrid(columns: Array(repeating: GridItem(.fixed(260), spacing: 44), count: 6), spacing: 50) {
+                    Text("Recently added albums").font(.headline).padding(.horizontal, 80)
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 200, maximum: 200), spacing: 40)], spacing: 44) {
                         ForEach(albums) { a in
                             VStack(alignment: .leading, spacing: 8) {
-                                NavigationLink(value: a) { TVImage(url: app.client?.albumArtURL(for: a, width: 520)).frame(width: 260, height: 260) }.buttonStyle(.card)
+                                NavigationLink(value: a) { TVImage(url: app.client?.albumArtURL(for: a, width: 400)).frame(width: 200, height: 200) }.buttonStyle(.card)
                                 Text(a.name ?? "").font(.caption.bold()).lineLimit(1)
                                 Text(a.artistLine ?? "").font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                            }.frame(width: 260)
+                            }.frame(width: 200)
                         }
                     }.padding(.horizontal, 80)
                 }
@@ -68,12 +68,12 @@ struct TVMusicView: View {
             Task { await audio.play(station: make(), client: c); nowPlaying = true }
         } label: {
             VStack(alignment: .leading, spacing: 10) {
-                Image(systemName: icon).font(.title)
+                Image(systemName: icon).font(.title2)
                 Spacer()
-                Text(title).font(.title3.weight(.heavy))
+                Text(title).font(.headline.weight(.heavy))
                 Text(sub).font(.caption).opacity(0.8)
             }
-            .foregroundStyle(Theme.ink).padding(28).frame(width: 380, height: 230, alignment: .leading)
+            .foregroundStyle(Theme.ink).padding(22).frame(width: 320, height: 180, alignment: .leading)
             .background(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing))
         }.buttonStyle(.card)
     }
@@ -87,15 +87,15 @@ struct TVAlbumView: View {
     var body: some View {
         HStack(alignment: .top, spacing: 80) {
             VStack(alignment: .leading, spacing: 20) {
-                TVImage(url: app.client?.albumArtURL(for: album, width: 900)).frame(width: 500, height: 500).clipShape(RoundedRectangle(cornerRadius: 24))
-                Text(album.name ?? "").font(.title2.bold())
+                TVImage(url: app.client?.albumArtURL(for: album, width: 900)).frame(width: 420, height: 420).clipShape(RoundedRectangle(cornerRadius: 20))
+                Text(album.name ?? "").font(.title3.bold())
                 Text(album.artistLine ?? "").foregroundStyle(Theme.violet)
                 HStack(spacing: 24) {
                     Button { audio.play(tracks, client: app.client) } label: { Label("Play", systemImage: "play.fill") }.hueAction(primary: true, hue: Theme.violet)
                     Button { audio.play(tracks, shuffle: true, client: app.client) } label: { Label("Shuffle", systemImage: "shuffle") }.hueAction()
                     Button { if let c = app.client { Task { await audio.play(station: Stations.radio(name: "\(album.name ?? "Album") Radio", seedId: album.id), client: c) } } } label: { Image(systemName: "dot.radiowaves.left.and.right") }.hueAction()
                 }
-            }.frame(width: 500)
+            }.frame(width: 420)
             List {
                 ForEach(Array(tracks.enumerated()), id: \.element.id) { n, t in
                     Button { audio.play(tracks, startAt: n, client: app.client) } label: {
@@ -123,17 +123,17 @@ struct TVArtistView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 40) {
                 HStack(spacing: 40) {
-                    Text(artist.name ?? "").font(.largeTitle.bold())
+                    Text(artist.name ?? "").font(.title2.bold())
                     Button { if let c = app.client { Task { await audio.play(station: Stations.radio(name: "\(artist.name ?? "Artist") Radio", seedId: artist.id), client: c) } } } label: {
                         Label("Artist Radio", systemImage: "dot.radiowaves.left.and.right")
                     }.hueAction(primary: true, hue: Theme.violet)
                 }
-                LazyVGrid(columns: Array(repeating: GridItem(.fixed(260), spacing: 44), count: 6), spacing: 50) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 200, maximum: 200), spacing: 40)], spacing: 44) {
                     ForEach(albums) { a in
                         VStack(alignment: .leading) {
-                            NavigationLink(value: a) { TVImage(url: app.client?.albumArtURL(for: a, width: 520)).frame(width: 260, height: 260) }.buttonStyle(.card)
+                            NavigationLink(value: a) { TVImage(url: app.client?.albumArtURL(for: a, width: 400)).frame(width: 200, height: 200) }.buttonStyle(.card)
                             Text(a.name ?? "").font(.caption.bold()).lineLimit(1)
-                        }.frame(width: 260)
+                        }.frame(width: 200)
                     }
                 }
             }.padding(80)
@@ -151,11 +151,11 @@ struct TVNowPlaying: View {
             if let cur = audio.current {
                 TVImage(url: app.client?.albumArtURL(for: cur, width: 600)).blur(radius: 80).opacity(0.5).ignoresSafeArea()
                 HStack(spacing: 90) {
-                    TVImage(url: app.client?.albumArtURL(for: cur, width: 1000)).frame(width: 640, height: 640).clipShape(RoundedRectangle(cornerRadius: 30))
+                    TVImage(url: app.client?.albumArtURL(for: cur, width: 1000)).frame(width: 520, height: 520).clipShape(RoundedRectangle(cornerRadius: 26))
                     VStack(alignment: .leading, spacing: 24) {
                         if let s = audio.station { Text("Playing from \(s.name)").foregroundStyle(Theme.violet) }
-                        Text(cur.name ?? "").font(.system(size: 56, weight: .heavy)).lineLimit(2)
-                        Text(cur.artistLine ?? "").font(.title2).foregroundStyle(.secondary)
+                        Text(cur.name ?? "").font(.system(size: 46, weight: .heavy)).lineLimit(2)
+                        Text(cur.artistLine ?? "").font(.title3).foregroundStyle(.secondary)
                         if let line = audio.djLine {
                             HStack(alignment: .top, spacing: 14) { Image(systemName: "mic.fill").foregroundStyle(Theme.violet); Text(line) }
                                 .padding(24).background(Theme.card, in: RoundedRectangle(cornerRadius: 20))
@@ -166,7 +166,7 @@ struct TVNowPlaying: View {
                             Button { audio.togglePlay() } label: { Image(systemName: audio.isPlaying ? "pause.fill" : "play.fill") }.hueAction(primary: true, hue: Theme.violet)
                             Button { audio.next() } label: { Image(systemName: "forward.fill") }.hueAction()
                             Button { audio.stop() } label: { Image(systemName: "stop.fill") }.hueAction()
-                        }.font(.title)
+                        }
                     }.frame(maxWidth: 900, alignment: .leading)
                 }
             } else {
@@ -247,13 +247,13 @@ struct TVProfilePicker: View {
     private let hues = [Theme.red, Theme.blue, Theme.orange, Theme.green, Theme.violet]
     var body: some View {
         VStack(spacing: 70) {
-            Text("Who's watching?").font(.system(size: 64, weight: .heavy))
+            Text("Who's watching?").font(.system(size: 52, weight: .heavy))
             HStack(spacing: 70) {
                 ForEach(Array(app.accounts.enumerated()), id: \.element.key) { n, a in
                     Button { app.switchTo(a); dismiss() } label: {
                         VStack(spacing: 20) {
-                            Text(String(a.userName.prefix(1)).uppercased()).font(.system(size: 90, weight: .black)).foregroundStyle(Theme.ink)
-                                .frame(width: 220, height: 220).background(hues[n % hues.count])
+                            Text(String(a.userName.prefix(1)).uppercased()).font(.system(size: 72, weight: .black)).foregroundStyle(Theme.ink)
+                                .frame(width: 180, height: 180).background(hues[n % hues.count])
                         }
                     }.buttonStyle(.card)
                     .overlay(alignment: .bottom) { Text(a.userName).font(.title3.bold()).offset(y: 60) }

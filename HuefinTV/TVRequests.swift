@@ -28,7 +28,7 @@ struct TVRequestsView: View {
                 .pickerStyle(.segmented).frame(width: 800)
                 if tab == 0 {
                     Text("Popular right now. Use Search to find anything else.").foregroundStyle(.secondary)
-                    LazyVGrid(columns: Array(repeating: GridItem(.fixed(250), spacing: 48), count: 6), spacing: 60) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 200, maximum: 200), spacing: 40)], spacing: 44) {
                         ForEach(trending) { r in
                             VStack(alignment: .leading, spacing: 10) {
                                 Button { picked = r } label: {
@@ -38,10 +38,10 @@ struct TVRequestsView: View {
                                             Text(s).font(.caption.bold()).padding(8).frame(maxWidth: .infinity)
                                                 .background((r.status == 5 ? Theme.green : Theme.violet).opacity(0.9))
                                         }
-                                    }.frame(width: 250, height: 375)
+                                    }.frame(width: 200, height: 300)
                                 }.buttonStyle(.card)
                                 Text(r.title).font(.caption).lineLimit(1)
-                            }.frame(width: 250)
+                            }.frame(width: 200)
                         }
                     }
                 } else {
@@ -49,7 +49,7 @@ struct TVRequestsView: View {
                     ForEach(requests) { r in
                         HStack(spacing: 30) {
                             TVImage(url: details[r.id]?.1.flatMap { URL(string: "https://image.tmdb.org/t/p/w185\($0)") })
-                                .frame(width: 100, height: 150).clipShape(RoundedRectangle(cornerRadius: 10))
+                                .frame(width: 80, height: 120).clipShape(RoundedRectangle(cornerRadius: 10))
                             VStack(alignment: .leading, spacing: 8) {
                                 Text(details[r.id]?.0 ?? "…").font(.headline)
                                 Text(statusText(r)).foregroundStyle(r.status == 3 ? Theme.red : .secondary)
@@ -94,12 +94,12 @@ struct TVSeerrDetail: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 70) {
-            TVImage(url: result.posterURL).frame(width: 400, height: 600).clipShape(RoundedRectangle(cornerRadius: 24))
+            TVImage(url: result.posterURL).frame(width: 340, height: 510).clipShape(RoundedRectangle(cornerRadius: 20))
             VStack(alignment: .leading, spacing: 24) {
-                Text(result.title).font(.system(size: 56, weight: .heavy))
+                Text(result.title).font(.system(size: 44, weight: .heavy))
                 Text([result.year, result.mediaType == "tv" ? "TV show" : "Movie"].compactMap { $0 }.joined(separator: "  ·  ")).foregroundStyle(.secondary)
                 if let s = result.statusText { Text(s).foregroundStyle(Theme.violet).font(.headline) }
-                Text(result.overview ?? "").lineLimit(8)
+                Text(result.overview ?? "").font(.callout).lineLimit(8)
                 if result.status == 5 {
                     Text("It's already on your server. Find it in Search to watch.").foregroundStyle(.secondary)
                 } else {
@@ -112,7 +112,7 @@ struct TVSeerrDetail: View {
                         }
                     } label: {
                         Label(done || alreadyRequested ? "Requested!" : (result.mediaType == "tv" ? "Request all seasons" : "Request"),
-                              systemImage: done || alreadyRequested ? "checkmark.circle.fill" : "plus.circle.fill").font(.title3)
+                              systemImage: done || alreadyRequested ? "checkmark.circle.fill" : "plus.circle.fill")
                     }
                     .hueAction(primary: true, hue: Theme.violet)
                     .disabled(busy || done || alreadyRequested || (result.status ?? 0) >= 2)
@@ -135,7 +135,7 @@ struct TVSeerrConnect: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 30) {
-            Text("Connect requests").font(.largeTitle.bold())
+            Text("Connect requests").font(.title2.bold())
             Text("Requests use Seerr (Jellyseerr). Sign in once with your Jellyfin password; Huefin doesn't keep it.")
                 .font(.title3).foregroundStyle(.secondary)
             TextField("Seerr address (e.g. https://requests.example.com)", text: $address)

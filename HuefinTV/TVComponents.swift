@@ -34,7 +34,7 @@ struct TVProgress: View {
 /// A poster that lifts and tilts when focused (the Apple TV "card" look), with its name underneath.
 struct TVPosterCard: View {
     let item: BaseItem
-    var width: CGFloat = 250
+    var width: CGFloat = 200
     @Environment(AppState.self) private var app
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -64,7 +64,7 @@ struct TVPosterCard: View {
 /// A wide card with the title underneath, for episodes and Continue Watching.
 struct TVLandscapeCard: View {
     let item: BaseItem
-    var width: CGFloat = 460
+    var width: CGFloat = 380
     var subtitle: String?
     var action: (() -> Void)?
     @Environment(AppState.self) private var app
@@ -89,10 +89,10 @@ struct TVShelf<Content: View>: View {
     let title: String
     @ViewBuilder var content: Content
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Text(title).font(.title3.bold()).padding(.horizontal, 80)
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.headline).padding(.horizontal, 80)
             ScrollView(.horizontal) {
-                LazyHStack(alignment: .top, spacing: 44) { content }.padding(.horizontal, 80).padding(.vertical, 30)
+                LazyHStack(alignment: .top, spacing: 40) { content }.padding(.horizontal, 80).padding(.vertical, 24)
             }.scrollClipDisabled()
         }
     }
@@ -123,16 +123,16 @@ struct TVHueButtonStyle: ButtonStyle {
         @Environment(\.isEnabled) private var enabled
         var body: some View {
             configuration.label
-                .font(.title3.weight(.semibold))
+                .font(expand ? .headline : .callout.weight(.semibold))
                 .foregroundStyle(filled || focused ? Theme.ink : Color.white)
-                .padding(.horizontal, expand ? 40 : 34).padding(.vertical, expand ? 22 : 18)
+                .padding(.horizontal, expand ? 36 : 26).padding(.vertical, expand ? 18 : 13)
                 .frame(maxWidth: expand ? .infinity : nil)
                 .background(
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(focused ? (filled ? hue : Theme.paper) : (filled ? hue.opacity(0.85) : Color.white.opacity(0.12)))
                 )
                 .shadow(color: focused ? hue.opacity(0.6) : .clear, radius: 24, y: 8)
-                .scaleEffect(configuration.isPressed ? 0.97 : (focused ? 1.06 : 1))
+                .scaleEffect(configuration.isPressed ? 0.97 : (focused ? 1.05 : 1))
                 .opacity(enabled ? 1 : 0.45)
                 .animation(.easeOut(duration: 0.18), value: focused)
         }

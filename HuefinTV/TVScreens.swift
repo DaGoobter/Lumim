@@ -18,16 +18,16 @@ struct TVLoginView: View {
         HStack(alignment: .center, spacing: 140) {
             // Brand side.
             VStack(alignment: .leading, spacing: 34) {
-                Image("Mark").resizable().scaledToFit().frame(width: 170, height: 170)
-                    .padding(28).background(Theme.paper, in: RoundedRectangle(cornerRadius: 44))
-                Text("huefin").font(.system(size: 130, weight: .black, design: .rounded))
-                Capsule().fill(Theme.spectrum).frame(width: 260, height: 12)
+                Image("Mark").resizable().scaledToFit().frame(width: 120, height: 120)
+                    .padding(22).background(Theme.paper, in: RoundedRectangle(cornerRadius: 34))
+                Text("huefin").font(.system(size: 96, weight: .black, design: .rounded))
+                Capsule().fill(Theme.spectrum).frame(width: 200, height: 10)
                 Text(adding ? "Add someone to this Apple TV" : "Connect to your Jellyfin server")
-                    .font(.system(size: 42, weight: .medium)).foregroundStyle(.secondary)
+                    .font(.title3).foregroundStyle(.secondary)
                 if let code {
                     VStack(alignment: .leading, spacing: 14) {
                         Text("On your phone: Huefin → Settings → Quick Connect, and enter").font(.title3).foregroundStyle(.secondary)
-                        Text(code).font(.system(size: 130, weight: .heavy, design: .monospaced)).foregroundStyle(Theme.green)
+                        Text(code).font(.system(size: 100, weight: .heavy, design: .monospaced)).foregroundStyle(Theme.green)
                         HStack(spacing: 16) { ProgressView(); Text("Waiting for approval…").foregroundStyle(.secondary) }
                     }.padding(.top, 20)
                 }
@@ -60,9 +60,9 @@ struct TVLoginView: View {
                 if adding { Button { done?() } label: { Text("Cancel") }.buttonStyle(TVHueButtonStyle()) }
                 if let error { Text(error).foregroundStyle(Theme.red).font(.title3) }
             }
-            .frame(width: 900)
+            .frame(width: 780)
         }
-        .padding(.horizontal, 140)
+        .padding(.horizontal, 120)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
             ZStack {
@@ -82,7 +82,7 @@ struct TVLoginView: View {
                 Text(label).font(.headline).foregroundStyle(.secondary)
                 if let hint { Text(hint).font(.callout).foregroundStyle(.tertiary) }
             }
-            content().font(.title3)
+            content()
         }
     }
 
@@ -128,7 +128,7 @@ struct TVHomeView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 50) {
+            VStack(alignment: .leading, spacing: 36) {
                 if let f = featured { hero(f) }
                 if !resume.isEmpty {
                     TVShelf(title: "Continue Watching") {
@@ -158,15 +158,15 @@ struct TVHomeView: View {
 
     private func hero(_ f: BaseItem) -> some View {
         ZStack(alignment: .bottomLeading) {
-            TVImage(url: app.client?.backdropURL(for: f, width: 1920)).frame(height: 620).clipped()
+            TVImage(url: app.client?.backdropURL(for: f, width: 1920)).frame(height: 520).clipped()
             LinearGradient(colors: [.clear, Theme.background], startPoint: .center, endPoint: .bottom)
             LinearGradient(colors: [Theme.background.opacity(0.9), .clear], startPoint: .leading, endPoint: .center)
             VStack(alignment: .leading, spacing: 18) {
-                if let logo = app.client?.logoURL(for: f) { TVImage(url: logo, contentMode: .fit).frame(maxWidth: 560, maxHeight: 180, alignment: .leading) }
-                else { Text(f.displayTitle).font(.system(size: 64, weight: .black)) }
+                if let logo = app.client?.logoURL(for: f) { TVImage(url: logo, contentMode: .fit).frame(maxWidth: 460, maxHeight: 130, alignment: .leading) }
+                else { Text(f.displayTitle).font(.system(size: 50, weight: .black)) }
                 Text([f.episodeLabel, f.productionYear.map(String.init), f.officialRating, f.runtimeText].compactMap { $0 }.joined(separator: "  ·  "))
                     .foregroundStyle(.secondary)
-                Text(f.overview ?? "").lineLimit(3).frame(maxWidth: 900, alignment: .leading)
+                Text(f.overview ?? "").font(.callout).lineLimit(3).frame(maxWidth: 820, alignment: .leading)
                 HStack(spacing: 30) {
                     Button { play(f) } label: { Label((f.progress ?? 0) > 0 ? "Resume" : "Play", systemImage: "play.fill") }.hueAction(primary: true)
                     NavigationLink(value: f) { Label("Details", systemImage: "info.circle") }.hueAction()
@@ -198,14 +198,14 @@ struct TVLibrariesView: View {
     @State private var views: [BaseItem] = []
     var body: some View {
         ScrollView {
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 50), count: 3), spacing: 60) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 40), count: 4), spacing: 44) {
                 ForEach(views) { lib in
                     NavigationLink(value: lib) {
                         ZStack(alignment: .bottomLeading) {
                             TVImage(url: app.client?.imageURL(lib.id, maxWidth: 900, tag: lib.imageTag("Primary")))
                             LinearGradient(colors: [.clear, .black.opacity(0.8)], startPoint: .center, endPoint: .bottom)
-                            Text(lib.name ?? "").font(.title2.bold()).padding(24)
-                        }.frame(height: 300)
+                            Text(lib.name ?? "").font(.headline).padding(20)
+                        }.frame(height: 200)
                     }.buttonStyle(.card)
                 }
             }.padding(80)
@@ -256,14 +256,14 @@ struct TVGrid: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 30) {
                 HStack(spacing: 20) {
-                    Text(parent.name ?? "").font(.title.bold())
+                    Text(parent.name ?? "").font(.title2.bold())
                     Spacer()
                     Picker("Sort", selection: $sort) {
                         Text("Name").tag("SortName"); Text("Recently added").tag("DateCreated,SortName")
                         Text("Release date").tag("PremiereDate,ProductionYear,SortName"); Text("Rating").tag("CommunityRating,SortName")
                     }.pickerStyle(.menu)
                 }
-                LazyVGrid(columns: Array(repeating: GridItem(.fixed(250), spacing: 48), count: 6), spacing: 60) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 200, maximum: 200), spacing: 40)], spacing: 44) {
                     ForEach(items) { i in
                         TVPosterCard(item: i).onAppear { if i.id == items.last?.id { Task { await more() } } }
                     }
@@ -307,16 +307,16 @@ struct TVDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 50) {
                 ZStack(alignment: .bottomLeading) {
-                    TVImage(url: app.client?.backdropURL(for: i, width: 1920)).frame(height: 760).clipped()
+                    TVImage(url: app.client?.backdropURL(for: i, width: 1920)).frame(height: 640).clipped()
                     LinearGradient(colors: [.clear, Theme.background], startPoint: .center, endPoint: .bottom)
                     LinearGradient(colors: [Theme.background.opacity(0.92), .clear], startPoint: .leading, endPoint: .center)
                     VStack(alignment: .leading, spacing: 18) {
-                        if let logo = app.client?.logoURL(for: i), i.type != "Episode" { TVImage(url: logo, contentMode: .fit).frame(maxWidth: 600, maxHeight: 200, alignment: .leading) }
-                        else { Text(i.displayTitle).font(.system(size: 60, weight: .black)) }
-                        if let e = i.episodeLabel { Text(e).font(.title3.weight(.semibold)) }
+                        if let logo = app.client?.logoURL(for: i), i.type != "Episode" { TVImage(url: logo, contentMode: .fit).frame(maxWidth: 480, maxHeight: 140, alignment: .leading) }
+                        else { Text(i.displayTitle).font(.system(size: 50, weight: .black)) }
+                        if let e = i.episodeLabel { Text(e).font(.headline) }
                         Text(([i.productionYear.map(String.init), i.officialRating, i.runtimeText, i.communityRating.map { String(format: "★ %.1f", $0) }].compactMap { $0 } + (i.mediaSources?.first?.badges ?? [])).joined(separator: "  ·  "))
                             .foregroundStyle(.secondary)
-                        Text(i.overview ?? "").lineLimit(4).frame(maxWidth: 1000, alignment: .leading)
+                        Text(i.overview ?? "").font(.callout).lineLimit(4).frame(maxWidth: 900, alignment: .leading)
                         HStack(spacing: 30) {
                             if i.isPlayable || i.isSeries {
                                 Button { Task { await play() } } label: { Label((i.progress ?? 0) > 0 ? "Resume" : "Play", systemImage: "play.fill") }.hueAction(primary: true)
@@ -346,14 +346,14 @@ struct TVDetailView: View {
                     ScrollView(.horizontal) {
                         LazyHStack(alignment: .top, spacing: 44) {
                             ForEach(episodes) { e in
-                                TVLandscapeCard(item: e, width: 420, subtitle: "\(e.indexNumber.map { "\($0). " } ?? "")\(e.name ?? "")") {
+                                TVLandscapeCard(item: e, width: 340, subtitle: "\(e.indexNumber.map { "\($0). " } ?? "")\(e.name ?? "")") {
                                     AppRouter.shared.playRequest = PlaybackRequest(item: e, startTicks: e.resumeTicks)
                                 }
                             }
                         }.padding(.horizontal, 80).padding(.vertical, 30)
                     }.scrollClipDisabled()
                 }
-                if !similar.isEmpty { TVShelf(title: "More Like This") { ForEach(similar) { TVPosterCard(item: $0, width: 220) } } }
+                if !similar.isEmpty { TVShelf(title: "More Like This") { ForEach(similar) { TVPosterCard(item: $0) } } }
             }.padding(.bottom, 80)
         }
         .ignoresSafeArea(edges: .horizontal)
@@ -411,9 +411,9 @@ struct TVSearchView: View {
                     if !list.isEmpty {
                         TVShelf(title: title) {
                             ForEach(list) { r in
-                                if r.type == "Episode" { TVLandscapeCard(item: r, width: 420) }
-                                else if r.isLiveChannel || r.type == "Audio" { TVLandscapeCard(item: r, width: 360) { _ = open(r, app: app) } }
-                                else { TVPosterCard(item: r, width: 220) }
+                                if r.type == "Episode" { TVLandscapeCard(item: r, width: 340) }
+                                else if r.isLiveChannel || r.type == "Audio" { TVLandscapeCard(item: r, width: 300) { _ = open(r, app: app) } }
+                                else { TVPosterCard(item: r) }
                             }
                         }
                     }
@@ -427,9 +427,9 @@ struct TVSearchView: View {
                                         TVImage(url: r.posterURL)
                                         Text(requested.contains(r.id) ? "Requested ✓" : (r.statusText ?? "Request"))
                                             .font(.caption.bold()).padding(8).frame(maxWidth: .infinity).background(Theme.violet.opacity(0.9))
-                                    }.frame(width: 220, height: 330)
+                                    }.frame(width: 200, height: 300)
                                 }.buttonStyle(.card)
-                                Text(r.title).font(.caption).lineLimit(1).frame(width: 220, alignment: .leading)
+                                Text(r.title).font(.caption).lineLimit(1).frame(width: 200, alignment: .leading)
                             }
                         }
                     }
@@ -468,19 +468,19 @@ struct TVLiveView: View {
                     let now = guide[ch.id]?.first { ($0.start ?? .distantFuture) <= Date() && ($0.end ?? .distantPast) > Date() } ?? ch.currentProgram
                     let next = guide[ch.id]?.first { ($0.start ?? .distantPast) > Date() }
                     Button { AppRouter.shared.playRequest = PlaybackRequest(item: ch, startTicks: 0) } label: {
-                        HStack(spacing: 28) {
+                        HStack(spacing: 22) {
                             ZStack {
                                 RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.08))
                                 Text(String((ch.name ?? "TV").prefix(3)).uppercased()).font(.headline).foregroundStyle(.secondary)
                                 if ch.imageTag("Primary") != nil { TVImage(url: app.client?.imageURL(ch.id, maxWidth: 300, tag: ch.imageTag("Primary")), contentMode: .fit).padding(10) }
-                            }.frame(width: 180, height: 110)
+                            }.frame(width: 150, height: 90)
                             VStack(alignment: .leading, spacing: 6) {
                                 Text([ch.channelNumber, ch.name].compactMap { $0 }.joined(separator: "  ")).font(.caption).foregroundStyle(Theme.orange)
-                                Text(now?.title ?? ch.name ?? "Live").font(.headline).lineLimit(1)
+                                Text(now?.title ?? ch.name ?? "Live").font(.callout.weight(.semibold)).lineLimit(1)
                                 if let next, let s = next.start { Text("Next \(s.formatted(date: .omitted, time: .shortened)) · \(next.title)").font(.caption).foregroundStyle(.secondary).lineLimit(1) }
                             }
                             Spacer()
-                        }.padding(20)
+                        }.padding(16)
                     }.buttonStyle(.card)
                 }
             }.padding(80)
