@@ -182,8 +182,8 @@ struct TVNowPlaying: View {
 struct TVSettingsView: View {
     @Environment(AppState.self) private var app
     @State private var adding = false
-    @State private var groups: [SyncPlay.GroupInfo] = []
-    @State private var sync = SyncPlay.shared
+    @State private var groups: [SyncPlayManager.GroupInfo] = []
+    @State private var sync = SyncPlayManager.shared
     @AppStorage(PlaybackPrefs.keys.autoIntro) private var autoIntro = false
     @AppStorage(PlaybackPrefs.keys.autoCredits) private var autoCredits = false
     @AppStorage("prism.askWhoIsWatching") private var askWho = true

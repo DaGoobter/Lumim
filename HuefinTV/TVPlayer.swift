@@ -63,7 +63,7 @@ final class PlayerModel {
 
     func start() async {
         await load(item, startTicks: pendingSeek)
-        await SyncPlay.shared.playerOpened(self)
+        await SyncPlayManager.shared.playerOpened(self)
     }
 
     // MARK: Loading
@@ -120,7 +120,7 @@ final class PlayerModel {
                             await self.player.seek(to: CMTime(seconds: Double(self.pendingSeek) / 10_000_000, preferredTimescale: 600),
                                                    toleranceBefore: .zero, toleranceAfter: .positiveInfinity)
                         }
-                        if !SyncPlay.shared.controls(self) { self.player.play() }
+                        if !SyncPlayManager.shared.controls(self) { self.player.play() }
                         await self.report("Sessions/Playing", force: true)
                         self.reportedStart = true
                     case .failed:
@@ -165,11 +165,11 @@ final class PlayerModel {
         guard seconds.isFinite else { return }
         currentTime = seconds
         Task { await report("Sessions/Playing/Progress") }
-        if activeSkip?.start != nil, PlaybackPrefs.autoSkipIntro, isPlaying, let s = activeSkip, !skipped.contains(s.start), !SyncPlay.shared.controls(self) {
+        if activeSkip?.start != nil, PlaybackPrefs.autoSkipIntro, isPlaying, let s = activeSkip, !skipped.contains(s.start), !SyncPlayManager.shared.controls(self) {
             skipSegment()
         }
         if PlaybackPrefs.autoSkipCredits, !autoNextDisabled, nextEpisode != nil, let outro = segments.first(where: { $0.type == "Outro" }),
-           seconds >= outro.start, seconds < outro.end - 1, isPlaying, !SyncPlay.shared.controls(self) {
+           seconds >= outro.start, seconds < outro.end - 1, isPlaying, !SyncPlayManager.shared.controls(self) {
             autoNextDisabled = true
             Task { await playNext() }
         }
@@ -199,8 +199,8 @@ final class PlayerModel {
     }
 
     func seek(to seconds: Double) {
-        if SyncPlay.shared.controls(self) {
-            Task { await SyncPlay.shared.request(.seek(Int64(seconds * 10_000_000))) }
+        if SyncPlayManager.shared.controls(self) {
+            Task { await SyncPlayManager.shared.request(.seek(Int64(seconds * 10_000_000))) }
             return
         }
         player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
@@ -216,7 +216,7 @@ final class PlayerModel {
     private func finished() async {
         await report("Sessions/Playing/Stopped", force: true)
         if isLive { await load(item, startTicks: 0); return }
-        if nextEpisode != nil && !autoNextDisabled && !SyncPlay.shared.controls(self) { await playNext() } else if !SyncPlay.shared.controls(self) { close() }
+        if nextEpisode != nil && !autoNextDisabled && !SyncPlayManager.shared.controls(self) { await playNext() } else if !SyncPlayManager.shared.controls(self) { close() }
     }
 
     private func report(_ path: String, force: Bool = false) async {
@@ -253,7 +253,7 @@ final class PlayerModel {
     func close() {
         guard !closed else { return }
         closed = true
-        SyncPlay.shared.unbind(self)
+        SyncPlayManager.shared.unbind(self)
         if PlayerModel.active === self { PlayerModel.active = nil }
         let c = client, ps = playSessionId, live = liveStreamId
         Task {
