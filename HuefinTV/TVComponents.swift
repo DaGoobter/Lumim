@@ -101,9 +101,9 @@ extension View {
 struct TVHueButtonStyle: ButtonStyle {
     var filled = false
     var hue: Color = Theme.red
-    func makeBody(configuration: Configuration) -> some View { Body(configuration: configuration, filled: filled, hue: hue) }
+    func makeBody(configuration: Configuration) -> some View { StyledButton(configuration: configuration, filled: filled, hue: hue) }
 
-    private struct Body: View {
+    private struct StyledButton: View {
         let configuration: Configuration
         let filled: Bool
         let hue: Color
