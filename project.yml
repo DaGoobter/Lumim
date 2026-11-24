@@ -97,6 +97,9 @@ targets:
       - path: Lumen/Playback/SyncPlay.swift
       - path: Lumen/Playback/Engine.swift
       - path: Lumen/Playback/PlaybackPrefs.swift
+      - path: Lumen/Playback/VLCPlayer.swift
+    dependencies:
+      - package: VLCKitSPM
     info:
       path: HuefinTV/Info.plist
       properties:

@@ -210,6 +210,7 @@ struct EngineVideoSurface: UIViewRepresentable {
     func updateUIView(_ uiView: UIView, context: Context) {}
 }
 
+#if os(iOS)
 /// Full-screen player for the Huefin Engine.
 struct EnginePlayerScreen: View {
     let request: PlaybackRequest
@@ -390,7 +391,8 @@ struct EnginePlayerScreen: View {
         }
     }
 }
-#endif
+#endif // os(iOS)
+#endif // VLCKitSPM
 
 enum EngineAvailability {
     #if canImport(VLCKitSPM)
