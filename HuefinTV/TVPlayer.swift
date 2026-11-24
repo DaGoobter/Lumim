@@ -79,9 +79,13 @@ final class PlayerModel {
             let choice = app.trackPrefs.choose(for: src)
             audioIndex = choice.audio; subtitleIndex = choice.subtitle
             let custom = (choice.audio != nil && choice.audio != src.defaultAudioStreamIndex) || subtitleIndex >= 0
-            if custom && !target.isLiveChannel {
+            // When the server has to repackage the file (MKV and friends), have it re-encode the audio too.
+            // Copying the audio track as-is into Apple's stream format lets sound drift out of sync with the picture.
+            let repackaged = !target.isLiveChannel && (custom || src.supportsDirectPlay != true)
+            if repackaged {
                 info = try await client.playbackInfo(itemId: target.id, maxBitrate: app.maxBitrate, startTicks: startTicks,
-                                                     audioStreamIndex: audioIndex, subtitleStreamIndex: subtitleIndex)
+                                                     audioStreamIndex: audioIndex, subtitleStreamIndex: subtitleIndex,
+                                                     allowAudioCopy: false)
                 src = info.mediaSources.first ?? src
             }
             playSessionId = info.playSessionId; mediaSourceId = src.id; liveStreamId = src.liveStreamId
