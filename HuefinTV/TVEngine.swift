@@ -6,6 +6,32 @@ import VLCKitSPM
 @MainActor @Observable
 final class EngineUIState {
     var showControls = true
+    /// Which small button next to the progress bar is highlighted (nil = the progress bar itself).
+    var button: Int?
+    /// Which button's menu is open, and the highlighted row in it.
+    var menu: Int?
+    var row = 0
+}
+
+/// The small buttons next to the progress bar, like Apple's own player.
+enum EngineMenus {
+    static let buttons: [(title: String, symbol: String)] = [("Subtitles", "captions.bubble"), ("Audio", "speaker.wave.2"), ("Speed", "gauge.with.dots.needle.67percent")]
+    static let speeds: [Float] = [0.5, 0.75, 1, 1.25, 1.5, 2]
+
+    @MainActor static func options(_ menu: Int, _ m: EnginePlayerModel) -> [(name: String, on: Bool)] {
+        switch menu {
+        case 0: return m.subtitleTracks.map { ($0.name, $0.index == m.subtitleTrack) }
+        case 1: return m.audioTracks.map { ($0.name, $0.index == m.audioTrack) }
+        default: return speeds.map { ($0 == 1 ? "Normal" : String(format: "%gx", $0), $0 == m.speed) }
+        }
+    }
+    @MainActor static func choose(_ menu: Int, _ row: Int, _ m: EnginePlayerModel) {
+        switch menu {
+        case 0: if m.subtitleTracks.indices.contains(row) { m.setSubtitle(m.subtitleTracks[row].index) }
+        case 1: if m.audioTracks.indices.contains(row) { m.setAudio(m.audioTracks[row].index) }
+        default: if speeds.indices.contains(row) { m.setSpeed(speeds[row]) }
+        }
+    }
 }
 
 /// The Huefin Engine on Apple TV: plays MKV and other files straight from the original, so the server
@@ -13,14 +39,13 @@ final class EngineUIState {
 ///
 /// It is a plain UIKit screen (not SwiftUI) so every Siri Remote click, swipe and button press reaches it.
 /// Remote: click or ▶︎❚❚ = play/pause (or Skip Intro when offered), swipe or press ◀︎ ▶︎ = skip,
-/// swipe up = show controls, swipe down = audio & subtitles, Menu = hide controls, then exit.
+/// swipe up = show controls, swipe down = the Subtitles / Audio / Speed buttons, Menu = back out, then exit.
 final class TVEngineViewController: UIViewController {
     private let model: EnginePlayerModel
     private let ui = EngineUIState()
     private let videoView = UIView()
     private var hideTask: Task<Void, Never>?
     private var closing = false
-    private var showingTracks = false
 
     init(request: PlaybackRequest, client: JellyfinClient?) {
         model = EnginePlayerModel(request: request, client: client)
@@ -100,31 +125,43 @@ final class TVEngineViewController: UIViewController {
     }
 
     private func onSelect() {
+        if let menu = ui.menu {
+            EngineMenus.choose(menu, ui.row, model); ui.menu = nil; reveal(); return
+        }
+        if let b = ui.button, ui.showControls {
+            ui.menu = b
+            ui.row = EngineMenus.options(b, model).firstIndex(where: \.on) ?? 0
+            hideTask?.cancel(); return
+        }
         if let seg = model.activeSkip { model.seek(to: seg.end) }
         else if ui.showControls || !model.isPlaying { model.togglePlay() }
         reveal()
     }
     private func onMenu() {
-        if ui.showControls && model.isPlaying { hideTask?.cancel(); ui.showControls = false }
+        if ui.menu != nil { ui.menu = nil; reveal() }
+        else if ui.button != nil { ui.button = nil; reveal() }
+        else if ui.showControls && model.isPlaying { hideTask?.cancel(); ui.showControls = false }
         else { close() }
     }
-    @objc private func swipeLeft() { model.skip(by: -Double(PlaybackPrefs.skipBack)); reveal() }
-    @objc private func swipeRight() { model.skip(by: Double(PlaybackPrefs.skipForward)); reveal() }
-    @objc private func swipeUp() { reveal() }
-    @objc private func swipeDown() { showTracks() }
-
-    private func showTracks() {
-        guard !showingTracks, presentedViewController == nil else { return }
-        showingTracks = true
-        hideTask?.cancel(); ui.showControls = false
-        var host: UIHostingController<TVEngineTracks>?
-        let sheet = UIHostingController(rootView: TVEngineTracks(model: model, close: { [weak self] in
-            host?.dismiss(animated: true) { self?.showingTracks = false; self?.setNeedsFocusUpdate() }
-        }))
-        host = sheet
-        sheet.modalPresentationStyle = .overFullScreen
-        sheet.view.backgroundColor = .clear
-        present(sheet, animated: true)
+    @objc private func swipeLeft() {
+        if ui.menu != nil { return }
+        if let b = ui.button, ui.showControls { ui.button = max(0, b - 1); reveal(); return }
+        model.skip(by: -Double(PlaybackPrefs.skipBack)); reveal()
+    }
+    @objc private func swipeRight() {
+        if ui.menu != nil { return }
+        if let b = ui.button, ui.showControls { ui.button = min(EngineMenus.buttons.count - 1, b + 1); reveal(); return }
+        model.skip(by: Double(PlaybackPrefs.skipForward)); reveal()
+    }
+    @objc private func swipeUp() {
+        if ui.menu != nil { ui.row = max(0, ui.row - 1); return }
+        ui.button = nil
+        reveal()
+    }
+    @objc private func swipeDown() {
+        if let menu = ui.menu { ui.row = min(EngineMenus.options(menu, model).count - 1, ui.row + 1); return }
+        if ui.showControls { ui.button = ui.button ?? 0 }
+        reveal()
     }
 
     private func reveal() {
@@ -132,7 +169,8 @@ final class TVEngineViewController: UIViewController {
         hideTask?.cancel()
         hideTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(5))
-            guard !Task.isCancelled, let self, self.model.isPlaying else { return }
+            guard !Task.isCancelled, let self, self.model.isPlaying, self.ui.menu == nil else { return }
+            self.ui.button = nil
             self.ui.showControls = false
         }
     }
@@ -197,8 +235,27 @@ private struct EngineOverlay: View {
         if ui.showControls || !m.isPlaying {
             VStack(alignment: .leading, spacing: 14) {
                 Spacer()
-                Text(m.item.type == "Episode" ? (m.item.name ?? "") : m.item.displayTitle).font(.title3.bold())
-                if let e = m.item.episodeLabel { Text("\(m.item.seriesName ?? "") · \(e)").font(.callout).foregroundStyle(.secondary) }
+                HStack(alignment: .bottom) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(m.item.type == "Episode" ? (m.item.name ?? "") : m.item.displayTitle).font(.title3.bold())
+                        if let e = m.item.episodeLabel { Text("\(m.item.seriesName ?? "") · \(e)").font(.callout).foregroundStyle(.secondary) }
+                    }
+                    Spacer()
+                    HStack(spacing: 14) {
+                        ForEach(EngineMenus.buttons.indices, id: \.self) { i in
+                            let on = ui.button == i
+                            Image(systemName: EngineMenus.buttons[i].symbol)
+                                .font(.system(size: 26, weight: .semibold))
+                                .foregroundStyle(on ? Color.black : Color.white)
+                                .frame(width: 64, height: 64)
+                                .background(on ? Color.white : Color.white.opacity(0.18), in: Circle())
+                                .scaleEffect(on ? 1.12 : 1)
+                                .overlay(alignment: .bottomTrailing) {
+                                    if ui.menu == i { menuCard(i, m).fixedSize().offset(y: -84) }
+                                }
+                        }
+                    }
+                }
                 GeometryReader { g in
                     ZStack(alignment: .leading) {
                         Capsule().fill(Color.white.opacity(0.25))
@@ -209,8 +266,10 @@ private struct EngineOverlay: View {
                     Image(systemName: m.isPlaying ? "pause.fill" : "play.fill")
                     Text(clock(m.currentTime)).monospacedDigit()
                     Spacer()
-                    Text("Swipe down for audio & subtitles").font(.caption).foregroundStyle(.secondary)
-                    Spacer()
+                    if let b = ui.button, ui.menu == nil {
+                        Text(EngineMenus.buttons[b].title).font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                    }
                     Text("-" + clock(max(0, m.duration - m.currentTime))).monospacedDigit()
                 }.font(.callout)
             }
@@ -221,37 +280,36 @@ private struct EngineOverlay: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(.easeInOut(duration: 0.25), value: ui.showControls)
+        .animation(.easeOut(duration: 0.15), value: ui.button)
+        .animation(.easeOut(duration: 0.15), value: ui.menu)
+    }
+
+    /// The little pop-up list above a button. Shows up to 8 rows around the highlighted one.
+    private func menuCard(_ menu: Int, _ m: EnginePlayerModel) -> some View {
+        let opts = EngineMenus.options(menu, m)
+        let first = max(0, min(ui.row - 3, opts.count - 8))
+        let rows = Array(opts.indices).dropFirst(first).prefix(8)
+        return VStack(alignment: .leading, spacing: 2) {
+            Text(EngineMenus.buttons[menu].title).font(.caption.bold()).foregroundStyle(.secondary)
+                .padding(.horizontal, 18).padding(.bottom, 4)
+            if opts.isEmpty { Text("None available").font(.callout).padding(.horizontal, 18).padding(.vertical, 8) }
+            ForEach(Array(rows), id: \.self) { r in
+                let hi = r == ui.row
+                HStack(spacing: 12) {
+                    Image(systemName: "checkmark").opacity(opts[r].on ? 1 : 0)
+                    Text(opts[r].name).lineLimit(1)
+                }
+                .font(.callout)
+                .foregroundStyle(hi ? Color.black : Color.white)
+                .padding(.horizontal, 18).padding(.vertical, 8)
+                .frame(minWidth: 320, maxWidth: 520, alignment: .leading)
+                .background(hi ? Color.white : Color.clear, in: RoundedRectangle(cornerRadius: 12))
+            }
+            if opts.count > 8 { Text("\(ui.row + 1) of \(opts.count)").font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 18).padding(.top, 4) }
+        }
+        .padding(12)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
+        .environment(\.colorScheme, .dark)
     }
 }
 
-/// Audio and subtitle choices for the engine.
-private struct TVEngineTracks: View {
-    let model: EnginePlayerModel
-    var close: () -> Void
-    private func dismiss() { close() }
-    var body: some View {
-        HStack(alignment: .top, spacing: 80) {
-            List {
-                Section("Audio") {
-                    ForEach(model.audioTracks, id: \.self) { t in
-                        Button { model.setAudio(t.index); dismiss() } label: {
-                            HStack { Text(t.name); Spacer(); if t.index == model.audioTrack { Image(systemName: "checkmark") } }
-                        }
-                    }
-                }
-            }
-            List {
-                Section("Subtitles") {
-                    ForEach(model.subtitleTracks, id: \.self) { t in
-                        Button { model.setSubtitle(t.index); dismiss() } label: {
-                            HStack { Text(t.name); Spacer(); if t.index == model.subtitleTrack { Image(systemName: "checkmark") } }
-                        }
-                    }
-                }
-            }
-        }
-        .padding(60)
-        .background(Color.black.opacity(0.85).ignoresSafeArea())
-        .onExitCommand { close() }
-    }
-}

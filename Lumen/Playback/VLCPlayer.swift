@@ -84,6 +84,11 @@ final class EnginePlayerModel {
         guard request.localDownload == nil, let full = try? await client.item(item.id),
               let src = full.mediaSources?.first(where: { $0.id == request.mediaSourceId }) ?? full.mediaSources?.first
         else { return }
+        // The server's names ("English - AC3 - 5.1"), in the same order the engine lists the tracks.
+        serverAudioNames = src.audioStreams.filter { $0.isExternal != true }.map { $0.displayTitle ?? $0.language ?? "Audio" }
+        serverSubNames = (src.subtitleStreams.filter { $0.isExternal != true } + src.subtitleStreams.filter { $0.isExternal == true })
+            .map { $0.displayTitle ?? $0.title ?? $0.language ?? "Subtitles" }
+        if tracksLoaded { loadTracks() }
         for s in src.subtitleStreams where s.isExternal == true {
             guard let idx = s.index else { continue }
             let codec = (s.codec ?? "srt").lowercased()
@@ -95,6 +100,8 @@ final class EnginePlayerModel {
     }
 
     @ObservationIgnored private var lastTickTime: Double = -1
+    @ObservationIgnored private var serverAudioNames: [String] = []
+    @ObservationIgnored private var serverSubNames: [String] = []
 
     private func tick() {
         guard !stopped else { return }
@@ -109,7 +116,7 @@ final class EnginePlayerModel {
         switch advancing ? .playing : player.state {
         case .playing:
             isLoading = false
-            if !tracksLoaded { loadTracks() }
+            if !tracksLoaded || player.numberOfSubtitlesTracks != Int32(subtitleTracks.count) { loadTracks() }
             if !startedReport { startedReport = true; Task { await report("Sessions/Playing") } }
         case .error:
             isLoading = false
@@ -131,9 +138,16 @@ final class EnginePlayerModel {
         let aNames = player.audioTrackNames as? [String] ?? []
         let aIdx = (player.audioTrackIndexes as? [NSNumber] ?? []).map(\.int32Value)
         audioTracks = zip(aIdx, aNames).filter { $0.0 >= 0 }.map { Track(index: $0.0, name: $0.1) }
+        if audioTracks.count == serverAudioNames.count {
+            audioTracks = zip(audioTracks, serverAudioNames).map { Track(index: $0.0.index, name: $0.1) }
+        }
         let sNames = player.videoSubTitlesNames as? [String] ?? []
         let sIdx = (player.videoSubTitlesIndexes as? [NSNumber] ?? []).map(\.int32Value)
         subtitleTracks = zip(sIdx, sNames).map { Track(index: $0.0, name: $0.0 < 0 ? "Off" : $0.1) }
+        let realSubs = subtitleTracks.filter { $0.index >= 0 }
+        if !realSubs.isEmpty, realSubs.count <= serverSubNames.count {
+            subtitleTracks = subtitleTracks.filter { $0.index < 0 } + zip(realSubs, serverSubNames).map { Track(index: $0.0.index, name: $0.1) }
+        }
         audioTrack = player.currentAudioTrackIndex
         subtitleTrack = player.currentVideoSubTitleIndex
         tracksLoaded = !audioTracks.isEmpty || player.time.intValue > 3000
