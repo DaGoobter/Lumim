@@ -6,6 +6,9 @@ on:
     paths-ignore: ['android/**', '.github/workflows/android.yml', 'desktop/**', '.github/workflows/windows.yml', 'HuefinTV/**', '.github/workflows/tvos.yml']
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     # GitHub's Mac machines sometimes have no capacity; try three pools at once and keep whichever finishes.
@@ -61,3 +64,12 @@ jobs:
           name: Lumen-ipa-${{ matrix.os }}
           path: Lumen.ipa
           retention-days: 14
+
+      - name: Publish to the "ios-latest" release (direct download link)
+        if: matrix.os == 'macos-latest' || matrix.os == 'macos-15-intel'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp Lumen.ipa Huefin.ipa
+          gh release view ios-latest >/dev/null 2>&1 || gh release create ios-latest --title "Huefin for iPhone and iPad (latest)" --notes "Newest iPhone/iPad build. Install Huefin.ipa with Sideloadly." --prerelease || true
+          gh release upload ios-latest Huefin.ipa --clobber
