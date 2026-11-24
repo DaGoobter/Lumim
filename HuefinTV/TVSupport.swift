@@ -46,6 +46,8 @@ struct PlaybackRequest: Identifiable {
 final class AppRouter {
     static let shared = AppRouter()
     var playRequest: PlaybackRequest?
+    /// Set whenever a player closes, so Home and the detail pages refresh your progress.
+    var playerClosedAt: Date?
     var showProfiles = false
     private init() {}
 }

@@ -306,30 +306,6 @@ struct TVPlayerView: UIViewControllerRepresentable {
 }
 
 /// Full-screen playback, closed with the Menu / Back button.
-struct TVPlayerScreen: View {
-    let request: PlaybackRequest
-    @Environment(AppState.self) private var app
-    @State private var useEngine: Bool?
-
-    var body: some View {
-        Group {
-            switch useEngine {
-            case .some(true): TVEngineScreen(request: request)
-            case .some(false): TVApplePlayerScreen(request: request)
-            case .none: ZStack { Color.black.ignoresSafeArea(); ProgressView() }
-            }
-        }
-        .task {
-            guard useEngine == nil else { return }
-            AudioPlayer.shared.pause()
-            // MKV and other files Apple TV can't open go to the Huefin Engine (no server repackaging, sound stays in sync),
-            // except in a Watch Together group, which needs Apple's player.
-            if SyncPlayManager.shared.groupId != nil { useEngine = false; return }
-            useEngine = await EngineDecider.useEngine(for: request, client: app.client, maxBitrate: app.maxBitrate)
-        }
-    }
-}
-
 /// Apple's player for files the Apple TV plays natively (best for HDR and Dolby Vision).
 struct TVApplePlayerScreen: View {
     let request: PlaybackRequest

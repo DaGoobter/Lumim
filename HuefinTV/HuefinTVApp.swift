@@ -28,6 +28,18 @@ struct TVRoot: View {
     @State private var showProfiles = false
     @State private var asked = false
     @AppStorage("prism.askWhoIsWatching") private var askOnLaunch = true
+    @State private var appleRequest: PlaybackRequest?
+
+    private func route(_ req: PlaybackRequest) async {
+        AudioPlayer.shared.pause()
+        // Watch Together needs Apple's player.
+        if SyncPlayManager.shared.groupId == nil,
+           await EngineDecider.useEngine(for: req, client: app.client, maxBitrate: app.maxBitrate) {
+            TVEngineViewController.present(request: req, client: app.client)
+        } else {
+            appleRequest = req
+        }
+    }
 
     var body: some View {
         Group {
@@ -47,7 +59,14 @@ struct TVRoot: View {
             if askOnLaunch, app.accounts.count > 1, app.client != nil { showProfiles = true }
         }
         .fullScreenCover(isPresented: $showProfiles) { TVProfilePicker() }
-        .fullScreenCover(item: $router.playRequest) { TVPlayerScreen(request: $0) }
+        .fullScreenCover(item: $appleRequest, onDismiss: { router.playerClosedAt = Date() }) { TVApplePlayerScreen(request: $0) }
+        // Every play request lands here: Apple's player for files the Apple TV plays natively,
+        // the Huefin Engine (a UIKit screen, so the Siri Remote always works) for everything else.
+        .onChange(of: router.playRequest?.id) { _, id in
+            guard id != nil, let req = router.playRequest else { return }
+            router.playRequest = nil
+            Task { await route(req) }
+        }
         .overlay(alignment: .top) {
             if let n = socket.notice {
                 HStack(spacing: 20) {

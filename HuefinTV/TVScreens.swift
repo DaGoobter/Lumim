@@ -153,7 +153,7 @@ struct TVHomeView: View {
         .itemDestinations()
         .task { if !loaded { await load() } }
         // After watching something, quietly refresh Continue Watching and Up Next (your place on screen stays).
-        .onChange(of: AppRouter.shared.playRequest == nil) { _, closed in if closed { Task { await load() } } }
+        .onChange(of: AppRouter.shared.playerClosedAt) { _, _ in Task { await load() } }
     }
 
     private func hero(_ f: BaseItem) -> some View {
@@ -358,8 +358,8 @@ struct TVDetailView: View {
         }
         .ignoresSafeArea(edges: .horizontal)
         .task(id: start.id) { if item == nil { await reload() } }
-        .onChange(of: AppRouter.shared.playRequest == nil) { _, closed in
-            if closed { Task { await reload(); if let s = season, let sid = showId { episodes = (try? await app.client?.episodes(seriesId: sid, seasonId: s.id)) ?? episodes } } }
+        .onChange(of: AppRouter.shared.playerClosedAt) { _, _ in
+            do { Task { await reload(); if let s = season, let sid = showId { episodes = (try? await app.client?.episodes(seriesId: sid, seasonId: s.id)) ?? episodes } } }
         }
         .task(id: season?.id) {
             guard let s = season, let sid = showId, episodes.first?.seasonId != s.id else { return }
