@@ -16,7 +16,6 @@ struct HuefinTVApp: App {
                 .environment(app)
                 .environment(AudioPlayer.shared)
                 .preferredColorScheme(.dark)
-                .tint(Theme.red)
         }
     }
 }

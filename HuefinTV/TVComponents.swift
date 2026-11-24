@@ -95,3 +95,34 @@ extension View {
         navigationDestination(for: BaseItem.self) { TVItemRoute(item: $0) }
     }
 }
+
+/// Huefin's TV buttons: always readable. Filled ones use the hue with dark text; plain ones are dark with white text.
+/// Focused buttons grow and turn bright, so it's obvious where the remote is.
+struct TVHueButtonStyle: ButtonStyle {
+    var filled = false
+    var hue: Color = Theme.red
+    func makeBody(configuration: Configuration) -> some View { Body(configuration: configuration, filled: filled, hue: hue) }
+
+    private struct Body: View {
+        let configuration: Configuration
+        let filled: Bool
+        let hue: Color
+        @Environment(\.isFocused) private var focused
+        @Environment(\.isEnabled) private var enabled
+        var body: some View {
+            configuration.label
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(filled || focused ? Theme.ink : Color.white)
+                .padding(.horizontal, 40).padding(.vertical, 22)
+                .frame(maxWidth: .infinity)
+                .background(
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .fill(focused ? (filled ? hue : Theme.paper) : (filled ? hue.opacity(0.85) : Color.white.opacity(0.12)))
+                )
+                .shadow(color: focused ? hue.opacity(0.6) : .clear, radius: 24, y: 8)
+                .scaleEffect(configuration.isPressed ? 0.97 : (focused ? 1.06 : 1))
+                .opacity(enabled ? 1 : 0.45)
+                .animation(.easeOut(duration: 0.18), value: focused)
+        }
+    }
+}

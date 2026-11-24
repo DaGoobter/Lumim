@@ -45,18 +45,19 @@ struct TVLoginView: View {
                 }
                 field("Password", nil) { SecureField("Password", text: $password).textContentType(.password) }
                 Button { signIn() } label: {
-                    HStack(spacing: 16) { if busy && code == nil { ProgressView() }; Text("Sign In").font(.title3.bold()) }
-                        .frame(maxWidth: .infinity).padding(.vertical, 8)
+                    HStack(spacing: 16) { if busy && code == nil { ProgressView() }; Text("Sign In").bold() }
                 }
+                .buttonStyle(TVHueButtonStyle(filled: true))
                 .disabled(busy || server.isEmpty || username.isEmpty)
                 if code == nil {
-                    Button { quickConnect() } label: {
-                        Label("Sign in with Quick Connect", systemImage: "qrcode").font(.title3).frame(maxWidth: .infinity).padding(.vertical, 8)
-                    }.disabled(busy || server.isEmpty)
+                    Button { quickConnect() } label: { Label("Sign in with Quick Connect", systemImage: "qrcode") }
+                        .buttonStyle(TVHueButtonStyle())
+                        .disabled(busy || server.isEmpty)
                 } else {
-                    Button { qcTask?.cancel(); code = nil; busy = false } label: { Text("Cancel Quick Connect").frame(maxWidth: .infinity) }
+                    Button { qcTask?.cancel(); code = nil; busy = false } label: { Text("Cancel Quick Connect") }
+                        .buttonStyle(TVHueButtonStyle())
                 }
-                if adding { Button { done?() } label: { Text("Cancel").frame(maxWidth: .infinity) } }
+                if adding { Button { done?() } label: { Text("Cancel") }.buttonStyle(TVHueButtonStyle()) }
                 if let error { Text(error).foregroundStyle(Theme.red).font(.title3) }
             }
             .frame(width: 900)
