@@ -1,14 +1,18 @@
 import SwiftUI
 
-/// An image from the server.
+/// An image from the server. It always takes exactly the space it's given (filling and cropping inside it),
+/// so a wide picture can never push the rest of the screen sideways.
 struct TVImage: View {
     let url: URL?
     var contentMode: ContentMode = .fill
     var body: some View {
-        AsyncImage(url: url, transaction: Transaction(animation: .easeOut(duration: 0.25))) { phase in
-            if let img = phase.image { img.resizable().aspectRatio(contentMode: contentMode) }
-            else { Rectangle().fill(Color.white.opacity(0.06)) }
-        }
+        Rectangle().fill(contentMode == .fill ? Color.white.opacity(0.06) : .clear)
+            .overlay {
+                AsyncImage(url: url, transaction: Transaction(animation: .easeOut(duration: 0.25))) { phase in
+                    if let img = phase.image { img.resizable().aspectRatio(contentMode: contentMode) }
+                }
+            }
+            .clipped()
     }
 }
 

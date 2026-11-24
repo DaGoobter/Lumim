@@ -158,7 +158,7 @@ struct TVHomeView: View {
 
     private func hero(_ f: BaseItem) -> some View {
         ZStack(alignment: .bottomLeading) {
-            TVImage(url: app.client?.backdropURL(for: f, width: 1920)).frame(height: 520).clipped()
+            TVImage(url: app.client?.backdropURL(for: f, width: 1920)).frame(maxWidth: .infinity).frame(height: 520)
             LinearGradient(colors: [.clear, Theme.background], startPoint: .center, endPoint: .bottom)
             LinearGradient(colors: [Theme.background.opacity(0.9), .clear], startPoint: .leading, endPoint: .center)
             VStack(alignment: .leading, spacing: 18) {
@@ -307,7 +307,7 @@ struct TVDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 50) {
                 ZStack(alignment: .bottomLeading) {
-                    TVImage(url: app.client?.backdropURL(for: i, width: 1920)).frame(height: 640).clipped()
+                    TVImage(url: app.client?.backdropURL(for: i, width: 1920)).frame(maxWidth: .infinity).frame(height: 640)
                     LinearGradient(colors: [.clear, Theme.background], startPoint: .center, endPoint: .bottom)
                     LinearGradient(colors: [Theme.background.opacity(0.92), .clear], startPoint: .leading, endPoint: .center)
                     VStack(alignment: .leading, spacing: 18) {
