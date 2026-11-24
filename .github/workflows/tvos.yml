@@ -58,7 +58,8 @@ jobs:
           mkdir -p Payload
           cp -R build/Build/Products/Release-appletvos/HuefinTV.app Payload/
           zip -qry HuefinTV.ipa Payload
-          ls -la HuefinTV.ipa
+          ls -la HuefinTV.ipa Payload/HuefinTV.app
+          plutil -p Payload/HuefinTV.app/Info.plist
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
