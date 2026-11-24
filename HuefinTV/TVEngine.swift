@@ -1,14 +1,80 @@
 import SwiftUI
 import VLCKitSPM
 
-/// No visual change when the remote focuses the full-screen player.
-private struct BareButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View { configuration.label }
+/// The video, plus the Siri Remote: Apple TV sends clicks, swipes and button presses here (UIKit handles
+/// them reliably and with no focus bubble on screen).
+private struct EngineRemoteSurface: UIViewControllerRepresentable {
+    let player: VLCMediaPlayer
+    var onSelect: () -> Void
+    var onPlayPause: () -> Void
+    var onLeft: () -> Void
+    var onRight: () -> Void
+    var onDown: () -> Void
+    var onUp: () -> Void
+    var onMenu: () -> Void
+
+    func makeUIViewController(context: Context) -> Controller {
+        let c = Controller()
+        c.surface = self
+        player.drawable = c.videoView
+        return c
+    }
+    func updateUIViewController(_ c: Controller, context: Context) { c.surface = self }
+
+    final class FocusView: UIView {
+        override var canBecomeFocused: Bool { true }
+    }
+
+    final class Controller: UIViewController {
+        var surface: EngineRemoteSurface?
+        let videoView = UIView()
+
+        override func loadView() {
+            let root = FocusView()
+            root.backgroundColor = .black
+            videoView.isUserInteractionEnabled = false
+            videoView.frame = root.bounds
+            videoView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            root.addSubview(videoView)
+            view = root
+            func press(_ type: UIPress.PressType, _ action: Selector) {
+                let g = UITapGestureRecognizer(target: self, action: action)
+                g.allowedPressTypes = [NSNumber(value: type.rawValue)]
+                root.addGestureRecognizer(g)
+            }
+            press(.select, #selector(select))
+            press(.playPause, #selector(playPause))
+            press(.menu, #selector(menu))
+            press(.leftArrow, #selector(left))
+            press(.rightArrow, #selector(right))
+            press(.downArrow, #selector(down))
+            press(.upArrow, #selector(up))
+            for (dir, action) in [(UISwipeGestureRecognizer.Direction.left, #selector(left)), (.right, #selector(right)),
+                                  (.down, #selector(down)), (.up, #selector(up))] {
+                let g = UISwipeGestureRecognizer(target: self, action: action)
+                g.direction = dir
+                root.addGestureRecognizer(g)
+            }
+        }
+        override var preferredFocusEnvironments: [UIFocusEnvironment] { [view] }
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            setNeedsFocusUpdate(); updateFocusIfNeeded()
+        }
+        @objc private func select() { surface?.onSelect() }
+        @objc private func playPause() { surface?.onPlayPause() }
+        @objc private func menu() { surface?.onMenu() }
+        @objc private func left() { surface?.onLeft() }
+        @objc private func right() { surface?.onRight() }
+        @objc private func down() { surface?.onDown() }
+        @objc private func up() { surface?.onUp() }
+    }
 }
 
 /// The Huefin Engine on Apple TV: plays MKV and other files straight from the original, so the server
 /// doesn't repackage anything and sound stays perfectly in sync.
-/// Remote: click or ▶︎❚❚ = play/pause (or Skip Intro when offered), ◀︎ ▶︎ = 10 s, swipe down = audio & subtitles.
+/// Remote: click or ▶︎❚❚ = play/pause (or Skip Intro when offered), swipe or press ◀︎ ▶︎ = 10 s,
+/// swipe up = show controls, swipe down = audio & subtitles, Menu = hide controls, then exit.
 struct TVEngineScreen: View {
     let request: PlaybackRequest
     @Environment(AppState.self) private var app
@@ -22,24 +88,20 @@ struct TVEngineScreen: View {
         ZStack {
             Color.black.ignoresSafeArea()
             if let model {
-                Button { select(model) } label: {
-                    ZStack {
-                        EngineVideoSurface(player: model.player).ignoresSafeArea()
-                        overlay(model)
-                    }
-                }
-                .buttonStyle(BareButtonStyle())
+                EngineRemoteSurface(
+                    player: model.player,
+                    onSelect: { select(model) },
+                    onPlayPause: { model.togglePlay(); reveal() },
+                    onLeft: { model.skip(by: -Double(PlaybackPrefs.skipBack)); reveal() },
+                    onRight: { model.skip(by: Double(PlaybackPrefs.skipForward)); reveal() },
+                    onDown: { showTracks = true },
+                    onUp: { reveal() },
+                    onMenu: {
+                        if showControls && model.isPlaying { withAnimation { showControls = false } }
+                        else { Task { await model.stop() }; dismiss() }
+                    })
                 .ignoresSafeArea()
-                .onPlayPauseCommand { model.togglePlay(); reveal() }
-                .onMoveCommand { dir in
-                    switch dir {
-                    case .left: model.skip(by: -Double(PlaybackPrefs.skipBack)); reveal()
-                    case .right: model.skip(by: Double(PlaybackPrefs.skipForward)); reveal()
-                    case .down: showTracks = true
-                    default: reveal()
-                    }
-                }
-                .onExitCommand { Task { await model.stop() }; dismiss() }
+                overlay(model).allowsHitTesting(false)
             }
         }
         .task {
