@@ -94,6 +94,8 @@ final class EnginePlayerModel {
         }
     }
 
+    @ObservationIgnored private var lastTickTime: Double = -1
+
     private func tick() {
         guard !stopped else { return }
         let t = Double(player.time.intValue) / 1000
@@ -101,7 +103,10 @@ final class EnginePlayerModel {
         let len = Double(player.media?.length.intValue ?? 0) / 1000
         if len > 0 { duration = len } else if let r = item.runTimeTicks { duration = Double(r) / 10_000_000 }
         isPlaying = player.isPlaying
-        switch player.state {
+        // VLC can keep saying "buffering" on network streams while the picture is moving; trust the clock.
+        let advancing = t > lastTickTime + 0.05 && player.isPlaying
+        if t >= 0 { lastTickTime = t }
+        switch advancing ? .playing : player.state {
         case .playing:
             isLoading = false
             if !tracksLoaded { loadTracks() }

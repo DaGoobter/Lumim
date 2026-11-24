@@ -35,6 +35,7 @@ class PlayerModel(var request: PlaybackRequest, val backend: Backend) {
     var item by mutableStateOf(request.item); private set
     var isPlaying by mutableStateOf(false); private set
     var loading by mutableStateOf(true); private set
+    private var lastTickPos = -1L
     var buffering by mutableStateOf(false); private set
     var position by mutableStateOf(0.0); private set     // seconds
     var duration by mutableStateOf(0.0); private set
@@ -162,7 +163,12 @@ class PlayerModel(var request: PlaybackRequest, val backend: Backend) {
         val d = backend.durationMs / 1000.0
         duration = if (d > 0) d else (item.runTimeTicks ?: 0) / 10_000_000.0
         isPlaying = backend.isPlaying
-        buffering = backend.isBuffering
+        // Some streams keep reporting "buffering" while they play; if the clock is moving, it's playing.
+        val pos = backend.positionMs
+        val moving = backend.isPlaying && pos > lastTickPos + 50
+        lastTickPos = pos
+        if (moving && loading) loading = false
+        buffering = backend.isBuffering && !moving
         if (isLive) liveStatus = if (buffering && !loading) "Buffering…" else null
         val now = System.currentTimeMillis()
         if (now - lastReport > 10_000 && !loading) { lastReport = now; report("Sessions/Playing/Progress") }
