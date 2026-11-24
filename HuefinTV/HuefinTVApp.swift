@@ -74,6 +74,7 @@ struct TVTabs: View {
             NavigationStack { TVLibrariesView() }.tabItem { Text("Library") }.tag(1)
             NavigationStack { TVLiveView() }.tabItem { Text("Live TV") }.tag(2)
             NavigationStack { TVMusicView() }.tabItem { Text("Music") }.tag(3)
+            NavigationStack { TVRequestsView() }.tabItem { Text("Requests") }.tag(6)
             NavigationStack { TVSearchView() }.tabItem { Image(systemName: "magnifyingglass") }.tag(4)
             NavigationStack { TVSettingsView() }.tabItem { Image(systemName: "gearshape") }.tag(5)
         }

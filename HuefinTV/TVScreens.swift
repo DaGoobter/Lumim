@@ -390,6 +390,7 @@ struct TVSearchView: View {
     @State private var results: [BaseItem] = []
     @State private var requests: [Seerr.Result] = []
     @State private var requested: Set<Int> = []
+    @State private var picked: Seerr.Result?
 
     var body: some View {
         ScrollView {
@@ -410,13 +411,13 @@ struct TVSearchView: View {
                     TVShelf(title: "Not on your server? Request it") {
                         ForEach(requests) { r in
                             VStack(alignment: .leading, spacing: 10) {
-                                Button { Task { try? await Seerr.shared.request(r); requested.insert(r.id) } } label: {
+                                Button { picked = r } label: {
                                     ZStack(alignment: .bottom) {
                                         TVImage(url: r.posterURL)
                                         Text(requested.contains(r.id) ? "Requested ✓" : (r.statusText ?? "Request"))
                                             .font(.caption.bold()).padding(8).frame(maxWidth: .infinity).background(Theme.violet.opacity(0.9))
                                     }.frame(width: 220, height: 330)
-                                }.buttonStyle(.card).disabled((r.status ?? 0) >= 2)
+                                }.buttonStyle(.card)
                                 Text(r.title).font(.caption).lineLimit(1).frame(width: 220, alignment: .leading)
                             }
                         }
@@ -425,6 +426,7 @@ struct TVSearchView: View {
             }.padding(.vertical, 40)
         }
         .searchable(text: $query, prompt: "Movies, shows, channels, music")
+        .sheet(item: $picked) { r in TVSeerrDetail(result: r, alreadyRequested: requested.contains(r.id)) { requested.insert(r.id) } }
         .itemDestinations()
         .task(id: query) {
             let q = query.trimmingCharacters(in: .whitespaces)
