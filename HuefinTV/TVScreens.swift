@@ -15,46 +15,74 @@ struct TVLoginView: View {
     @State private var qcTask: Task<Void, Never>?
 
     var body: some View {
-        HStack(spacing: 100) {
-            VStack(alignment: .leading, spacing: 26) {
-                Text("huefin").font(.system(size: 96, weight: .black, design: .rounded))
-                Capsule().fill(Theme.spectrum).frame(width: 180, height: 10)
-                Text(adding ? "Add someone" : "Connect to your Jellyfin server").font(.title3).foregroundStyle(.secondary)
+        HStack(alignment: .center, spacing: 140) {
+            // Brand side.
+            VStack(alignment: .leading, spacing: 34) {
+                Image("Mark").resizable().scaledToFit().frame(width: 170, height: 170)
+                    .padding(28).background(Theme.paper, in: RoundedRectangle(cornerRadius: 44))
+                Text("huefin").font(.system(size: 130, weight: .black, design: .rounded))
+                Capsule().fill(Theme.spectrum).frame(width: 260, height: 12)
+                Text(adding ? "Add someone to this Apple TV" : "Connect to your Jellyfin server")
+                    .font(.system(size: 42, weight: .medium)).foregroundStyle(.secondary)
                 if let code {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("On your phone: Huefin → Settings → Quick Connect, and enter").foregroundStyle(.secondary)
-                        Text(code).font(.system(size: 110, weight: .heavy, design: .monospaced)).foregroundStyle(Theme.green)
-                        HStack { ProgressView(); Text("Waiting for approval…").foregroundStyle(.secondary) }
-                        Button("Cancel") { qcTask?.cancel(); self.code = nil }
-                    }
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("On your phone: Huefin → Settings → Quick Connect, and enter").font(.title3).foregroundStyle(.secondary)
+                        Text(code).font(.system(size: 130, weight: .heavy, design: .monospaced)).foregroundStyle(Theme.green)
+                        HStack(spacing: 16) { ProgressView(); Text("Waiting for approval…").foregroundStyle(.secondary) }
+                    }.padding(.top, 20)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            VStack(spacing: 24) {
-                TextField("Server address (e.g. 192.168.1.20:8096)", text: $server)
-                    .textContentType(.URL).autocorrectionDisabled().textInputAutocapitalization(.never)
-                TextField("Username", text: $username).textContentType(.username).autocorrectionDisabled().textInputAutocapitalization(.never)
-                SecureField("Password", text: $password).textContentType(.password)
+            // Form side.
+            VStack(alignment: .leading, spacing: 30) {
+                field("Server", "e.g. 192.168.1.20:8096") {
+                    TextField("Server address", text: $server)
+                        .textContentType(.URL).autocorrectionDisabled().textInputAutocapitalization(.never)
+                }
+                field("Username", nil) {
+                    TextField("Username", text: $username).textContentType(.username).autocorrectionDisabled().textInputAutocapitalization(.never)
+                }
+                field("Password", nil) { SecureField("Password", text: $password).textContentType(.password) }
                 Button { signIn() } label: {
-                    HStack { if busy { ProgressView() }; Text("Sign In").bold() }.frame(maxWidth: .infinity)
-                }.disabled(busy || server.isEmpty || username.isEmpty)
-                Button { quickConnect() } label: { Label("Sign in with Quick Connect", systemImage: "qrcode").frame(maxWidth: .infinity) }
-                    .disabled(busy || server.isEmpty)
-                if adding { Button("Cancel") { done?() } }
-                if let error { Text(error).foregroundStyle(Theme.red).font(.callout) }
+                    HStack(spacing: 16) { if busy && code == nil { ProgressView() }; Text("Sign In").font(.title3.bold()) }
+                        .frame(maxWidth: .infinity).padding(.vertical, 8)
+                }
+                .disabled(busy || server.isEmpty || username.isEmpty)
+                if code == nil {
+                    Button { quickConnect() } label: {
+                        Label("Sign in with Quick Connect", systemImage: "qrcode").font(.title3).frame(maxWidth: .infinity).padding(.vertical, 8)
+                    }.disabled(busy || server.isEmpty)
+                } else {
+                    Button { qcTask?.cancel(); code = nil; busy = false } label: { Text("Cancel Quick Connect").frame(maxWidth: .infinity) }
+                }
+                if adding { Button { done?() } label: { Text("Cancel").frame(maxWidth: .infinity) } }
+                if let error { Text(error).foregroundStyle(Theme.red).font(.title3) }
             }
-            .frame(width: 760)
+            .frame(width: 900)
         }
-        .padding(120)
+        .padding(.horizontal, 140)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
             ZStack {
                 Theme.background
-                RadialGradient(colors: [Theme.violet.opacity(0.4), .clear], center: .topLeading, startRadius: 0, endRadius: 900)
-                RadialGradient(colors: [Theme.red.opacity(0.3), .clear], center: .bottomTrailing, startRadius: 0, endRadius: 900)
-            }.ignoresSafeArea()
+                RadialGradient(colors: [Theme.violet.opacity(0.45), .clear], center: .topLeading, startRadius: 0, endRadius: 1300)
+                RadialGradient(colors: [Theme.red.opacity(0.32), .clear], center: .bottomTrailing, startRadius: 0, endRadius: 1300)
+            }
+            .ignoresSafeArea()
         )
+        .ignoresSafeArea()
         .onDisappear { qcTask?.cancel() }
+    }
+
+    private func field<F: View>(_ label: String, _ hint: String?, @ViewBuilder _ content: () -> F) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(label).font(.headline).foregroundStyle(.secondary)
+                if let hint { Text(hint).font(.callout).foregroundStyle(.tertiary) }
+            }
+            content().font(.title3)
+        }
     }
 
     private func signIn() {
