@@ -151,7 +151,9 @@ struct TVHomeView: View {
         }
         .ignoresSafeArea(edges: .horizontal)
         .itemDestinations()
-        .task { await load() }
+        .task { if !loaded { await load() } }
+        // After watching something, quietly refresh Continue Watching and Up Next (your place on screen stays).
+        .onChange(of: AppRouter.shared.playRequest == nil) { _, closed in if closed { Task { await load() } } }
     }
 
     private func hero(_ f: BaseItem) -> some View {
@@ -209,7 +211,7 @@ struct TVLibrariesView: View {
             }.padding(80)
         }
         .itemDestinations()
-        .task { views = (try? await app.client?.userViews()) ?? [] }
+        .task { if views.isEmpty { views = (try? await app.client?.userViews()) ?? [] } }
     }
 }
 
@@ -238,6 +240,7 @@ struct TVGrid: View {
     @State private var total = Int.max
     @State private var loading = false
     @State private var sort = "SortName"
+    @State private var loadedSort: String?
 
     private var types: (String?, Bool) {
         switch parent.collectionType {
@@ -268,7 +271,11 @@ struct TVGrid: View {
                 if loading { ProgressView().frame(maxWidth: .infinity) }
             }.padding(80)
         }
-        .task(id: sort) { items = []; total = .max; await more() }
+        .task(id: sort) {
+            // Coming back from a title keeps the list (and your place); only a new sort reloads it.
+            if loadedSort == sort && !items.isEmpty { return }
+            loadedSort = sort; items = []; total = .max; await more()
+        }
     }
 
     private func more() async {
@@ -350,9 +357,12 @@ struct TVDetailView: View {
             }.padding(.bottom, 80)
         }
         .ignoresSafeArea(edges: .horizontal)
-        .task(id: start.id) { await reload() }
+        .task(id: start.id) { if item == nil { await reload() } }
+        .onChange(of: AppRouter.shared.playRequest == nil) { _, closed in
+            if closed { Task { await reload(); if let s = season, let sid = showId { episodes = (try? await app.client?.episodes(seriesId: sid, seasonId: s.id)) ?? episodes } } }
+        }
         .task(id: season?.id) {
-            guard let s = season, let sid = showId else { return }
+            guard let s = season, let sid = showId, episodes.first?.seasonId != s.id else { return }
             episodes = (try? await app.client?.episodes(seriesId: sid, seasonId: s.id)) ?? []
         }
     }
@@ -477,6 +487,7 @@ struct TVLiveView: View {
             if !loaded { ProgressView() } else if channels.isEmpty { Text("No Live TV on this server.").foregroundStyle(.secondary) }
         }
         .task {
+            guard !loaded else { return }
             channels = (try? await app.client?.liveChannels()) ?? []
             guide = (try? await app.client?.liveGuide(hours: 4)) ?? [:]
             loaded = true

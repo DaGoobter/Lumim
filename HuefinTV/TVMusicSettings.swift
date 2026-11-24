@@ -54,7 +54,7 @@ struct TVMusicView: View {
         .itemDestinations()
         .fullScreenCover(isPresented: $nowPlaying) { TVNowPlaying() }
         .task {
-            guard let c = app.client else { return }
+            guard let c = app.client, albums.isEmpty else { return }
             let views = (try? await c.userViews()) ?? []
             lib = library ?? views.first { $0.collectionType == "music" }
             guard let lib else { return }
@@ -110,7 +110,7 @@ struct TVAlbumView: View {
             }
         }
         .padding(80)
-        .task { tracks = (try? await (album.type == "Playlist" ? app.client?.playlistItems(album.id) : app.client?.albumTracks(album.id))) ?? [] }
+        .task { if !tracks.isEmpty { return }; tracks = (try? await (album.type == "Playlist" ? app.client?.playlistItems(album.id) : app.client?.albumTracks(album.id))) ?? [] }
     }
 }
 
@@ -138,7 +138,7 @@ struct TVArtistView: View {
                 }
             }.padding(80)
         }
-        .task { albums = (try? await app.client?.artistAlbums(artist.id)) ?? [] }
+        .task { if albums.isEmpty { albums = (try? await app.client?.artistAlbums(artist.id)) ?? [] } }
     }
 }
 

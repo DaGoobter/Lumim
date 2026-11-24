@@ -31,24 +31,33 @@ struct TVProgress: View {
     return false
 }
 
-/// A poster that lifts and tilts when focused (the Apple TV "card" look).
+/// A poster that lifts and tilts when focused (the Apple TV "card" look), with its name underneath.
 struct TVPosterCard: View {
     let item: BaseItem
     var width: CGFloat = 250
     @Environment(AppState.self) private var app
     var body: some View {
-        NavigationLink(value: item) {
-            ZStack(alignment: .bottom) {
-                TVImage(url: app.client?.posterURL(for: item, width: Int(width * 2)))
-                if let p = item.progress { TVProgress(value: p).padding(12) }
-                if item.userData?.played == true {
-                    Image(systemName: "checkmark.circle.fill").font(.title3).foregroundStyle(.white, Theme.green)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(10)
+        VStack(alignment: .leading, spacing: 12) {
+            NavigationLink(value: item) {
+                ZStack(alignment: .bottom) {
+                    TVImage(url: app.client?.posterURL(for: item, width: Int(width * 2)))
+                    if let p = item.progress { TVProgress(value: p).padding(12) }
+                    if item.userData?.played == true {
+                        Image(systemName: "checkmark.circle.fill").font(.title3).foregroundStyle(.white, Theme.green)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(10)
+                    } else if let n = item.userData?.unplayedItemCount, n > 0, item.isSeries {
+                        Text("\(n)").font(.caption.bold()).foregroundStyle(Theme.ink).padding(.horizontal, 10).padding(.vertical, 4)
+                            .background(Theme.red, in: Capsule())
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(10)
+                    }
                 }
+                .frame(width: width, height: width * 1.5)
             }
-            .frame(width: width, height: width * 1.5)
+            .buttonStyle(.card)
+            Text(item.displayTitle).font(.caption.weight(.semibold)).lineLimit(1)
+            Text(item.productionYear.map(String.init) ?? " ").font(.caption2).foregroundStyle(.secondary).lineLimit(1)
         }
-        .buttonStyle(.card)
+        .frame(width: width)
     }
 }
 
