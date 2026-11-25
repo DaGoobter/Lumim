@@ -601,6 +601,7 @@ struct SubtitleSearchView: View {
 
 
 /// Lets SwiftUI buttons reach the Picture-in-Picture controller owned by the video view.
+@MainActor
 final class VideoSurfaceHandle {
     var pip: AVPictureInPictureController? { didSet { if let pip { onPiPCreated?(pip) } } }
     var onPiPCreated: ((AVPictureInPictureController) -> Void)?
