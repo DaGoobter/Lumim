@@ -186,7 +186,7 @@ private fun PlayerScreen(m: PlayerModel, inPip: Boolean, tabletopHinge: Int?, on
                 onDoubleTap = { m.toggleFill() }) })
         m.overlaySubtitle?.let { line ->
             Text(line.replace("\\N", "\n"), Modifier.align(if (hingeDp != null) Alignment.TopCenter else Alignment.BottomCenter)
-                .padding(start = 32.dp, end = 32.dp, top = (hingeDp ?: 0.dp) - 90.dp.coerceAtMost(hingeDp ?: 0.dp), bottom = if (inPip) 6.dp else 48.dp)
+                .padding(start = 32.dp, end = 32.dp, top = ((hingeDp ?: 0.dp) - 90.dp).coerceAtLeast(0.dp), bottom = if (inPip) 6.dp else 48.dp)
                 .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(6.dp)).padding(horizontal = 10.dp, vertical = 4.dp),
                 color = Color.White, fontSize = if (inPip) 11.sp else 20.sp, fontWeight = FontWeight.SemiBold,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center, lineHeight = if (inPip) 13.sp else 26.sp)
@@ -194,7 +194,7 @@ private fun PlayerScreen(m: PlayerModel, inPip: Boolean, tabletopHinge: Int?, on
         if (inPip) return@BoxWithConstraints
 
         if (m.loading && m.error == null || m.liveStatus != null) {
-            Column(Modifier.align(if (hingeDp != null) Alignment.TopCenter else Alignment.Center).padding(top = (hingeDp ?: 0.dp) / 2 - 20.dp),
+            Column(Modifier.align(if (hingeDp != null) Alignment.TopCenter else Alignment.Center).padding(top = if (hingeDp != null) (hingeDp / 2 - 20.dp).coerceAtLeast(0.dp) else 0.dp),
                 horizontalAlignment = Alignment.CenterHorizontally) {
                 CircularProgressIndicator(color = Color.White)
                 m.liveStatus?.let { Text(it, color = Color.White, modifier = Modifier.padding(top = 8.dp)) }
