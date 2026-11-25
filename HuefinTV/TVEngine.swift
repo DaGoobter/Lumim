@@ -63,9 +63,14 @@ final class TVEngineViewController: UIViewController {
         root.backgroundColor = .black
         videoView.isUserInteractionEnabled = false
         videoView.backgroundColor = .black
-        videoView.frame = root.bounds
+        // VLC attaches its own tap handler to the drawable's parent; keep that parent a non-interactive wrapper.
+        let wrapper = UIView(frame: root.bounds)
+        wrapper.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        wrapper.isUserInteractionEnabled = false
+        videoView.frame = wrapper.bounds
         videoView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        root.addSubview(videoView)
+        wrapper.addSubview(videoView)
+        root.addSubview(wrapper)
         view = root
 
         let overlay = UIHostingController(rootView: EngineOverlay(model: model, ui: ui))

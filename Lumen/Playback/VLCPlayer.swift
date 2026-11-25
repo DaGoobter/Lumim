@@ -41,13 +41,13 @@ final class EnginePlayerModel {
     func start() async {
         AudioPlayer.shared.stop()
         try? AVAudioSession.sharedInstance().setActive(true)
-        await load()
         poll = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(500))
                 self?.tick()
             }
         }
+        await load()
     }
 
     private func load() async {
@@ -73,9 +73,13 @@ final class EnginePlayerModel {
         player.media = media
         player.play()
         player.rate = speed
+        // Intro markers and outside subtitle files load alongside the video, never holding it up.
         if let client {
-            segments = await client.mediaSegments(itemId: item.id)
-            await addExternalSubtitles(client)
+            Task { [weak self] in
+                guard let self else { return }
+                await self.addExternalSubtitles(client)
+                self.segments = await client.mediaSegments(itemId: self.item.id)
+            }
         }
     }
 
@@ -214,12 +218,21 @@ final class EnginePlayerModel {
 struct EngineVideoSurface: UIViewRepresentable {
     let player: VLCMediaPlayer
     func makeUIView(context: Context) -> UIView {
-        let v = UIView()
-        v.backgroundColor = .black
-        // VLC adds its own video views inside this one; they must not swallow taps meant for the controls.
-        v.isUserInteractionEnabled = false
-        player.drawable = v
-        return v
+        // VLC puts its picture inside `drawable` and attaches its own tap handler to the drawable's parent,
+        // which steals taps from Huefin's controls. Two wrappers that ignore touches keep all of that out of the way.
+        let outer = UIView()
+        outer.backgroundColor = .black
+        outer.isUserInteractionEnabled = false
+        let middle = UIView(frame: outer.bounds)
+        middle.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        middle.isUserInteractionEnabled = false
+        let drawable = UIView(frame: middle.bounds)
+        drawable.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        drawable.isUserInteractionEnabled = false
+        middle.addSubview(drawable)
+        outer.addSubview(middle)
+        player.drawable = drawable
+        return outer
     }
     func updateUIView(_ uiView: UIView, context: Context) {}
 }
