@@ -464,6 +464,7 @@ struct EnginePlayerScreen: View {
             m.player.pause()
             s.player.isMuted = false
             PiPSession.shared.register(model: s, request: req, handle: standbyHandle, dismiss: { dismiss() })
+            PiPSession.shared.startedByButton = true
             standbyHandle.pip?.startPictureInPicture()
             try? await Task.sleep(for: .seconds(2))
             if !PiPSession.shared.isFloating {   // iOS said no: carry on in the engine as if nothing happened

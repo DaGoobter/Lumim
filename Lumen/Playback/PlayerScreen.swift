@@ -428,6 +428,7 @@ struct AppleVideoPlayerScreen: View {
     private func popOutWhenReady(_ m: PlayerModel) async {
         for _ in 0..<40 {
             if let pip = surface.pip, pip.isPictureInPicturePossible, m.isPlaying {
+                PiPSession.shared.startedByButton = true
                 pip.startPictureInPicture()
                 return
             }
@@ -607,7 +608,8 @@ final class VideoSurfaceHandle {
     var container: UIView?
     func startPiP() {
         guard let pip else { return }
-        if pip.isPictureInPictureActive { pip.stopPictureInPicture() } else { pip.startPictureInPicture() }
+        if pip.isPictureInPictureActive { pip.stopPictureInPicture() }
+        else { PiPSession.shared.startedByButton = true; pip.startPictureInPicture() }
     }
 }
 

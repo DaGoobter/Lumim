@@ -19,6 +19,23 @@ final class PiPSession: NSObject, AVPictureInPictureControllerDelegate {
 
     /// The video playing in the little window right now.
     private var floating: Candidate?
+    /// Did the full-screen player close when it popped out? (Only when you tap the PiP button inside the app.
+    /// Swiping home leaves it in place, so coming back is instant.)
+    private var screenClosed = false
+    /// Set just before the PiP button starts it, to tell a button press from a swipe home.
+    var startedByButton = false
+
+    override init() {
+        super.init()
+        // Back in the app after swiping home: shrink the little window straight back into the full-screen player.
+        NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated {
+                guard let f = PiPSession.shared.floating, !PiPSession.shared.screenClosed,
+                      f.handle.pip?.isPictureInPictureActive == true else { return }
+                f.handle.pip?.stopPictureInPicture()
+            }
+        }
+    }
     private var restoreDone: ((Bool) -> Void)?
     private(set) var restoring = false
 
@@ -76,14 +93,23 @@ final class PiPSession: NSObject, AVPictureInPictureControllerDelegate {
     nonisolated func pictureInPictureControllerDidStartPictureInPicture(_ controller: AVPictureInPictureController) {
         MainActor.assumeIsolated {
             guard let f = floating, f.handle.pip === controller else { return }
-            // Out of the way: close the full-screen player, the video keeps going in the corner.
-            f.dismiss()
+            let byButton = startedByButton
+            startedByButton = false
+            // Tapped PiP inside the app: close the full-screen player so you can browse while it plays in the corner.
+            // Swiped home: leave everything as it is; the system takes care of the rest.
+            if byButton && UIApplication.shared.applicationState == .active {
+                screenClosed = true
+                f.dismiss()
+            } else {
+                screenClosed = false
+            }
         }
     }
 
     nonisolated func pictureInPictureController(_ controller: AVPictureInPictureController,
                                                 failedToStartPictureInPictureWithError error: Error) {
         MainActor.assumeIsolated {
+            startedByButton = false
             if let f = floating, f.handle.pip === controller { candidate = f; floating = nil }
         }
     }
@@ -93,6 +119,11 @@ final class PiPSession: NSObject, AVPictureInPictureControllerDelegate {
         MainActor.assumeIsolated {
             guard let f = floating, f.handle.pip === controller else { completionHandler(false); return }
             restoring = true
+            if !screenClosed {
+                // The full-screen player never went away; the video slides straight back into it.
+                completionHandler(true)
+                return
+            }
             restoreDone = completionHandler
             AppRouter.shared.playRequest = PlaybackRequest(item: f.request.item, startTicks: f.request.startTicks,
                                                            localDownload: f.request.localDownload,
@@ -111,9 +142,14 @@ final class PiPSession: NSObject, AVPictureInPictureControllerDelegate {
             floating = nil
             if restoring {
                 restoring = false            // back in the full-screen player, which now owns the video
-            } else {
+                if !screenClosed { candidate = f } // same screen keeps going; it can pop out again
+                screenClosed = false
+            } else if screenClosed {
                 Task { await f.model.stop() } // closed the little window: stop and save your spot
+            } else {
+                candidate = f                 // player screen is still open underneath; just stay put (paused)
             }
+            screenClosed = false
         }
     }
 }

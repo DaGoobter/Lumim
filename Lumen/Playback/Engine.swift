@@ -109,8 +109,14 @@ enum EngineDecider {
         }
         guard let client else { return false }
         if mode == .prism { return true }
+        #if os(iOS)
+        // iPhone/iPad: Apple's player for everything on Automatic, so swiping home always floats the video
+        // in Picture in Picture. The server repackages or converts what Apple can't open directly.
+        return false
+        #else
         let p = await playability(for: request.item, client: client, maxBitrate: maxBitrate,
                                   mediaSourceId: request.mediaSourceId)
         return p.kind == .prismEngine
+        #endif
     }
 }
