@@ -55,6 +55,8 @@ jobs:
           mkdir -p Payload
           cp -R build/Build/Products/Release-iphoneos/Lumen.app Payload/
           zip -qry Lumen.ipa Payload
+          # Make sure the Huefin Engine (mpv) really made it into the app.
+          if strings Payload/Lumen.app/Lumen | grep -q "target-colorspace-hint"; then echo "Huefin Engine: included"; else echo "::error::Huefin Engine (mpv) is missing from the app"; exit 1; fi
           echo "Bundled frameworks and extensions:"; ls Payload/Lumen.app/Frameworks Payload/Lumen.app/PlugIns 2>/dev/null || true
           ls -la Lumen.ipa
 

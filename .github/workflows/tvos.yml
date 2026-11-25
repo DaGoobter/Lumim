@@ -58,6 +58,8 @@ jobs:
           mkdir -p Payload
           cp -R build/Build/Products/Release-appletvos/HuefinTV.app Payload/
           zip -qry HuefinTV.ipa Payload
+          # Make sure the Huefin Engine (mpv) really made it into the app.
+          if strings Payload/HuefinTV.app/HuefinTV | grep -q "target-colorspace-hint"; then echo "Huefin Engine: included"; else echo "::error::Huefin Engine (mpv) is missing from the app"; exit 1; fi
           ls -la HuefinTV.ipa Payload/HuefinTV.app
           plutil -p Payload/HuefinTV.app/Info.plist
 
