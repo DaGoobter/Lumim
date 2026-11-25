@@ -436,9 +436,10 @@ final class NativeCore: NSObject, EngineCore {
             while self.layer.isReadyForMoreMediaData {
                 self.lock.lock()
                 guard !self.videoQ.isEmpty else {
+                    // Stop before saying we're waiting, so new data can never arrive in between and be missed.
+                    self.layer.stopRequestingMediaData()
                     self.videoWaiting = true
                     self.lock.unlock()
-                    self.layer.stopRequestingMediaData()
                     return
                 }
                 let sb = self.videoQ.removeFirst()
@@ -455,9 +456,10 @@ final class NativeCore: NSObject, EngineCore {
             while self.audioRenderer.isReadyForMoreMediaData {
                 self.lock.lock()
                 guard !self.audioQ.isEmpty else {
+                    // Stop before saying we're waiting, so new data can never arrive in between and be missed.
+                    self.audioRenderer.stopRequestingMediaData()
                     self.audioWaiting = true
                     self.lock.unlock()
-                    self.audioRenderer.stopRequestingMediaData()
                     return
                 }
                 let sb = self.audioQ.removeFirst()
@@ -479,6 +481,14 @@ final class NativeCore: NSObject, EngineCore {
     private func clockTick() {
         lock.lock(); let atEnd = eof; let lastMedia = max(lastQueuedVideo, audioStreamIndex >= 0 ? lastQueuedAudio : 0); lock.unlock()
         let ahead = bufferedAhead()
+        // Safety net: if a feeder is idle but data is waiting, wake it.
+        lock.lock()
+        let kickVideo = videoWaiting && !videoQ.isEmpty, kickAudio = audioWaiting && !audioQ.isEmpty
+        if kickVideo { videoWaiting = false }
+        if kickAudio { audioWaiting = false }
+        lock.unlock()
+        if kickVideo { requestVideo() }
+        if kickAudio { requestAudio() }
 
         // Apple's decoder refused the video (e.g. a Dolby Vision file this device can't decode): mpv takes over.
         if layer.status == .failed {
