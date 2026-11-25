@@ -29,8 +29,10 @@ struct PlayerScreen: View {
         }
         .task {
             guard useEngine == nil else { return }
-            // Watch Together needs Apple's player (it's the one wired to the group).
-            if !EngineAvailability.available || SyncPlayManager.shared.groupId != nil {
+            // Starting something new closes any video floating in Picture in Picture.
+            await PiPSession.shared.endForNewVideo()
+            // Watch Together needs Apple's player (it's the one wired to the group), and so does Picture in Picture.
+            if request.forceApple || !EngineAvailability.available || SyncPlayManager.shared.groupId != nil {
                 useEngine = false
             } else {
                 useEngine = await EngineDecider.useEngine(for: request, client: app.client, maxBitrate: app.maxBitrate)
@@ -147,16 +149,30 @@ struct AppleVideoPlayerScreen: View {
         .persistentSystemOverlays(.hidden)
         .task {
             guard model == nil else { return }
+            // Coming back from Picture in Picture: pick up the same video, already playing.
+            if let kept = PiPSession.shared.adopt() {
+                model = kept
+                PlayerModel.closeAction = { close() }
+                PiPSession.shared.register(model: kept, request: request, handle: surface, dismiss: { dismiss() })
+                scheduleHide()
+                return
+            }
             let m = PlayerModel(request: request, client: app.client, maxBitrate: app.maxBitrate,
                                 prefs: app.trackPrefs)
             model = m
             PlayerModel.closeAction = { close() }
+            PiPSession.shared.register(model: m, request: request, handle: surface, dismiss: { dismiss() })
             await m.start()
             scheduleHide()
+            if request.startPiP { await popOutWhenReady(m) }
             await SyncPlayManager.shared.playerOpened(m)
         }
         .onDisappear {
-            Task { await model?.stop() }
+            // Popped out into Picture in Picture? Then the video keeps playing in the corner.
+            if !PiPSession.shared.owns(model) {
+                PiPSession.shared.unregister(model)
+                Task { await model?.stop() }
+            }
             if let originalBrightness { UIScreen.main.brightness = originalBrightness }
         }
         .onChange(of: model?.isPlaying) { _, playing in if playing == true { scheduleHide() } }
@@ -407,6 +423,17 @@ struct AppleVideoPlayerScreen: View {
             dismiss()
         }
     }
+
+    /// Opened from the Huefin Engine's Picture in Picture button: float as soon as the picture is ready.
+    private func popOutWhenReady(_ m: PlayerModel) async {
+        for _ in 0..<40 {
+            if let pip = surface.pip, pip.isPictureInPicturePossible, m.isPlaying {
+                pip.startPictureInPicture()
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(250))
+        }
+    }
 }
 
 
@@ -574,7 +601,10 @@ struct SubtitleSearchView: View {
 
 /// Lets SwiftUI buttons reach the Picture-in-Picture controller owned by the video view.
 final class VideoSurfaceHandle {
-    var pip: AVPictureInPictureController?
+    var pip: AVPictureInPictureController? { didSet { if let pip { onPiPCreated?(pip) } } }
+    var onPiPCreated: ((AVPictureInPictureController) -> Void)?
+    /// Keeps the video view alive while it plays in Picture in Picture after the player screen closes.
+    var container: UIView?
     func startPiP() {
         guard let pip else { return }
         if pip.isPictureInPictureActive { pip.stopPictureInPicture() } else { pip.startPictureInPicture() }
@@ -607,6 +637,7 @@ struct VideoSurface: UIViewRepresentable {
             pip?.canStartPictureInPictureAutomaticallyFromInline = true
             handle.pip = pip
         }
+        handle.container = container
         return container
     }
 

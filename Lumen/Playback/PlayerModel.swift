@@ -11,6 +11,10 @@ struct PlaybackRequest: Identifiable {
     var localDownload: DownloadRecord? = nil
     /// A specific version (e.g. 4K vs 1080p, Director's Cut) to play.
     var mediaSourceId: String? = nil
+    /// Use Apple's player even for files the Huefin Engine would normally take (needed for Picture in Picture).
+    var forceApple = false
+    /// Pop straight into Picture in Picture once the video is ready.
+    var startPiP = false
 }
 
 /// What is actually being played and why — shown in the player's info panel.

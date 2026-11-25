@@ -1,5 +1,6 @@
 import SwiftUI
 import AVFoundation
+import AVKit
 #if canImport(VLCKitSPM)
 import VLCKitSPM
 
@@ -320,6 +321,9 @@ struct EnginePlayerScreen: View {
                                        label: fill ? "Fit" : "Fill screen") {
                         withAnimation(.spring) { fill.toggle() }; scheduleHide()
                     }
+                    if AVPictureInPictureController.isPictureInPictureSupported() {
+                        PlayerCircleButton(symbol: "pip.enter", label: "Picture in Picture") { popOut(m) }
+                    }
                     Menu {
                         Section("Volume boost") {
                             ForEach([Int32(100), 125, 150, 200], id: \.self) { v in
@@ -399,6 +403,19 @@ struct EnginePlayerScreen: View {
         Task {
             await model?.stop()
             dismiss()
+        }
+    }
+
+    /// The Huefin Engine can't float in a little window, so hand the video to Apple's player (which can)
+    /// at the same spot, and pop it out as soon as it's ready.
+    private func popOut(_ m: EnginePlayerModel) {
+        let item = m.item
+        let ticks = Int64(max(0, m.currentTime) * 10_000_000)
+        Task {
+            await m.stop()
+            dismiss()
+            try? await Task.sleep(for: .milliseconds(700))
+            AppRouter.shared.playRequest = PlaybackRequest(item: item, startTicks: ticks, forceApple: true, startPiP: true)
         }
     }
 }
