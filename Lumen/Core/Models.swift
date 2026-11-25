@@ -217,6 +217,9 @@ struct BaseItem: Codable, Identifiable, Hashable {
     let parentLogoItemId: String?
     let parentLogoImageTag: String?
     let seriesPrimaryImageTag: String?
+    let parentThumbItemId: String?
+    let parentThumbImageTag: String?
+    let seriesThumbImageTag: String?
     let userData: UserItemData?
     let mediaSources: [MediaSource]?
     let genres: [String]?
@@ -265,6 +268,27 @@ extension BaseItem {
     }
 
     var runtimeText: String? { runTimeTicks.map(formatTicks) }
+
+    /// "12 min left", "1 hr, 10 min left" for something you've started.
+    var timeLeftText: String? {
+        guard let pos = userData?.playbackPositionTicks, pos > 0, let total = runTimeTicks, total > pos else { return nil }
+        let mins = max(1, Int((total - pos) / 600_000_000))
+        let h = mins / 60, m = mins % 60
+        if h == 0 { return "\(m) min left" }
+        return m == 0 ? "\(h) hr left" : "\(h) hr, \(m) min left"
+    }
+
+    /// "2019 · 1 hr 44 min · PG"
+    var heroMetaLine: String? {
+        var parts: [String] = []
+        if let y = productionYear { parts.append(String(y)) }
+        if let t = runTimeTicks, t > 0 {
+            let mins = Int(t / 600_000_000), h = mins / 60, m = mins % 60
+            parts.append(h > 0 ? (m > 0 ? "\(h) hr \(m) min" : "\(h) hr") : "\(m) min")
+        }
+        if let r = officialRating, !r.isEmpty { parts.append(r) }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
 
     var progress: Double? {
         guard let pos = userData?.playbackPositionTicks, let total = runTimeTicks, total > 0, pos > 0 else { return nil }

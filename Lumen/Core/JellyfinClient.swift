@@ -546,6 +546,18 @@ final class JellyfinClient {
         return backdropURL(for: item, width: width)
     }
 
+    /// Card artwork that shows the title, like Apple TV: the item's Thumb, then the show's Thumb, then 16:9 art.
+    func thumbCardURL(for item: BaseItem, width: Int = 700) -> URL {
+        if let tag = item.imageTag("thumb") { return imageURL(item.id, type: "Thumb", maxWidth: width, tag: tag) }
+        if let pid = item.parentThumbItemId, let tag = item.parentThumbImageTag {
+            return imageURL(pid, type: "Thumb", maxWidth: width, tag: tag)
+        }
+        if let sid = item.seriesId, let tag = item.seriesThumbImageTag {
+            return imageURL(sid, type: "Thumb", maxWidth: width, tag: tag)
+        }
+        return landscapeURL(for: item, width: width)
+    }
+
     func backdropURL(for item: BaseItem, width: Int = 1600) -> URL {
         if let tag = item.backdropImageTags?.first {
             return imageURL(item.id, type: "Backdrop/0", maxWidth: width, tag: tag)

@@ -305,24 +305,57 @@ struct EnginePlayerScreen: View {
 
     private func controls(_ m: EnginePlayerModel) -> some View {
         ZStack {
+            Color.black.opacity(0.28).ignoresSafeArea().allowsHitTesting(false)
             VStack(spacing: 0) {
-                LinearGradient(colors: [.black.opacity(0.65), .clear], startPoint: .top, endPoint: .bottom).frame(height: 140)
-                Spacer()
-                LinearGradient(colors: [.clear, .black.opacity(0.75)], startPoint: .top, endPoint: .bottom).frame(height: 170)
-            }
-            .ignoresSafeArea().allowsHitTesting(false)
-            VStack {
-                HStack(spacing: 12) {
-                    round("xmark") { close() }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(m.item.displayTitle).font(.headline).lineLimit(1)
-                        HStack(spacing: 4) {
-                            Image(systemName: "sparkles")
-                            Text([m.item.episodeLabel, "Huefin Engine"].compactMap { $0 }.joined(separator: " · "))
+                HStack(alignment: .center, spacing: 12) {
+                    PlayerCircleButton(symbol: "chevron.down", label: "Close", iconSize: 21) { close() }
+                    VStack(spacing: 3) {
+                        Text(m.item.displayTitle).font(.headline.weight(.bold)).lineLimit(2).multilineTextAlignment(.center)
+                        if let sub = m.item.episodeLabel ?? m.item.productionYear.map(String.init) {
+                            Text(sub).font(.subheadline.weight(.semibold)).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
                         }
-                        .font(.caption).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
                     }
-                    Spacer()
+                    .frame(maxWidth: .infinity)
+                    PlayerCircleButton(symbol: fill ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
+                                       label: fill ? "Fit" : "Fill screen") {
+                        withAnimation(.spring) { fill.toggle() }; scheduleHide()
+                    }
+                    Menu {
+                        Section("Volume boost") {
+                            ForEach([Int32(100), 125, 150, 200], id: \.self) { v in
+                                Button { m.setVolume(v) } label: { check(v == 100 ? "Normal" : "\(v)%", v == m.volume) }
+                            }
+                        }
+                    } label: {
+                        Image(systemName: m.volume > 100 ? "speaker.plus.fill" : "speaker.wave.2.fill")
+                            .font(.system(size: 18, weight: .semibold)).playerCircle()
+                    }
+                    .accessibilityLabel("Volume boost")
+                }
+                .padding(.horizontal, 16).padding(.top, 8)
+
+                Spacer()
+
+                PlayerTransport(isPlaying: m.isPlaying,
+                                onBack: { m.skip(by: -Double(PlaybackPrefs.skipBack)); scheduleHide() },
+                                onToggle: { m.togglePlay(); scheduleHide() },
+                                onForward: { m.skip(by: Double(PlaybackPrefs.skipForward)); scheduleHide() })
+
+                Spacer()
+
+                HStack(spacing: 10) {
+                    PlayerScrubPill(current: m.currentTime, duration: m.duration,
+                                    scrubbing: $scrubbing, scrubValue: $scrubValue,
+                                    onCommit: { m.seek(to: $0); scheduleHide() },
+                                    track: { EmptyView() },
+                                    bubble: {
+                                        Text(time(scrubValue)).font(.caption.monospacedDigit().weight(.bold))
+                                            .padding(.horizontal, 10).padding(.vertical, 5)
+                                            .background(.ultraThinMaterial, in: Capsule())
+                                            .fixedSize()
+                                            .offset(y: -44)
+                                    })
+                    PlayerSpeedMenu(speed: m.speed) { m.setSpeed($0); scheduleHide() }
                     Menu {
                         Section("Audio") {
                             ForEach(m.audioTracks, id: \.index) { t in
@@ -334,67 +367,18 @@ struct EnginePlayerScreen: View {
                                 Button { m.setSubtitle(t.index) } label: { check(t.name, t.index == m.subtitleTrack) }
                             }
                         }
-                    } label: { roundLabel("captions.bubble") }
-                    Menu {
-                        Section("Speed") {
-                            ForEach([Float(0.5), 0.75, 1, 1.25, 1.5, 2], id: \.self) { s in
-                                Button { m.setSpeed(s) } label: { check(s == 1 ? "Normal" : String(format: "%g×", s), s == m.speed) }
-                            }
-                        }
-                        Section("Volume boost") {
-                            ForEach([Int32(100), 125, 150, 200], id: \.self) { v in
-                                Button { m.setVolume(v) } label: { check(v == 100 ? "Normal" : "\(v)%", v == m.volume) }
-                            }
-                        }
-                    } label: { roundLabel("ellipsis") }
+                    } label: {
+                        Image(systemName: "captions.bubble").font(.system(size: 19, weight: .semibold)).playerCircle()
+                    }
+                    .accessibilityLabel("Audio and subtitles")
                 }
-                .padding(.horizontal, 16).padding(.top, 8)
-                Spacer()
-                HStack(spacing: 56) {
-                    Button { m.skip(by: -Double(PlaybackPrefs.skipBack)); scheduleHide() } label: {
-                        Image(systemName: "gobackward.\(PlaybackPrefs.skipBack)").font(.system(size: 30, weight: .medium))
-                    }
-                    Button { m.togglePlay(); scheduleHide() } label: {
-                        Image(systemName: m.isPlaying ? "pause.fill" : "play.fill").font(.system(size: 46, weight: .bold))
-                            .frame(width: 64, height: 64).contentTransition(.symbolEffect(.replace))
-                    }
-                    Button { m.skip(by: Double(PlaybackPrefs.skipForward)); scheduleHide() } label: {
-                        Image(systemName: "goforward.\(PlaybackPrefs.skipForward)").font(.system(size: 30, weight: .medium))
-                    }
-                }
-                .foregroundStyle(.white)
-                Spacer()
-                VStack(spacing: 6) {
-                    Slider(value: Binding(get: { scrubbing ? scrubValue : m.currentTime }, set: { scrubValue = $0 }),
-                           in: 0...max(m.duration, 1),
-                           onEditingChanged: { editing in
-                               if editing { scrubValue = m.currentTime; scrubbing = true }
-                               else { m.seek(to: scrubValue); scrubbing = false; scheduleHide() }
-                           })
-                        .tint(.white)
-                    HStack {
-                        Text(time(scrubbing ? scrubValue : m.currentTime))
-                        Spacer()
-                        Text("-" + time(max(0, m.duration - (scrubbing ? scrubValue : m.currentTime))))
-                    }
-                    .font(.caption.monospacedDigit()).foregroundStyle(.white.opacity(0.85))
-                }
-                .padding(.horizontal, 20).padding(.bottom, 10)
+                .padding(.horizontal, 16).padding(.bottom, 10)
             }
         }
     }
 
     @ViewBuilder private func check(_ title: String, _ on: Bool) -> some View {
         if on { Label(title, systemImage: "checkmark") } else { Text(title) }
-    }
-
-    private func round(_ symbol: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { roundLabel(symbol) }
-    }
-
-    private func roundLabel(_ symbol: String) -> some View {
-        Image(systemName: symbol).font(.system(size: 16, weight: .semibold))
-            .frame(width: 38, height: 38).background(.ultraThinMaterial, in: Circle()).foregroundStyle(.white)
     }
 
     private func time(_ s: Double) -> String {

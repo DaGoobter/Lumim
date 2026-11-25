@@ -1,7 +1,9 @@
 import SwiftUI
 import AVKit
-
 import MediaPlayer
+#if canImport(GoogleCast)
+import GoogleCast
+#endif
 
 /// Opens the right player: Apple's (HDR, Dolby Vision, AirPlay, PiP) or the Huefin Engine for files
 /// Apple can't play, so the server doesn't have to convert them.
@@ -177,15 +179,10 @@ struct AppleVideoPlayerScreen: View {
 
     @ViewBuilder
     private func controls(model: PlayerModel, size: CGSize) -> some View {
-        ZStack {
-            // Legibility gradients
-            VStack(spacing: 0) {
-                LinearGradient(colors: [.black.opacity(0.65), .clear], startPoint: .top, endPoint: .bottom).frame(height: 140)
-                Spacer()
-                LinearGradient(colors: [.clear, .black.opacity(0.75)], startPoint: .top, endPoint: .bottom).frame(height: 170)
-            }
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
+        let wide = size.width > size.height
+        return ZStack {
+            // A light dim so the buttons read over bright scenes.
+            Color.black.opacity(0.28).ignoresSafeArea().allowsHitTesting(false)
 
             // Brightness (left) and volume (right), like the iOS video apps people know.
             HStack {
@@ -205,128 +202,86 @@ struct AppleVideoPlayerScreen: View {
             .padding(.horizontal, 22)
 
             VStack(spacing: 0) {
-                // Top bar
-                HStack(spacing: 12) {
-                    circleButton("xmark", label: "Close") { close() }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(model.item.displayTitle).font(.headline).lineLimit(1)
-                        if let sub = model.isLive ? model.liveProgramTitle : model.item.episodeLabel {
-                            Text(sub).font(.caption).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
+                // Top: close, title, then picture size, Picture in Picture and AirPlay.
+                HStack(alignment: .center, spacing: 12) {
+                    PlayerCircleButton(symbol: "chevron.down", label: "Close", iconSize: 21) { close() }
+                    VStack(spacing: 3) {
+                        Text(model.item.displayTitle).font(.headline.weight(.bold)).lineLimit(2)
+                            .multilineTextAlignment(.center)
+                        if let sub = model.isLive ? model.liveProgramTitle
+                            : (model.item.episodeLabel ?? model.item.productionYear.map(String.init)) {
+                            Text(sub).font(.subheadline.weight(.semibold)).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
                         }
                     }
-                    Spacer()
-                    if !model.isOffline, let source = model.source {
-                        TrackMenu(model: model, source: source,
-                                  onSearch: { showSubtitleSearch = true },
-                                  onPick: { scheduleHide() })
+                    .frame(maxWidth: .infinity)
+                    zoomMenu(model: model, size: size)
+                    if AVPictureInPictureController.isPictureInPictureSupported() {
+                        PlayerCircleButton(symbol: "pip.enter", label: "Picture in Picture") { surface.startPiP() }
                     }
-                    if model.chapters.count > 1 {
-                        ChapterMenu(model: model, timeString: timeString) { scheduleHide() }
-                    }
-                    RoutePicker().frame(width: 38, height: 38)
+                    RoutePicker().frame(width: 26, height: 26).playerCircle()
                     #if canImport(GoogleCast)
-                    if !model.isLive && !model.isOffline {
-                        CastButton().frame(width: 24, height: 24)
-                            .frame(width: 38, height: 38).background(.ultraThinMaterial, in: Circle())
+                    // On a phone held upright there's only room for three; Cast moves into the ••• menu.
+                    if wide && !model.isLive && !model.isOffline {
+                        CastButton().frame(width: 24, height: 24).playerCircle()
                     }
                     #endif
-                    if AVPictureInPictureController.isPictureInPictureSupported() {
-                        circleButton("pip.enter", label: "Picture in Picture") { surface.startPiP() }
-                    }
-                    PlayerMoreMenu(model: model, onSyncPlay: { showSyncPlay = true }, onInfo: { showInfo = true },
-                                   onPick: { scheduleHide() })
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
 
                 Spacer()
 
-                // Transport
-                HStack(spacing: 56) {
-                    if !model.isLive {
-                    Button { model.skip(by: -Double(PlaybackPrefs.skipBack)); scheduleHide() } label: {
-                        Image(systemName: "gobackward.\(PlaybackPrefs.skipBack)").font(.system(size: 30, weight: .medium))
-                    }
-                    .accessibilityLabel("Back \(PlaybackPrefs.skipBack) seconds")
-                    }
-                    Button { model.togglePlay(); scheduleHide() } label: {
-                        Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: 46, weight: .bold))
-                            .frame(width: 64, height: 64)
-                            .contentTransition(.symbolEffect(.replace))
-                    }
-                    .accessibilityLabel(model.isPlaying ? "Pause" : "Play")
-                    if !model.isLive {
-                    Button { model.skip(by: Double(PlaybackPrefs.skipForward)); scheduleHide() } label: {
-                        Image(systemName: "goforward.\(PlaybackPrefs.skipForward)").font(.system(size: 30, weight: .medium))
-                    }
-                    .accessibilityLabel("Forward \(PlaybackPrefs.skipForward) seconds")
-                    }
-                }
-                .foregroundStyle(.white)
-                .shadow(color: .black.opacity(0.4), radius: 8)
+                PlayerTransport(isPlaying: model.isPlaying, showSkips: !model.isLive,
+                                onBack: { model.skip(by: -Double(PlaybackPrefs.skipBack)); scheduleHide() },
+                                onToggle: { model.togglePlay(); scheduleHide() },
+                                onForward: { model.skip(by: Double(PlaybackPrefs.skipForward)); scheduleHide() })
 
                 Spacer()
 
-                if model.isLive {
-                    HStack(spacing: 10) {
-                        Text("LIVE")
-                            .font(.caption.weight(.heavy))
-                            .padding(.horizontal, 8).padding(.vertical, 4)
-                            .background(Color.red, in: RoundedRectangle(cornerRadius: 5))
-                        if let program = model.liveProgramTitle {
-                            Text(program).font(.subheadline.weight(.semibold)).lineLimit(1)
-                        }
-                        Spacer()
-                        zoomMenu(model: model, size: size)
-                    }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 14)
-                } else {
-                // Scrubber
-                VStack(spacing: 6) {
-                    Slider(
-                        value: Binding(
-                            get: { scrubbing ? scrubValue : model.currentTime },
-                            set: { scrubValue = $0 }
-                        ),
-                        in: 0...max(model.duration, 1),
-                        onEditingChanged: { editing in
-                            if editing {
-                                scrubValue = model.currentTime
-                                scrubbing = true
-                            } else {
-                                model.seek(to: scrubValue)
-                                scrubbing = false
-                                scheduleHide()
+                // Bottom: the progress pill, then speed, chapters, audio & subtitles, and more.
+                HStack(spacing: 10) {
+                    if model.isLive {
+                        HStack(spacing: 10) {
+                            Text("LIVE")
+                                .font(.caption.weight(.heavy))
+                                .padding(.horizontal, 8).padding(.vertical, 4)
+                                .background(Color.red, in: RoundedRectangle(cornerRadius: 5))
+                            if let program = model.liveProgramTitle {
+                                Text(program).font(.subheadline.weight(.semibold)).lineLimit(1)
                             }
+                            Spacer(minLength: 0)
                         }
-                    )
-                    .tint(.white)
-                    .background { ChapterTicks(model: model) }
-                    .overlay(alignment: .bottomLeading) {
-                        if scrubbing {
-                            ScrubPreview(model: model, time: scrubValue, image: scrubThumb, timeText: timeString(scrubValue))
+                        .padding(.horizontal, 16)
+                        .playerPill()
+                    } else {
+                        PlayerScrubPill(current: model.currentTime, duration: model.duration,
+                                        scrubbing: $scrubbing, scrubValue: $scrubValue,
+                                        onCommit: { model.seek(to: $0); scheduleHide() },
+                                        track: { ChapterTicks(model: model) },
+                                        bubble: {
+                                            ScrubPreview(model: model, time: scrubValue, image: scrubThumb, timeText: timeString(scrubValue))
+                                                .offset(y: -22)
+                                        })
+                            .task(id: scrubbing ? Int(scrubValue / Double(max(1, (model.trickplay?.interval ?? 10_000))) * 1000) : -1) {
+                                guard scrubbing else { scrubThumb = nil; return }
+                                if let img = await model.thumbnail(at: scrubValue) { scrubThumb = img }
+                            }
+                        PlayerSpeedMenu(speed: model.speed) { model.setSpeed($0); scheduleHide() }
+                        if wide && model.chapters.count > 1 {
+                            ChapterMenu(model: model, timeString: timeString) { scheduleHide() }
                         }
                     }
-                    .task(id: scrubbing ? Int(scrubValue / Double(max(1, (model.trickplay?.interval ?? 10_000))) * 1000) : -1) {
-                        guard scrubbing else { scrubThumb = nil; return }
-                        if let img = await model.thumbnail(at: scrubValue) { scrubThumb = img }
+                    if !model.isOffline, let source = model.source {
+                        TrackMenu(model: model, source: source,
+                                  onSearch: { showSubtitleSearch = true },
+                                  onPick: { scheduleHide() })
                     }
-                    HStack {
-                        Text(timeString(scrubbing ? scrubValue : model.currentTime))
-                        Spacer()
-                        zoomMenu(model: model, size: size)
-                        Spacer()
-                        Text("-" + timeString(max(0, model.duration - (scrubbing ? scrubValue : model.currentTime))))
-                    }
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.85))
+                    PlayerMoreMenu(model: model, compact: !wide, timeString: timeString,
+                                   onSyncPlay: { showSyncPlay = true }, onInfo: { showInfo = true },
+                                   onPick: { scheduleHide() })
                 }
-                .padding(.horizontal, 20)
+                .padding(.horizontal, 16)
                 .padding(.bottom, 10)
-                }
             }
         }
     }
@@ -341,10 +296,11 @@ struct AppleVideoPlayerScreen: View {
                 Button("\(Int(z * 100))%") { setZoom(CGFloat(z), label: "\(Int(z * 100))%") }
             }
         } label: {
-            Label(zoomLabel(fill: fill), systemImage: "arrow.up.left.and.arrow.down.right")
-                .font(.caption.weight(.semibold))
-                .padding(.horizontal, 10).padding(.vertical, 6)
-                .background(.ultraThinMaterial, in: Capsule())
+            Image(systemName: abs(zoom - 1) < 0.01 ? "arrow.up.left.and.arrow.down.right" : "arrow.down.right.and.arrow.up.left")
+                .font(.system(size: 19, weight: .semibold))
+                .playerCircle()
+        } primaryAction: {
+            toggleFill(model: model, size: size)
         }
         .accessibilityLabel("Zoom")
     }
@@ -496,10 +452,8 @@ struct TrackMenu: View {
             }
         } label: {
             Image(systemName: "captions.bubble")
-                .font(.system(size: 16, weight: .semibold))
-                .frame(width: 38, height: 38)
-                .background(.ultraThinMaterial, in: Circle())
-                .foregroundStyle(.white)
+                .font(.system(size: 19, weight: .semibold))
+                .playerCircle()
         }
         .accessibilityLabel("Audio and subtitles")
     }
@@ -740,8 +694,6 @@ struct RoutePicker: UIViewRepresentable {
         v.tintColor = .white
         v.activeTintColor = UIColor(Color.accentColor)
         v.prioritizesVideoDevices = true
-        v.backgroundColor = UIColor.white.withAlphaComponent(0.12)
-        v.layer.cornerRadius = 19
         return v
     }
     func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
@@ -972,10 +924,8 @@ struct ChapterMenu: View {
             }
         } label: {
             Image(systemName: "list.bullet.rectangle")
-                .font(.system(size: 16, weight: .semibold))
-                .frame(width: 38, height: 38)
-                .background(.ultraThinMaterial, in: Circle())
-                .foregroundStyle(.white)
+                .font(.system(size: 19, weight: .semibold))
+                .playerCircle()
         }
         .accessibilityLabel("Chapters")
     }
@@ -985,6 +935,9 @@ struct ChapterMenu: View {
 /// Playback speed, sleep timer and Watch Together.
 struct PlayerMoreMenu: View {
     let model: PlayerModel
+    /// Phone held upright: Chapters and Cast live in here instead of on their own buttons.
+    var compact = false
+    var timeString: (Double) -> String = { String(Int($0)) }
     let onSyncPlay: () -> Void
     let onInfo: () -> Void
     let onPick: () -> Void
@@ -1016,6 +969,25 @@ struct PlayerMoreMenu: View {
                     }
                 }
             } label: { Label(sleepLabel, systemImage: "moon.zzz") }
+            if compact && model.chapters.count > 1 {
+                Menu {
+                    ForEach(Array(model.chapters.enumerated()), id: \.offset) { i, ch in
+                        Button {
+                            model.seek(to: ch.start); onPick()
+                        } label: {
+                            let title = "\(ch.name?.isEmpty == false ? ch.name! : "Chapter \(i + 1)")  ·  \(timeString(ch.start))"
+                            if model.chapter(at: model.currentTime) == ch { Label(title, systemImage: "play.fill") } else { Text(title) }
+                        }
+                    }
+                } label: { Label("Chapters", systemImage: "list.bullet.rectangle") }
+            }
+            #if canImport(GoogleCast)
+            if compact && !model.isLive && !model.isOffline {
+                Button { GCKCastContext.sharedInstance().presentCastDialog() } label: {
+                    Label("Cast to a TV", systemImage: "tv.and.mediabox")
+                }
+            }
+            #endif
             if !model.isLive && !model.isOffline {
                 Button { onSyncPlay() } label: {
                     Label(SyncPlayManager.shared.groupId == nil ? "Watch Together" : "Watch Together · On",
@@ -1027,9 +999,8 @@ struct PlayerMoreMenu: View {
         } label: {
             ZStack(alignment: .topTrailing) {
                 Image(systemName: "ellipsis")
-                    .font(.system(size: 17, weight: .bold))
-                    .frame(width: 38, height: 38)
-                    .background(.ultraThinMaterial, in: Circle())
+                    .font(.system(size: 19, weight: .bold))
+                    .playerCircle()
                 if model.sleepAt != nil || model.sleepAtEnd || model.speed != 1 || SyncPlayManager.shared.groupId != nil {
                     Circle().fill(Color.accentColor).frame(width: 9, height: 9)
                 }

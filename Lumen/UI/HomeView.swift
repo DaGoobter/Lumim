@@ -41,9 +41,10 @@ struct HomeView: View {
     var body: some View {
         GeometryReader { geo in
             let landscape = verticalSizeClass == .compact
+            // Portrait: a tall, edge-to-edge hero with the title and buttons laid over the bottom of the picture.
             let artHeight = landscape
                 ? geo.size.height * 0.82
-                : min(geo.size.width * 9 / 16, geo.size.height * (sizeClass == .regular ? 0.55 : 0.5))
+                : min(geo.size.width * (sizeClass == .regular ? 0.75 : 1.12), geo.size.height * (sizeClass == .regular ? 0.62 : 0.68))
             ScrollView {
                 VStack(alignment: .leading, spacing: 34) {
                     if !featured.isEmpty {
@@ -126,7 +127,7 @@ struct HomeView: View {
 
     /// Tap plays immediately; long-press offers details.
     private func playableCard(_ item: BaseItem) -> some View {
-        Button { Task { await play(item) } } label: { LandscapeCard(item: item) }
+        Button { Task { await play(item) } } label: { LandscapeCard(item: item, titleArt: true) }
             .buttonStyle(CardPressStyle())
             .contextMenu {
                 Button { Task { await play(item) } } label: { Label("Play", systemImage: "play.fill") }
@@ -179,7 +180,7 @@ struct HomeView: View {
     }
 }
 
-/// Swipeable, auto-advancing banner of full, uncropped artwork.
+/// Swipeable, auto-advancing banner.
 struct FeaturedCarousel: View {
     let items: [BaseItem]
     @Binding var index: Int
@@ -189,29 +190,15 @@ struct FeaturedCarousel: View {
     let onPlay: (BaseItem) -> Void
 
     var body: some View {
-        VStack(spacing: 14) {
-            TabView(selection: $index) {
-                ForEach(Array(items.enumerated()), id: \.element.id) { i, item in
-                    HeroView(item: item, width: width, artHeight: artHeight, landscape: landscape) { onPlay(item) }
-                        .tag(i)
-                }
-            }
-            .tabViewStyle(.page(indexDisplayMode: .never))
-            .frame(height: landscape ? artHeight + 16 : artHeight + HeroView.infoHeight + 14)
-
-            if items.count > 1 {
-                HStack(spacing: 6) {
-                    ForEach(items.indices, id: \.self) { i in
-                        Capsule()
-                            .fill(i == index ? Color.white : Color.white.opacity(0.3))
-                            .frame(width: i == index ? 20 : 6, height: 6)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .animation(.spring(response: 0.35, dampingFraction: 0.8), value: index)
-                .accessibilityHidden(true)
+        TabView(selection: $index) {
+            ForEach(Array(items.enumerated()), id: \.element.id) { i, item in
+                HeroView(item: item, width: width, artHeight: artHeight, landscape: landscape,
+                         page: i, pageCount: items.count) { onPlay(item) }
+                    .tag(i)
             }
         }
+        .tabViewStyle(.page(indexDisplayMode: .never))
+        .frame(height: landscape ? artHeight + 16 : artHeight)
         // Advance every 8 seconds; swiping restarts the timer.
         .task(id: index) {
             try? await Task.sleep(for: .seconds(8))
@@ -221,52 +208,65 @@ struct FeaturedCarousel: View {
     }
 }
 
-struct HeroView: View {
-    static let infoHeight: CGFloat = 176
+/// Which page of the banner you're on, in a small frosted pill.
+struct PageDots: View {
+    let page: Int
+    let count: Int
+    var body: some View {
+        HStack(spacing: 7) {
+            ForEach(0..<count, id: \.self) { i in
+                Capsule()
+                    .fill(i == page ? Color.white : Color.white.opacity(0.4))
+                    .frame(width: i == page ? 18 : 7, height: 7)
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 12)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(Capsule().strokeBorder(.white.opacity(0.12), lineWidth: 1))
+        .accessibilityHidden(true)
+    }
+}
 
+struct HeroView: View {
     @Environment(AppState.self) private var app
     let item: BaseItem
     let width: CGFloat
     let artHeight: CGFloat
     var landscape = false
+    var page = 0
+    var pageCount = 1
     let onPlay: () -> Void
 
-    private var subtitle: String? {
-        if let ep = item.episodeLabel { return ep }
-        let parts = [item.productionYear.map(String.init), item.genres?.prefix(2).joined(separator: " · "), item.runtimeText]
-            .compactMap { $0 }.filter { !$0.isEmpty }
-        return parts.isEmpty ? nil : parts.joined(separator: "  ·  ")
+    private var meta: String? {
+        if let ep = item.episodeLabel { return [ep, item.name].compactMap { $0 }.joined(separator: " · ") }
+        return item.heroMetaLine
     }
 
-    private var art: some View {
-        // Full, uncropped artwork; tap it for details.
-        NavigationLink(value: item) {
-            ArtHeader(url: app.client?.backdropURL(for: item, width: 1920),
-                      width: landscape ? width * 0.56 : width, maxHeight: artHeight)
-        }
-        .buttonStyle(CardPressStyle())
+    private var playTitle: String {
+        if item.progress != nil { return item.timeLeftText.map { "Resume · \($0)" } ?? "Resume" }
+        return "Play"
     }
 
     private var info: some View {
         VStack(alignment: .leading, spacing: 10) {
-            LogoOrTitle(url: app.client?.logoURL(for: item), title: item.displayTitle, maxHeight: 70)
-            if let subtitle {
-                Text(subtitle).font(.subheadline.weight(.semibold)).foregroundStyle(.white.opacity(0.75)).lineLimit(1)
+            LogoOrTitle(url: app.client?.logoURL(for: item), title: item.displayTitle, maxHeight: landscape ? 70 : 96)
+                .padding(.bottom, 4)
+            if let meta {
+                Text(meta).font(.subheadline.weight(.semibold)).foregroundStyle(.white.opacity(0.75)).lineLimit(1)
             }
-            if let overview = item.overview, landscape {
-                Text(overview).font(.subheadline).foregroundStyle(.white.opacity(0.7)).lineLimit(3)
+            if let overview = item.overview, !overview.isEmpty {
+                Text(overview).font(.subheadline).foregroundStyle(.white.opacity(0.85))
+                    .lineLimit(landscape ? 3 : 2).fixedSize(horizontal: false, vertical: true)
             }
-            if let p = item.progress { ProgressBar(value: p).frame(maxWidth: 220) }
             HStack(spacing: 12) {
                 Button(action: onPlay) {
-                    Label(item.progress != nil ? "Resume" : "Play", systemImage: "play.fill")
+                    Label(playTitle, systemImage: "play.fill").lineLimit(1)
                 }
                 .buttonStyle(PlayButtonStyle())
-                NavigationLink(value: item) {
-                    Label("Details", systemImage: "info.circle")
-                }
-                .buttonStyle(SecondaryButtonStyle())
+                Spacer(minLength: 0)
+                if pageCount > 1 { PageDots(page: page, count: pageCount) }
             }
+            .padding(.top, 6)
         }
     }
 
@@ -275,19 +275,43 @@ struct HeroView: View {
             // Phone landscape: info on the left, artwork on the right — everything fits on one screen.
             HStack(alignment: .center, spacing: 24) {
                 info.frame(maxWidth: .infinity, alignment: .leading)
-                art
+                NavigationLink(value: item) {
+                    ArtHeader(url: app.client?.backdropURL(for: item, width: 1920), width: width * 0.56, maxHeight: artHeight)
+                }
+                .buttonStyle(CardPressStyle())
             }
             .padding(.leading, 24)
             .padding(.top, 12)
             .frame(width: width, height: artHeight + 16, alignment: .leading)
         } else {
-            VStack(alignment: .leading, spacing: 14) {
-                art
+            ZStack(alignment: .bottomLeading) {
+                // Edge-to-edge picture that melts into the page; tap it for details.
+                NavigationLink(value: item) {
+                    Color.clear
+                        .frame(width: width, height: artHeight)
+                        .overlay { RemoteImage(url: app.client?.backdropURL(for: item, width: 1920)) }
+                        .clipped()
+                        .overlay {
+                            LinearGradient(stops: [
+                                .init(color: .clear, location: 0.35),
+                                .init(color: .black.opacity(0.55), location: 0.8),
+                                .init(color: .black.opacity(0.7), location: 1),
+                            ], startPoint: .top, endPoint: .bottom)
+                        }
+                        .mask(
+                            LinearGradient(stops: [
+                                .init(color: .black, location: 0),
+                                .init(color: .black, location: 0.78),
+                                .init(color: .black.opacity(0), location: 1),
+                            ], startPoint: .top, endPoint: .bottom)
+                        )
+                }
+                .buttonStyle(.plain)
                 info
                     .padding(.horizontal, 20)
-                    .frame(height: Self.infoHeight, alignment: .top)
+                    .padding(.bottom, 6)
             }
-            .frame(width: width, alignment: .top)
+            .frame(width: width, height: artHeight)
         }
     }
 }

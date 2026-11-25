@@ -187,22 +187,31 @@ struct LandscapeCard: View {
     @Environment(AppState.self) private var app
     @Environment(\.horizontalSizeClass) private var sizeClass
     let item: BaseItem
+    /// Show the title artwork (Thumb) instead of the episode still — used on Home.
+    var titleArt = false
 
     var body: some View {
         let width: CGFloat = sizeClass == .regular ? 380 : 290
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 3) {
             Color.clear
                 .aspectRatio(16 / 9, contentMode: .fit)
-                .overlay { RemoteImage(url: app.client?.landscapeURL(for: item)) }
+                .overlay { RemoteImage(url: titleArt ? app.client?.thumbCardURL(for: item) : app.client?.landscapeURL(for: item)) }
                 .overlay(alignment: .bottom) {
-                    if let p = item.progress { ProgressBar(value: p).padding(10) }
+                    if let p = item.progress {
+                        ProgressBar(value: p).padding(.horizontal, 14).padding(.bottom, 12)
+                            .shadow(color: .black.opacity(0.5), radius: 4)
+                    }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 1))
                 .shadow(color: .black.opacity(0.5), radius: 12, y: 6)
-            Text(item.displayTitle).font(.subheadline.weight(.semibold)).lineLimit(1)
-            if let ep = item.episodeLabel {
-                Text(ep).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                .padding(.bottom, 8)
+            if let top = item.episodeLabel ?? item.productionYear.map(String.init) {
+                Text(top).font(.caption.weight(.semibold)).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Text(item.displayTitle).font(.subheadline.weight(.bold)).lineLimit(1)
+            if let left = item.timeLeftText {
+                Text(left).font(.caption.weight(.semibold)).foregroundStyle(.secondary).lineLimit(1)
             }
         }
         .frame(width: width)
