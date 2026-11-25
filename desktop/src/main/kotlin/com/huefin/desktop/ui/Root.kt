@@ -48,6 +48,8 @@ object Nav {
     val canGoBack get() = player == null && stack.size > 1
     var player by mutableStateOf<PlayerController?>(null)
     var window: WindowState? = null
+    /** The main window itself (the player's controls float in a window owned by it). */
+    var awtWindow: java.awt.Window? = null
     private var placementBeforePlayer: WindowPlacement? = null
 
     fun push(r: Route) { stack.add(r) }

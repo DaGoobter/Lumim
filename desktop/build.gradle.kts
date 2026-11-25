@@ -38,7 +38,7 @@ compose.desktop {
         jvmArgs += listOf("-Dsun.java2d.uiScale.enabled=true")
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Exe)
-            // VLC, fetched by the build, ships inside the app (appres/windows/vlc).
+            // libmpv (video) and VLC (music), fetched by the build, ship inside the app (appres/windows/mpv and /vlc).
             appResourcesRootDir.set(project.layout.projectDirectory.dir("appres"))
             packageName = "Huefin"
             packageVersion = appVersion

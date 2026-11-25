@@ -29,7 +29,7 @@ jobs:
         with:
           gradle-version: "8.11.1"
 
-      - name: Fetch VLC (the playback engine shipped inside Huefin)
+      - name: Fetch VLC (music and the DJ voice)
         run: |
           curl -L --fail -o vlc.zip https://get.videolan.org/vlc/3.0.21/win64/vlc-3.0.21-win64.zip
           unzip -q vlc.zip -d vlc-src
@@ -40,6 +40,18 @@ jobs:
           # Not needed for playback: VLC's own windows, skins, visualizers and scripts.
           rm -rf appres/windows/vlc/plugins/{gui,visualization,video_splitter,lua,control,services_discovery,stream_out,video_filter/libpuzzle*}
           du -sh appres/windows/vlc
+
+      - name: Fetch libmpv (the Huefin Engine for video)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p mpv-src appres/windows/mpv
+          gh release download -R zhongfly/mpv-winbuild --pattern 'mpv-dev-x86_64-2*.7z' -D mpv-src \
+            || gh release download -R shinchiro/mpv-winbuild-cmake --pattern 'mpv-dev-x86_64-2*.7z' -D mpv-src
+          ls -la mpv-src
+          7z x -y -ompv-src/x "$(ls mpv-src/*.7z | head -1)" > /dev/null
+          cp "$(find mpv-src/x -name 'libmpv-2.dll' | head -1)" appres/windows/mpv/
+          du -sh appres/windows/mpv
 
       - name: Build installer
         run: gradle packageMsi packageExe --stacktrace --console=plain

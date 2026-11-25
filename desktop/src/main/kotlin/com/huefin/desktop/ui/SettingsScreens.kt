@@ -118,6 +118,11 @@ fun SettingsScreen(nav: NavHostController) {
             }
         }
         item {
+            FormSection("Huefin Engine", "HDR10, HDR10+, HLG and Dolby Vision show as real HDR when Windows HDR is on (Settings → System → Display → Use HDR), and are tone-mapped properly when it's off. Dolby Vision is reshaped from its own metadata, so Profile 5 shows its true colours.") {
+                FormToggle("Send Dolby and DTS untouched to my receiver", Prefs.bool(Prefs.Keys.passthrough)) { set(Prefs.Keys.passthrough, it) }
+            }
+        }
+        item {
             FormSection("Skipping", "Auto-skip shows a \"Watch it\" button during the wait so you can keep an intro you like. Needs intro/credits markers on the server (Intro Skipper plugin).") {
                 FormToggle("Skip intros automatically", Prefs.autoSkipIntro) { set(Prefs.Keys.autoIntro, it) }; FormDivider()
                 FormToggle("Skip recaps automatically", Prefs.autoSkipRecap) { set(Prefs.Keys.autoRecap, it) }; FormDivider()

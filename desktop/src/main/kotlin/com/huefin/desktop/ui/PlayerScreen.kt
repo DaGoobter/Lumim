@@ -41,36 +41,84 @@ import java.awt.Cursor
 
 private fun clock(ms: Long): String { val s = ms / 1000; return if (s >= 3600) "%d:%02d:%02d".format(s / 3600, s / 60 % 60, s % 60) else "%d:%02d".format(s / 60, s % 60) }
 
-/** Full-window player: the picture, and controls that fade away while you watch. */
-@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+/**
+ * Full-window player. The picture is a native window the Huefin Engine draws into with Direct3D 11 (that's what lets
+ * HDR reach the screen). Compose can't paint over a native window, so the controls live in a see-through window
+ * that sits exactly on top of it and follows the main window around.
+ */
 @Composable
 fun PlayerScreen(p: PlayerController) {
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
+        androidx.compose.ui.awt.SwingPanel(background = Color.Black, modifier = Modifier.fillMaxSize(),
+            factory = { VideoHost { p.attachWindow(it) } })
+    }
+    Nav.awtWindow?.let { owner -> OverlayWindow(owner) { PlayerControls(p) } }
+}
+
+/** The native window mpv draws into. */
+private class VideoHost(private val onHandle: (Long) -> Unit) : java.awt.Canvas() {
+    init { background = java.awt.Color.BLACK }
+    override fun addNotify() {
+        super.addNotify()
+        runCatching { onHandle(com.sun.jna.Native.getComponentID(this)) }
+    }
+}
+
+/** A borderless, see-through window kept exactly over the main window's content, for the player controls. */
+@Composable
+private fun OverlayWindow(owner: java.awt.Window, content: @Composable () -> Unit) {
+    val latest by rememberUpdatedState(content)
+    DisposableEffect(owner) {
+        val d = androidx.compose.ui.awt.ComposeDialog(owner, java.awt.Dialog.ModalityType.MODELESS)
+        d.isUndecorated = true
+        d.isTransparent = true
+        d.isResizable = false
+        d.title = "Huefin"
+        d.setContent(onPreviewKeyEvent = { e ->
+            e.type == androidx.compose.ui.input.key.KeyEventType.KeyDown && Nav.playerKey(e.key)
+        }) {
+            HuefinTheme { CompositionLocalProvider(LocalWidthClass provides WidthClass.Expanded) { latest() } }
+        }
+        val pane = (owner as? javax.swing.RootPaneContainer)?.contentPane
+        fun sync() {
+            val c: java.awt.Component = pane ?: owner
+            if (!c.isShowing) return
+            val at = c.locationOnScreen
+            val r = java.awt.Rectangle(at.x, at.y, c.width, c.height)
+            if (d.bounds != r) d.bounds = r
+        }
+        val follow = object : java.awt.event.ComponentAdapter() {
+            override fun componentMoved(e: java.awt.event.ComponentEvent?) = sync()
+            override fun componentResized(e: java.awt.event.ComponentEvent?) = sync()
+        }
+        owner.addComponentListener(follow); pane?.addComponentListener(follow)
+        val timer = javax.swing.Timer(300) { sync() }.apply { start() }
+        sync()
+        d.isVisible = true
+        d.toFront()
+        onDispose {
+            timer.stop(); owner.removeComponentListener(follow); pane?.removeComponentListener(follow)
+            d.isVisible = false; d.dispose()
+        }
+    }
+}
+
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+@Composable
+private fun PlayerControls(p: PlayerController) {
     var lastMove by remember { mutableStateOf(System.currentTimeMillis()) }
     var now by remember { mutableStateOf(System.currentTimeMillis()) }
     var menuOpen by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { while (true) { delay(300); now = System.currentTimeMillis() } }
     val show = !p.playing || menuOpen || now - lastMove < 3000 || p.loading
     val hidden = Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR)
-    Box(Modifier.fillMaxSize().background(Color.Black)
+    // Almost-clear (not fully clear) so Windows still sends the mouse here rather than to the video underneath.
+    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.004f))
         .onPointerEvent(PointerEventType.Move) { lastMove = System.currentTimeMillis() }
         .pointerHoverIcon(if (show) PointerIcon.Default else PointerIcon(java.awt.Toolkit.getDefaultToolkit().createCustomCursor(
             java.awt.image.BufferedImage(1, 1, java.awt.image.BufferedImage.TYPE_INT_ARGB), java.awt.Point(0, 0), "none")))
         .pointerInput(Unit) { detectTapGestures(onDoubleTap = { Nav.toggleFullscreen() }, onTap = { p.togglePlay(); lastMove = System.currentTimeMillis() }) }) {
-        // The picture.
-        val surface = p.surface
-        Canvas(Modifier.fillMaxSize()) {
-            surface.frame // redraw on every new frame
-            val img = surface.image ?: return@Canvas
-            synchronized(surface.lock) {
-                val iw = img.width.toFloat(); val ih = img.height.toFloat()
-                val scale = minOf(size.width / iw, size.height / ih)
-                val w = iw * scale; val h = ih * scale
-                drawImage(img, srcOffset = IntOffset.Zero, srcSize = IntSize(img.width, img.height),
-                    dstOffset = IntOffset(((size.width - w) / 2).toInt(), ((size.height - h) / 2).toInt()), dstSize = IntSize(w.toInt(), h.toInt()),
-                    filterQuality = FilterQuality.Medium)
-            }
-        }
-        if (p.surface.image == null && !p.loading && p.error == null && p.item.isAudio) {
+        if (p.item.isAudio && !p.loading && p.error == null) {
             RemoteImage(AppState.client?.albumArtURL(p.item, 800), Modifier.align(Alignment.Center).size(420.dp).clip(RoundedCornerShape(24.dp)))
         }
         if (p.loading && p.error == null) CircularProgressIndicator(Modifier.align(Alignment.Center).size(56.dp), color = Color.White)
@@ -113,7 +161,10 @@ fun PlayerScreen(p: PlayerController) {
                         Text(p.item.displayTitle, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                         (p.item.episodeLabel ?: p.item.artistLine)?.let { Text(it, color = Hue.secondaryText) }
                     }
-                    Text(p.method, style = MaterialTheme.typography.labelMedium, color = Hue.secondaryText, modifier = Modifier.padding(end = 12.dp))
+                    Column(Modifier.padding(end = 12.dp), horizontalAlignment = Alignment.End) {
+                        Text(p.method, style = MaterialTheme.typography.labelMedium, color = Hue.secondaryText)
+                        if (p.pictureInfo.isNotEmpty()) Text(p.pictureInfo, style = MaterialTheme.typography.labelSmall, color = Hue.secondaryText)
+                    }
                     TrackMenu(p) { menuOpen = it }
                     IconButton({ Nav.toggleFullscreen() }) { Icon(Icons.Filled.Fullscreen, "Full screen (F)") }
                 }

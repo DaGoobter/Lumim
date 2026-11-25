@@ -54,6 +54,7 @@ object Prefs {
         const val askWho = "prism.askWhoIsWatching"
         const val liveLayout = "prism.liveLayout"
         const val recentSearches = "prism.recentSearches"
+        const val passthrough = "huefin.audioPassthrough"
     }
     val autoSkipIntro get() = bool(Keys.autoIntro)
     val autoSkipRecap get() = bool(Keys.autoRecap)

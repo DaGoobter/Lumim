@@ -49,6 +49,7 @@ fun main() {
                 }
             }) {
             window.minimumSize = java.awt.Dimension(900, 600)
+            Nav.awtWindow = window
             LaunchedEffect(window) {
                 window.addWindowFocusListener(object : java.awt.event.WindowFocusListener {
                     override fun windowGainedFocus(e: java.awt.event.WindowEvent?) { Nav.focused = true }

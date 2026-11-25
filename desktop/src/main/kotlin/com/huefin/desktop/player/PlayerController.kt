@@ -8,6 +8,7 @@ import com.huefin.desktop.core.BaseItem
 import com.huefin.desktop.core.JellyfinClient
 import com.huefin.desktop.core.MediaSegment
 import com.huefin.desktop.core.Prefs
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -23,23 +24,30 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
-import uk.co.caprica.vlcj.media.MediaSlavePriority
-import uk.co.caprica.vlcj.media.MediaSlaveType
-import uk.co.caprica.vlcj.player.base.MediaPlayer
-import uk.co.caprica.vlcj.player.base.MediaPlayerEventAdapter
-import uk.co.caprica.vlcj.player.embedded.EmbeddedMediaPlayer
 
 data class TrackChoice(val id: Int, val label: String)
 /** A track as the shared track-preference code sees it. */
 data class Track(val id: String, val label: String, val selected: Boolean, val language: String? = null)
 
-/** Plays one item (and the next episodes) with VLC, reports progress to the server, skips intros and credits. */
+/**
+ * Plays one item (and the next episodes) in the Huefin Engine (mpv + libplacebo, drawing with Direct3D 11 into
+ * the player window), reports progress to the server, skips intros and credits.
+ *
+ * Picture: with Windows HDR on, HDR10 / HDR10+ / HLG go to the screen as real HDR; with it off they're tone-mapped
+ * properly. Dolby Vision is reshaped from its own metadata (true colours for Profile 5, the DV grade for 7 and 8).
+ */
 class PlayerController(start: BaseItem, private val startTicks: Long, val onClose: () -> Unit) {
     companion object { var active: PlayerController? = null }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val client: JellyfinClient? = AppState.client
-    val surface = VideoSurface()
-    private var mp: EmbeddedMediaPlayer? = null
+    private var mp: Mpv? = null
+    private val hwnd = CompletableDeferred<Long>()
+    /** The native window mpv draws into, from [com.huefin.desktop.ui.PlayerScreen]. */
+    fun attachWindow(handle: Long) { hwnd.complete(handle) }
+    private var pendingSubs = listOf<Triple<String, String, String>>()
+    private var restarted = false
+    /** How the picture is being drawn ("HDR10 → HDR (PQ) · hardware decode"). */
+    var pictureInfo by mutableStateOf(""); private set
 
     var item by mutableStateOf(start); private set
     var playing by mutableStateOf(false); private set
@@ -73,29 +81,68 @@ class PlayerController(start: BaseItem, private val startTicks: Long, val onClos
 
     fun start() {
         active = this
-        val f = Vlc.factory() ?: run { error = Vlc.loadError; loading = false; return }
-        val p = f.mediaPlayers().newEmbeddedMediaPlayer()
-        surface.attach(p, f)
-        p.events().addMediaPlayerEventListener(object : MediaPlayerEventAdapter() {
-            override fun playing(mediaPlayer: MediaPlayer) { scope.launch { playing = true; loading = false; refreshTracks() } }
-            override fun paused(mediaPlayer: MediaPlayer) { scope.launch { playing = false; report("Sessions/Playing/Progress", true) } }
-            override fun stopped(mediaPlayer: MediaPlayer) { scope.launch { playing = false } }
-            override fun buffering(mediaPlayer: MediaPlayer, newCache: Float) { scope.launch { loading = newCache < 100f && !playing } }
-            override fun lengthChanged(mediaPlayer: MediaPlayer, newLength: Long) { scope.launch { lengthMs = newLength } }
-            override fun elementaryStreamAdded(mediaPlayer: MediaPlayer, type: uk.co.caprica.vlcj.media.TrackType, id: Int) { scope.launch { refreshTracks() } }
-            override fun finished(mediaPlayer: MediaPlayer) { scope.launch { onFinished() } }
-            override fun error(mediaPlayer: MediaPlayer) { scope.launch { if (isLive) reload() else { error = "This couldn't be played."; loading = false } } }
-        })
-        mp = p
-        scope.launch { load(item, startTicks); SyncPlay.playerOpened(this@PlayerController) }
+        scope.launch {
+            val wid = hwnd.await()
+            val passthrough = Prefs.bool(Prefs.Keys.passthrough)
+            val p = Mpv.create(buildMap {
+                put("wid", wid.toString())
+                put("vo", "gpu-next"); put("gpu-api", "d3d11"); put("hwdec", "d3d11va"); put("hwdec-codecs", "all")
+                // HDR straight to the screen when Windows HDR is on; libplacebo tone-maps it otherwise.
+                put("target-colorspace-hint", "yes"); put("tone-mapping", "auto"); put("hdr-compute-peak", "auto"); put("gamut-mapping-mode", "auto")
+                put("keep-open", "no"); put("idle", "yes"); put("force-window", "yes")
+                put("input-default-bindings", "no"); put("input-vo-keyboard", "no"); put("input-cursor", "no"); put("input-cursor-passthrough", "yes")
+                put("cursor-autohide", "no"); put("osc", "no"); put("osd-level", "0"); put("terminal", "no"); put("msg-level", "all=warn")
+                put("cache", "yes"); put("demuxer-max-bytes", "300MiB"); put("demuxer-max-back-bytes", "100MiB"); put("demuxer-readahead-secs", "30")
+                put("network-timeout", "30"); put("user-agent", "Huefin for Windows"); put("ytdl", "no")
+                put("volume-max", "200"); put("audio-channels", "auto")
+                if (passthrough) { put("audio-spdif", "ac3,eac3,dts,dts-hd,truehd"); put("audio-exclusive", "yes") }
+                put("sub-ass-override", "no"); put("sub-scale-with-window", "yes"); put("sub-use-margins", "yes")
+            }) ?: run { error = MpvApi.loadError ?: "Couldn't start the Huefin Engine."; loading = false; return@launch }
+            p.onEvent = { id, reason, err -> scope.launch { onMpvEvent(id, reason, err) } }
+            mp = p
+            if (closed) { p.destroy(); return@launch }
+            load(item, startTicks); SyncPlay.playerOpened(this@PlayerController)
+        }
         ticker = scope.launch {
             while (isActive) {
-                mp?.let { positionMs = it.status().time().coerceAtLeast(0); if (lengthMs <= 0) lengthMs = it.status().length() }
+                mp?.let { m ->
+                    m.double("time-pos")?.let { positionMs = (it * 1000).toLong().coerceAtLeast(0) }
+                    m.double("duration")?.takeIf { it > 0 }?.let { lengthMs = (it * 1000).toLong() }
+                    val was = playing
+                    playing = restarted && !m.flag("pause") && !m.flag("core-idle")
+                    if (restarted) loading = m.flag("paused-for-cache") || m.flag("seeking") && !playing
+                    if (was && !playing) report("Sessions/Playing/Progress", true)
+                }
                 report("Sessions/Playing/Progress")
                 autoSkip(); upNext()
                 delay(250)
             }
         }
+    }
+
+    private fun onMpvEvent(id: Int, reason: Int, err: Int) {
+        val p = mp ?: return
+        when (id) {
+            MpvApi.EVENT_FILE_LOADED -> {
+                pendingSubs.forEach { (u, title, lang) -> p.command("sub-add", u, "auto", title, lang) }
+                pendingSubs = emptyList()
+            }
+            MpvApi.EVENT_PLAYBACK_RESTART -> {
+                restarted = true; loading = false; refreshTracks(); pictureInfo = describePicture(p)
+            }
+            MpvApi.EVENT_VIDEO_RECONFIG -> pictureInfo = describePicture(p)
+            MpvApi.EVENT_END_FILE -> when (reason) {
+                MpvApi.END_EOF -> onFinished()
+                MpvApi.END_ERROR -> if (isLive) scope.launch { reload() } else { error = "This couldn't be played (${p.errorText(err)})."; loading = false }
+            }
+        }
+    }
+
+    private fun describePicture(m: Mpv): String {
+        val src = when (m.string("video-params/gamma")) { "pq" -> "HDR10"; "hlg" -> "HLG"; null -> return ""; else -> "SDR" }
+        val dst = when (m.string("video-target-params/gamma")) { "pq" -> "HDR"; "hlg" -> "HDR (HLG)"; else -> "SDR" }
+        val hw = if ((m.string("hwdec-current") ?: "no") == "no") "software decode" else "hardware decode"
+        return "$src → $dst${if (src != "SDR" && dst == "SDR") " (tone mapped)" else ""} · $hw"
     }
 
     private fun profile(): JsonObject = buildJsonObject {
@@ -122,13 +169,22 @@ class PlayerController(start: BaseItem, private val startTicks: Long, val onClos
         putJsonObject("DirectPlayOptions") {}
     }
 
-    private suspend fun load(target: BaseItem, ticks: Long) {
+    private fun open(url: String, ticks: Long) {
         val p = mp ?: return
+        restarted = false
+        p.set("start", if (ticks > 0) "%.3f".format(java.util.Locale.US, ticks / 10_000_000.0) else "none")
+        p.command("loadfile", url, "replace")
+        p.set("pause", "no")
+    }
+
+    private suspend fun load(target: BaseItem, ticks: Long) {
+        if (mp == null) return
         loading = true; error = null; reportedStart = false; upNextDismissed = false; upNextIn = null; skipped.clear(); tracksApplied = false
+        pictureInfo = ""
         com.huefin.desktop.downloads.DownloadManager.localFile(target.id)?.let { f ->
             method = "Downloaded (offline)"; item = target; mediaSourceId = null; playSessionId = null; liveStreamId = null
-            val opts = if (ticks > 0) arrayOf(":start-time=${ticks / 10_000_000.0}") else emptyArray()
-            p.media().play(f.absolutePath, *opts)
+            pendingSubs = emptyList()
+            open(f.absolutePath, ticks)
             lengthMs = (target.runTimeTicks ?: 0) / 10_000
             client?.let { c -> runCatching { segments = c.mediaSegments(target.id); nextEpisode = if (target.type == "Episode") c.episodeAfter(target) else null } }
             return
@@ -145,33 +201,47 @@ class PlayerController(start: BaseItem, private val startTicks: Long, val onClos
             src.supportsDirectPlay == true || src.transcodingUrl == null -> { method = "Original file (Huefin Engine)"; c.directPlayURL(target.id, src.id, src.container) }
             else -> { method = "Server converts (your quality limit)"; c.absoluteURL(src.transcodingUrl) }
         }
-        val opts = mutableListOf<String>()
-        if (ticks > 0 && !target.isLiveChannel) opts += ":start-time=${ticks / 10_000_000.0}"
-        opts += ":http-user-agent=Huefin for Windows"
-        p.media().play(url, *opts.toTypedArray())
         // Subtitle files kept next to the video on the server.
-        src.mediaStreams.orEmpty().filter { it.type == "Subtitle" && it.isExternal == true && it.index != null }.forEach { s ->
+        pendingSubs = src.mediaStreams.orEmpty().filter { it.type == "Subtitle" && it.isExternal == true && it.index != null }.map { s ->
             val ext = when ((s.codec ?: "").lowercase()) { "ass", "ssa" -> "ass"; "vtt", "webvtt" -> "vtt"; else -> "srt" }
-            p.media().slaves().add(MediaSlaveType.SUBTITLE, MediaSlavePriority.HIGHEST,
-                c.url("Videos/${target.id}/${src.id}/Subtitles/${s.index}/0/Stream.$ext", mapOf("api_key" to c.accessToken)))
+            Triple(c.url("Videos/${target.id}/${src.id}/Subtitles/${s.index}/0/Stream.$ext", mapOf("api_key" to c.accessToken)),
+                s.displayTitle ?: s.title ?: s.language ?: "Subtitles", s.language ?: "")
         }
+        open(url, if (target.isLiveChannel) 0 else ticks)
         item = target
-        positionMs = 0; lengthMs = (target.runTimeTicks ?: 0) / 10_000
+        positionMs = ticks / 10_000; lengthMs = (target.runTimeTicks ?: 0) / 10_000
         segments = if (target.isLiveChannel) emptyList() else c.mediaSegments(target.id)
         nextEpisode = if (target.type == "Episode") c.episodeAfter(target) else null
     }
 
+    private fun tracks(m: Mpv, type: String): List<Pair<TrackChoice, Boolean>> {
+        val n = (m.long("track-list/count") ?: 0).toInt()
+        return (0 until n).mapNotNull { i ->
+            if (m.string("track-list/$i/type") != type) return@mapNotNull null
+            val id = m.long("track-list/$i/id")?.toInt() ?: return@mapNotNull null
+            val lang = m.string("track-list/$i/lang")?.let { l -> java.util.Locale.forLanguageTag(l).displayLanguage.ifBlank { l } }
+            val ch = if (type == "audio") m.long("track-list/$i/demux-channel-count")?.takeIf { it > 0 }?.let {
+                when (it.toInt()) { 1 -> "Mono"; 2 -> "Stereo"; 6 -> "5.1"; 8 -> "7.1"; else -> "${it}ch" } } else null
+            val codec = m.string("track-list/$i/codec")?.uppercase()?.replace("PGSSUB", "PGS")?.replace("SUBRIP", "SRT")
+            val forced = if (m.flag("track-list/$i/forced")) "Forced" else null
+            val label = listOfNotNull(m.string("track-list/$i/title"), lang, codec, ch, forced).distinct().joinToString(" · ")
+                .ifEmpty { if (type == "audio") "Track $id" else "Subtitles $id" }
+            TrackChoice(id, label) to m.flag("track-list/$i/selected")
+        }
+    }
+
     private fun refreshTracks() {
         val p = mp ?: return
-        audioTracks = p.audio().trackDescriptions().filter { it.id() >= 0 }.map { TrackChoice(it.id(), it.description()) }
-        subtitleTracks = p.subpictures().trackDescriptions().filter { it.id() >= 0 }.map { TrackChoice(it.id(), it.description()) }
-        audioTrack = p.audio().track(); subtitleTrack = p.subpictures().track()
-        if (!tracksApplied && audioTracks.isNotEmpty() && playing) {
+        val a = tracks(p, "audio"); val s = tracks(p, "sub")
+        audioTracks = a.map { it.first }; subtitleTracks = s.map { it.first }
+        audioTrack = a.firstOrNull { it.second }?.first?.id ?: -1
+        subtitleTrack = s.firstOrNull { it.second }?.first?.id ?: -1
+        if (!tracksApplied && audioTracks.isNotEmpty()) {
             tracksApplied = true
-            val (a, sub) = com.huefin.desktop.core.TrackPrefs.choose(
+            val (au, sub) = com.huefin.desktop.core.TrackPrefs.choose(
                 audioTracks.map { Track(it.id.toString(), it.label, it.id == audioTrack) },
                 subtitleTracks.map { Track(it.id.toString(), it.label, it.id == subtitleTrack) })
-            a?.toIntOrNull()?.let { selectAudio(it) }
+            au?.toIntOrNull()?.let { selectAudio(it) }
             selectSubtitle(sub?.toIntOrNull() ?: -1)
         }
     }
@@ -235,27 +305,28 @@ class PlayerController(start: BaseItem, private val startTicks: Long, val onClos
 
     fun togglePlay() {
         if (SyncPlay.controls(this)) { scope.launch { SyncPlay.request(if (playing) SyncPlay.Req.Pause else SyncPlay.Req.Unpause) }; return }
-        mp?.controls()?.pause()
+        mp?.set("pause", if (playing) "yes" else "no"); playing = !playing
     }
+    private fun seekMpv(ms: Long) { mp?.command("seek", "%.3f".format(java.util.Locale.US, ms / 1000.0), "absolute") }
     fun seekTo(ms: Long) {
         if (isLive) return
         val t = ms.coerceIn(0, (lengthMs - 1000).coerceAtLeast(0))
         if (SyncPlay.controls(this)) { scope.launch { SyncPlay.request(SyncPlay.Req.Seek(t * 10_000)) }; return }
-        mp?.controls()?.setTime(t)
+        positionMs = t; seekMpv(t)
     }
 
     // Watch Together hooks (the group's server tells every player what to do).
-    fun syncPlay() { mp?.controls()?.play() }
-    fun syncPause() { mp?.controls()?.setPause(true) }
-    fun syncSeek(ticks: Long) { positionMs = ticks / 10_000; mp?.controls()?.setTime(ticks / 10_000) }
+    fun syncPlay() { mp?.set("pause", "no") }
+    fun syncPause() { mp?.set("pause", "yes") }
+    fun syncSeek(ticks: Long) { positionMs = ticks / 10_000; seekMpv(ticks / 10_000) }
     fun disableAutoNext() = dismissUpNext()
     suspend fun waitUntilReady() { repeat(225) { if (!loading || closed) return; delay(200) } }
     suspend fun switchItem(next: BaseItem, startTicks: Long) { if (!closed) { report("Sessions/Playing/Stopped", true); load(next, startTicks) } }
     fun seekBy(sec: Int) = seekTo(positionMs + sec * 1000L)
-    fun changeVolume(v: Int) { volume = v.coerceIn(0, 200); mp?.audio()?.setVolume(volume) }
-    fun toggleMute() { muted = !muted; mp?.audio()?.isMute = muted }
-    fun selectAudio(id: Int) { mp?.audio()?.setTrack(id); audioTrack = id }
-    fun selectSubtitle(id: Int) { mp?.subpictures()?.setTrack(id); subtitleTrack = id }
+    fun changeVolume(v: Int) { volume = v.coerceIn(0, 200); mp?.set("volume", volume.toString()) }
+    fun toggleMute() { muted = !muted; mp?.set("mute", if (muted) "yes" else "no") }
+    fun selectAudio(id: Int) { mp?.set("aid", id.toString()); audioTrack = id }
+    fun selectSubtitle(id: Int) { mp?.set("sid", if (id < 0) "no" else id.toString()); subtitleTrack = id }
 
     fun close() {
         if (closed) return
@@ -266,7 +337,8 @@ class PlayerController(start: BaseItem, private val startTicks: Long, val onClos
         ticker?.cancel()
         val p = mp; mp = null
         val c = client; val ps = playSessionId; val live = liveStreamId
-        Thread { runCatching { p?.controls()?.stop(); p?.release() } }.start()
+        if (!hwnd.isCompleted) hwnd.cancel()
+        p?.destroy()
         AppState.scope.launch { ps?.let { c?.stopEncoding(it) }; live?.let { c?.closeLiveStream(it) } }
         scope.cancel()
         onClose()
