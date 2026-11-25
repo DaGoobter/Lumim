@@ -250,10 +250,19 @@ struct EnginePlayerScreen: View {
     @State private var scrubbing = false
     @State private var scrubValue: Double = 0
     @State private var fill = false
+    // Picture in Picture: Apple's player warms up silently behind the engine, then takes over without a gap.
+    @State private var standby: PlayerModel?
+    @State private var standbyHandle = VideoSurfaceHandle()
+    @State private var poppingOut = false
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
+            if let standby {
+                VideoSurface(player: standby.player, zoom: 1, handle: standbyHandle)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+            }
             if let model {
                 EngineVideoSurface(player: model.player)
                     .scaleEffect(fill ? 1.33 : 1)
@@ -286,6 +295,21 @@ struct EnginePlayerScreen: View {
                     }}
                     .padding(.trailing, 24).padding(.bottom, controlsVisible ? 120 : 40)
                 }
+                if poppingOut {
+                    VStack {
+                        HStack(spacing: 10) {
+                            ProgressView().tint(.white)
+                            Text("Getting Picture in Picture ready…").font(.footnote.weight(.semibold))
+                        }
+                        .padding(.horizontal, 16).padding(.vertical, 11)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .environment(\.colorScheme, .dark)
+                        .padding(.top, 70)
+                        Spacer()
+                    }
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+                }
                 controls(model)
                     .opacity(controlsVisible || !model.isPlaying ? 1 : 0)
                     .allowsHitTesting(controlsVisible || !model.isPlaying)
@@ -301,7 +325,14 @@ struct EnginePlayerScreen: View {
             await m.start()
             scheduleHide()
         }
-        .onDisappear { Task { await model?.stop() } }
+        .onDisappear {
+            Task { await model?.stop() }
+            // A warm-up that never made it into Picture in Picture shouldn't keep playing.
+            if let standby, !PiPSession.shared.owns(standby) {
+                PiPSession.shared.unregister(standby)
+                Task { await standby.stop() }
+            }
+        }
     }
 
     private func controls(_ m: EnginePlayerModel) -> some View {
@@ -406,17 +437,47 @@ struct EnginePlayerScreen: View {
         }
     }
 
-    /// The Huefin Engine can't float in a little window, so hand the video to Apple's player (which can)
-    /// at the same spot, and pop it out as soon as it's ready.
+    /// The Huefin Engine can't float in a little window itself. So Apple's player (which can) quietly loads the same
+    /// video behind it, muted. Once it's playing at the same moment, the sound switches over and the picture
+    /// shrinks into the corner, with no black screen or reload in between.
     private func popOut(_ m: EnginePlayerModel) {
-        let item = m.item
-        let ticks = Int64(max(0, m.currentTime) * 10_000_000)
+        guard !poppingOut, standby == nil else { return }
+        withAnimation { poppingOut = true }
+        controlsVisible = false
+        let req = PlaybackRequest(item: m.item, startTicks: Int64(max(0, m.currentTime) * 10_000_000),
+                                  mediaSourceId: request.mediaSourceId, forceApple: true)
+        let s = PlayerModel(request: req, client: app.client, maxBitrate: app.maxBitrate, prefs: app.trackPrefs)
+        s.player.isMuted = true
+        standby = s
         Task {
-            await m.stop()
-            dismiss()
-            try? await Task.sleep(for: .milliseconds(700))
-            AppRouter.shared.playRequest = PlaybackRequest(item: item, startTicks: ticks, forceApple: true, startPiP: true)
+            await s.start()
+            s.player.isMuted = true
+            var ready = false
+            for _ in 0..<80 {   // up to 20 seconds for the server to get it going
+                if s.isPlaying, !s.isLoading, let pip = standbyHandle.pip, pip.isPictureInPicturePossible { ready = true; break }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            guard ready else { await giveUp(s); return }
+            // Line the two up exactly, then swap the sound and float.
+            _ = await s.player.seek(to: CMTime(seconds: m.currentTime, preferredTimescale: 600),
+                                    toleranceBefore: .zero, toleranceAfter: .zero)
+            m.player.pause()
+            s.player.isMuted = false
+            PiPSession.shared.register(model: s, request: req, handle: standbyHandle, dismiss: { dismiss() })
+            standbyHandle.pip?.startPictureInPicture()
+            try? await Task.sleep(for: .seconds(2))
+            if !PiPSession.shared.isFloating {   // iOS said no: carry on in the engine as if nothing happened
+                m.player.play()
+                await giveUp(s)
+            }
         }
+    }
+
+    private func giveUp(_ s: PlayerModel) async {
+        PiPSession.shared.unregister(s)
+        await s.stop()
+        standby = nil
+        withAnimation { poppingOut = false }
     }
 }
 #endif // os(iOS)
