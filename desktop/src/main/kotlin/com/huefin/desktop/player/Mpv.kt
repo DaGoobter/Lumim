@@ -65,6 +65,7 @@ interface MpvApi : Library {
 class Mpv private constructor(private val api: MpvApi, private val h: Pointer) {
     private val lock = ReentrantReadWriteLock()
     @Volatile private var alive = true
+    private val gone = java.util.concurrent.CountDownLatch(1)
     /** (event id, end-file reason or -1, mpv error code). Called on mpv's thread. */
     var onEvent: (Int, Int, Int) -> Unit = { _, _, _ -> }
 
@@ -90,6 +91,7 @@ class Mpv private constructor(private val api: MpvApi, private val h: Pointer) {
                 runCatching { onEvent(id, reason, err) }
             }
             lock.write { alive = false; api.mpv_terminate_destroy(h) }
+            gone.countDown()
         }, "huefin-mpv-events").apply { isDaemon = true; start() }
     }
 
@@ -114,6 +116,13 @@ class Mpv private constructor(private val api: MpvApi, private val h: Pointer) {
     }
     fun errorText(code: Int): String = runCatching { api.mpv_error_string(code) }.getOrDefault("error $code")
 
-    /** Asks mpv to quit; its event thread finishes the shutdown. */
-    fun destroy() { if (alive) command("quit") }
+    /**
+     * Asks mpv to quit and waits (briefly) until it has, so its video window is gone before the window it lives
+     * in closes. Its event thread does the actual shutdown.
+     */
+    fun destroy() {
+        if (!alive) return
+        command("quit")
+        gone.await(2, java.util.concurrent.TimeUnit.SECONDS)
+    }
 }
