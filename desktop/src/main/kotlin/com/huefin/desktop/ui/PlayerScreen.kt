@@ -30,6 +30,11 @@ import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.key
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -74,10 +79,14 @@ private fun OverlayWindow(owner: java.awt.Window, content: @Composable () -> Uni
         d.isTransparent = true
         d.isResizable = false
         d.title = "Huefin"
-        d.setContent(onPreviewKeyEvent = { e ->
-            e.type == androidx.compose.ui.input.key.KeyEventType.KeyDown && Nav.playerKey(e.key)
-        }) {
-            HuefinTheme { CompositionLocalProvider(LocalWidthClass provides WidthClass.Expanded) { latest() } }
+        d.setContent {
+            HuefinTheme { CompositionLocalProvider(LocalWidthClass provides WidthClass.Expanded) {
+                // The player's keyboard shortcuts work while this window has focus, same as in the main window.
+                val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+                Box(Modifier.fillMaxSize().focusRequester(focus).focusable()
+                    .onPreviewKeyEvent { e -> e.type == androidx.compose.ui.input.key.KeyEventType.KeyDown && Nav.playerKey(e.key) }) { latest() }
+                LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+            } }
         }
         val pane = (owner as? javax.swing.RootPaneContainer)?.contentPane
         fun sync() {

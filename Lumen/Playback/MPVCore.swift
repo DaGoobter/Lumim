@@ -98,7 +98,11 @@ final class MPVCore {
         for (k, v) in options { mpv_set_option_string(h, k, v) }
         // Let mpv use every speaker the TV, receiver or headphones offer (5.1 / 7.1 and spatial audio).
         let session = AVAudioSession.sharedInstance()
+        #if os(iOS)
         try? session.setCategory(.playback, mode: .moviePlayback, policy: .longFormVideo)
+        #else
+        try? session.setCategory(.playback, mode: .moviePlayback)
+        #endif
         if #available(iOS 15.0, tvOS 15.0, *) { try? session.setSupportsMultichannelContent(true) }
         try? session.setActive(true)
         try? session.setPreferredOutputNumberOfChannels(session.maximumOutputNumberOfChannels)

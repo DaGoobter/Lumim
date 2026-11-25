@@ -21,6 +21,8 @@ struct Playability: Equatable {
     enum Kind: Equatable { case original, repackaged, prismEngine, converted, unknown }
     let kind: Kind
     let detail: String
+    /// The server's reasons it couldn't send the original.
+    var reasons: [String] = []
 
     var title: String {
         switch kind {
@@ -94,7 +96,8 @@ enum EngineDecider {
         let names = Array(Set(why.map(friendly))).sorted().joined(separator: ", ")
         if !why.isEmpty, why.allSatisfy({ engineFixable.contains($0) }), PlaybackEngine.current != .apple {
             return Playability(kind: .prismEngine,
-                               detail: "Apple's player can't handle the \(names), so Huefin plays it with its own engine instead of making the server convert it.")
+                               detail: "Apple's player can't handle the \(names), so Huefin plays it with its own engine instead of making the server convert it.",
+                               reasons: why)
         }
         return Playability(kind: .converted, detail: names.isEmpty ? "The server converts it for this device." : "Because of the \(names).")
     }
@@ -110,9 +113,16 @@ enum EngineDecider {
         guard let client else { return false }
         if mode == .prism { return true }
         #if os(iOS)
-        // iPhone/iPad: Apple's player for everything on Automatic, so swiping home always floats the video
-        // in Picture in Picture. The server repackages or converts what Apple can't open directly.
-        return false
+        // iPhone/iPad: Apple's player on Automatic, so swiping home floats the video in Picture in Picture; the
+        // server repackages what Apple can't open directly. The one exception: when the server would have to
+        // re-encode the *picture* (Dolby Vision Profile 7, an HDR type or codec Apple can't decode), which would
+        // lose HDR / Dolby Vision. Those play in the Huefin Engine so they look as intended.
+        let p = await playability(for: request.item, client: client, maxBitrate: maxBitrate,
+                                  mediaSourceId: request.mediaSourceId)
+        let picture: Set<String> = ["VideoRangeTypeNotSupported", "VideoCodecNotSupported", "VideoCodecTagNotSupported",
+                                    "VideoProfileNotSupported", "VideoLevelNotSupported", "VideoBitDepthNotSupported",
+                                    "VideoResolutionNotSupported", "UnknownVideoStreamInfo", "InterlacedVideoNotSupported"]
+        return p.kind == .prismEngine && !picture.isDisjoint(with: p.reasons)
         #else
         let p = await playability(for: request.item, client: client, maxBitrate: maxBitrate,
                                   mediaSourceId: request.mediaSourceId)
