@@ -45,6 +45,26 @@ interface Backend {
     val detail: String get() = ""
 }
 
+/**
+ * Android's renderers plus the FFmpeg audio decoder (used after Android's own decoders, for what they can't play).
+ * Added by hand rather than through Media3's automatic loading, which treats any problem with it as fatal: here a
+ * problem just leaves it out (and is reported), and Android's player carries on without it.
+ */
+@OptIn(UnstableApi::class)
+private class SafeRenderersFactory(context: Context) : androidx.media3.exoplayer.DefaultRenderersFactory(context) {
+    override fun buildAudioRenderers(
+        context: Context, extensionRendererMode: Int, mediaCodecSelector: androidx.media3.exoplayer.mediacodec.MediaCodecSelector,
+        enableDecoderFallback: Boolean, audioSink: androidx.media3.exoplayer.audio.AudioSink, eventHandler: android.os.Handler,
+        eventListener: androidx.media3.exoplayer.audio.AudioRendererEventListener, out: ArrayList<androidx.media3.exoplayer.Renderer>,
+    ) {
+        super.buildAudioRenderers(context, EXTENSION_RENDERER_MODE_OFF, mediaCodecSelector, enableDecoderFallback, audioSink, eventHandler, eventListener, out)
+        runCatching { out.add(androidx.media3.decoder.ffmpeg.FfmpegAudioRenderer(eventHandler, eventListener, audioSink)) }
+            .onFailure { com.huefin.app.core.CrashReport.note("FFmpeg audio couldn't load; TrueHD/DTS will use the Huefin Engine.", it) }
+    }
+    /** Whether FFmpeg's decoders actually loaded on this phone. */
+    companion object { val ffmpegReady: Boolean get() = runCatching { androidx.media3.decoder.ffmpeg.FfmpegLibrary.isAvailable() }.getOrDefault(false) }
+}
+
 /** Android's player (Media3 ExoPlayer). */
 @OptIn(UnstableApi::class)
 class ExoBackend(context: Context) : Backend {
@@ -52,7 +72,9 @@ class ExoBackend(context: Context) : Backend {
     override var onEnded: () -> Unit = {}
     override var onError: (String) -> Unit = {}
     override var onReady: () -> Unit = {}
-    val exo: ExoPlayer = ExoPlayer.Builder(context, androidx.media3.exoplayer.DefaultRenderersFactory(context).setEnableDecoderFallback(true))
+    // FFmpeg (Jellyfin's build of Media3's decoder) adds TrueHD, DTS and other audio Android can't decode, so Dolby
+    // Vision and HDR files with that audio still play in Android's own player, in true DV/HDR.
+    val exo: ExoPlayer = ExoPlayer.Builder(context, SafeRenderersFactory(context).setEnableDecoderFallback(true))
         .setMediaSourceFactory(DefaultMediaSourceFactory(OkHttpDataSource.Factory(JellyfinClient.http)))
         .setSeekBackIncrementMs(10_000).setSeekForwardIncrementMs(10_000)
         .build().apply {
@@ -118,3 +140,6 @@ class ExoBackend(context: Context) : Backend {
     }
     override fun release() { playerView?.player = null; exo.release() }
 }
+
+/** Whether FFmpeg's audio decoders loaded on this phone (decides what the server is told Android's player can play). */
+fun ffmpegAudioReady(): Boolean = SafeRenderersFactory.ffmpegReady

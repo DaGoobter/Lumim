@@ -67,11 +67,14 @@ object DeviceProfile {
             if (c.vp9) add("vp9")
             if (c.av1) add("av1")
         }.joinToString(",")
-        // What Android decodes itself. DTS and TrueHD go to the Huefin Engine instead of the server.
+        // What Android's player decodes. With FFmpeg loaded that includes Dolby (AC-3, E-AC-3, TrueHD) and DTS
+        // (or they go untouched to a receiver that can decode them); without it, those go to the Huefin Engine.
+        val ffmpeg = com.huefin.app.playback.ffmpegAudioReady()
         val audio = buildList {
             addAll(listOf("aac", "mp3", "mp2", "opus", "vorbis", "flac", "alac", "pcm_s16le", "pcm_s24le"))
-            if (c.ac3) add("ac3")
-            if (c.eac3) add("eac3")
+            if (c.ac3 || ffmpeg) add("ac3")
+            if (c.eac3 || ffmpeg) add("eac3")
+            if (ffmpeg) addAll(listOf("truehd", "mlp", "dts", "dca"))
         }.joinToString(",")
 
         val ranges = buildList {
@@ -142,7 +145,7 @@ object DeviceProfile {
             "HEVC decoder" to yes(c.hevc),
             "AV1 decoder" to yes(c.av1),
             "Dolby Digital" to yes(c.ac3 || c.eac3),
-            "DTS / TrueHD" to "Huefin Engine",
+            "DTS / TrueHD" to (if (com.huefin.app.playback.ffmpegAudioReady()) "Yes (Huefin's FFmpeg, or untouched to your receiver)" else "Huefin Engine"),
         )
     }
 }
