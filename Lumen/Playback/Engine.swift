@@ -23,6 +23,8 @@ struct Playability: Equatable {
     let detail: String
     /// The server's reasons it couldn't send the original.
     var reasons: [String] = []
+    /// The Huefin Engine's native core can play this file itself (real Dolby Vision, Atmos, PiP, no server work).
+    var nativeOK = false
 
     var title: String {
         switch kind {
@@ -86,18 +88,25 @@ enum EngineDecider {
               let src = info.mediaSources.first(where: { $0.id == mediaSourceId }) ?? info.mediaSources.first
         else { return Playability(kind: .unknown, detail: "") }
         if let sid = info.playSessionId { Task { await client.stopEncoding(playSessionId: sid) } }
+        var native = false
+        #if canImport(Libavformat) && canImport(Libavcodec) && canImport(Libswresample)
+        native = NativeCore.canPlay(src) && PlaybackEngine.current != .apple
+        #endif
         if src.supportsDirectPlay == true {
             return Playability(kind: .original, detail: "Streams the file untouched.")
         }
         let why = reasons(src)
         if src.supportsDirectStream == true {
+            if native {
+                return Playability(kind: .prismEngine, detail: "Huefin plays the original file itself, in true Dolby Vision / HDR with the original sound, so the server doesn't repackage it.", nativeOK: true)
+            }
             return Playability(kind: .repackaged, detail: "Same picture and sound, just repackaged on the fly (light work for the server).")
         }
         let names = Array(Set(why.map(friendly))).sorted().joined(separator: ", ")
         if !why.isEmpty, why.allSatisfy({ engineFixable.contains($0) }), PlaybackEngine.current != .apple {
             return Playability(kind: .prismEngine,
                                detail: "Apple's player can't handle the \(names), so Huefin plays it with its own engine instead of making the server convert it.",
-                               reasons: why)
+                               reasons: why, nativeOK: native)
         }
         return Playability(kind: .converted, detail: names.isEmpty ? "The server converts it for this device." : "Because of the \(names).")
     }
@@ -122,7 +131,8 @@ enum EngineDecider {
         let picture: Set<String> = ["VideoRangeTypeNotSupported", "VideoCodecNotSupported", "VideoCodecTagNotSupported",
                                     "VideoProfileNotSupported", "VideoLevelNotSupported", "VideoBitDepthNotSupported",
                                     "VideoResolutionNotSupported", "UnknownVideoStreamInfo", "InterlacedVideoNotSupported"]
-        return p.kind == .prismEngine && !picture.isDisjoint(with: p.reasons)
+        // The native core plays the original itself with real Picture in Picture, so it can take everything it handles.
+        return p.kind == .prismEngine && (p.nativeOK || !picture.isDisjoint(with: p.reasons))
         #else
         let p = await playability(for: request.item, client: client, maxBitrate: maxBitrate,
                                   mediaSourceId: request.mediaSourceId)

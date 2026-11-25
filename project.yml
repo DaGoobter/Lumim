@@ -100,6 +100,8 @@ targets:
       - path: Lumen/Playback/PlaybackPrefs.swift
       - path: Lumen/Playback/EnginePlayer.swift
       - path: Lumen/Playback/MPVCore.swift
+      - path: Lumen/Playback/NativeCore.swift
+      - path: Lumen/Playback/EngineCore.swift
     dependencies:
       - package: MPVKit
         product: MPVKit

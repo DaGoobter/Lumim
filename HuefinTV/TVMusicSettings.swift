@@ -187,6 +187,7 @@ struct TVSettingsView: View {
     @AppStorage(PlaybackPrefs.keys.autoIntro) private var autoIntro = false
     @AppStorage(PlaybackPrefs.keys.autoCredits) private var autoCredits = false
     @AppStorage("prism.askWhoIsWatching") private var askWho = true
+    @AppStorage(EnginePrefs.nativeKey) private var nativeEngine = true
 
     var body: some View {
         @Bindable var app = app
@@ -226,6 +227,7 @@ struct TVSettingsView: View {
                 .onChange(of: app.maxBitrate) { _, _ in app.persistSettings() }
                 Toggle("Skip intros automatically", isOn: $autoIntro)
                 Toggle("Go straight to the next episode at the credits", isOn: $autoCredits)
+                Toggle("Native Dolby Vision engine (beta)", isOn: $nativeEngine)
             }
             Section("Connection") {
                 LabeledContent("Using", value: app.route == .local ? "Home network" : "Remote address")

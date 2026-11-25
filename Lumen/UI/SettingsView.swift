@@ -38,6 +38,7 @@ struct SettingsView: View {
     @State private var showSyncPlay = false
     @State private var canFamily = false
     @AppStorage(PlaybackPrefs.keys.engine) private var engine = PlaybackEngine.auto.rawValue
+    @AppStorage(EnginePrefs.nativeKey) private var nativeEngine = true
     @AppStorage(PlaybackPrefs.keys.autoIntro) private var autoIntro = false
     @AppStorage(PlaybackPrefs.keys.autoRecap) private var autoRecap = false
     @AppStorage(PlaybackPrefs.keys.autoCredits) private var autoCredits = false
@@ -298,10 +299,11 @@ struct SettingsView: View {
                 Picker("Player", selection: $engine) {
                     ForEach(PlaybackEngine.allCases) { Text($0.label).tag($0.rawValue) }
                 }
+                Toggle("Native Dolby Vision engine (beta)", isOn: $nativeEngine)
             } header: {
                 Text("Playback engine")
             } footer: {
-                Text("Automatic uses Apple's player whenever it can play the original (best for Dolby Vision, HDR, AirPlay and Picture in Picture). For files it can't, like many MKV, AVI, DTS or TrueHD files, Huefin switches to its own engine and plays the original instead of making your server convert it. Each title's page shows which will happen.")
+                Text("The native engine plays MKV and MP4 files itself through Apple's own video system: true Dolby Vision, Atmos and Picture in Picture, with nothing converted by the server. Anything it can't show as intended (like Dolby Vision Profile 7) plays in Huefin's mpv engine instead. Automatic uses Apple's player whenever it can play the original (best for Dolby Vision, HDR, AirPlay and Picture in Picture). For files it can't, like many MKV, AVI, DTS or TrueHD files, Huefin switches to its own engine and plays the original instead of making your server convert it. Each title's page shows which will happen.")
             }
 
             Section {

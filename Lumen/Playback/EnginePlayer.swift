@@ -3,11 +3,21 @@ import AVFoundation
 import AVKit
 #if canImport(Libmpv)
 
-/// The Huefin Engine (mpv, see MPVCore): plays MKV, AVI, DTS, TrueHD, PGS subtitles and other files that
-/// Apple's player can't, straight from the original file, with HDR and Dolby Vision shown as intended.
+/// The Huefin Engine: plays MKV, AVI, DTS, TrueHD, PGS subtitles and other files that Apple's player can't,
+/// straight from the original file, with HDR and Dolby Vision shown as intended.
+///
+/// It has two cores (see EngineCore): the native one (Apple's decoder and display: real Dolby Vision, Atmos,
+/// Picture in Picture) for the files it can show as intended, and mpv for everything else. If the native core
+/// can't show a file after all, mpv carries on from the same moment.
 @MainActor @Observable
 final class EnginePlayerModel {
-    @ObservationIgnored let player = MPVCore()
+    @ObservationIgnored private(set) var player: EngineCore
+    /// Changes whenever the core (and so the video view) is swapped.
+    private(set) var coreGeneration = 0
+    @ObservationIgnored var onCoreChange: (() -> Void)?
+    /// Subtitles drawn by the app (native core).
+    private(set) var subtitle: EngineSubtitle?
+    var usesNativeCore: Bool { player.engineName == "native" }
     private(set) var item: BaseItem
     private(set) var isPlaying = false
     private(set) var isLoading = true
@@ -40,18 +50,15 @@ final class EnginePlayerModel {
         self.request = request
         self.item = request.item
         self.client = client
+        #if canImport(Libavformat) && canImport(Libavcodec) && canImport(Libswresample)
+        player = EnginePrefs.nativeEnabled && request.localDownload == nil ? NativeCore() : MPVCore()
+        #else
+        player = MPVCore()
+        #endif
     }
 
-    func start() async {
-        AudioPlayer.shared.stop()
-        try? AVAudioSession.sharedInstance().setActive(true)
-        poll = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(500))
-                self?.tick()
-            }
-        }
-        guard player.isReady else { errorMessage = "The Huefin Engine couldn't start on this device."; isLoading = false; return }
+    /// Hooks the model up to whichever core is playing.
+    private func wire() {
         player.onPlaybackRestart = { [weak self] in
             guard let self else { return }
             self.isLoading = false
@@ -65,8 +72,54 @@ final class EnginePlayerModel {
             case .failed(let why):
                 self.isLoading = false
                 self.errorMessage = "The Huefin Engine couldn't open this file (\(why))."
+            case .fallback(let at):
+                self.switchToMPV(resumeAt: at)
             }
         }
+    }
+
+    /// Swaps in the mpv core (Level 3).
+    private func useMPVCore() {
+        guard player.engineName != "mpv" else { return }
+        player.destroy()
+        player = MPVCore()
+        wire()
+        subtitle = nil
+        tracksLoaded = false
+        coreGeneration += 1
+        onCoreChange?()
+    }
+
+    /// Hands playback to mpv from the given moment (the native core couldn't show the file as intended).
+    private func switchToMPV(resumeAt: Double) {
+        guard player.engineName != "mpv", let url = currentURL else { return }
+        useMPVCore()
+        let m = player
+        guard m.isReady else { errorMessage = "The Huefin Engine couldn't start on this device."; isLoading = false; return }
+        isLoading = true
+        m.load(url, start: resumeAt)
+        if speed != 1 { m.speed = Double(speed) }
+        for (u, title, lang) in externalSubs { m.addSubtitle(u, title: title, lang: lang) }
+    }
+    @ObservationIgnored private var currentURL: URL?
+    @ObservationIgnored private var externalSubs: [(URL, String, String?)] = []
+
+    func start() async {
+        AudioPlayer.shared.stop()
+        try? AVAudioSession.sharedInstance().setActive(true)
+        poll = Task { [weak self] in
+            var n = 0
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(100))
+                guard let self else { return }
+                // Subtitles the app draws need a quick clock; everything else is fine twice a second.
+                if !self.stopped { let sub = self.player.overlaySubtitle; if sub != self.subtitle { self.subtitle = sub } }
+                n += 1
+                if n % 5 == 0 { self.tick() }
+            }
+        }
+        guard player.isReady else { errorMessage = "The Huefin Engine couldn't start on this device."; isLoading = false; return }
+        wire()
         await load()
     }
 
@@ -78,13 +131,20 @@ final class EnginePlayerModel {
         if let local = request.localDownload?.localURL {
             url = local
         } else if let client {
-            let sourceId = request.mediaSourceId ?? item.mediaSources?.first?.id ?? item.id
-            url = client.directPlayURL(itemId: item.id, mediaSourceId: sourceId,
-                                       container: item.mediaSources?.first?.container)
+            // The full item says what's inside the file, which decides the core.
+            let full = (try? await client.item(item.id)) ?? item
+            let src = full.mediaSources?.first(where: { $0.id == request.mediaSourceId }) ?? full.mediaSources?.first
+            let sourceId = request.mediaSourceId ?? src?.id ?? item.id
+            url = client.directPlayURL(itemId: item.id, mediaSourceId: sourceId, container: src?.container)
+            #if canImport(Libavformat) && canImport(Libavcodec) && canImport(Libswresample)
+            if usesNativeCore && !NativeCore.canPlay(src) { useMPVCore() }
+            #endif
         } else {
             errorMessage = "Not connected to your server."
             return
         }
+        currentURL = url
+        externalSubs = []
         player.load(url, start: Double(request.startTicks) / 10_000_000)
         if speed != 1 { player.speed = Double(speed) }
         // Intro markers and outside subtitle files load alongside the video, never holding it up.
@@ -113,7 +173,9 @@ final class EnginePlayerModel {
             let ext = ["ass", "ssa", "vtt", "srt"].contains(codec) ? codec : "srt"
             let u = client.url("Videos/\(item.id)/\(src.id)/Subtitles/\(idx)/0/Stream.\(ext)",
                                query: ["api_key": client.accessToken])
-            player.addSubtitle(u, title: s.displayTitle ?? s.title ?? s.language ?? "Subtitles", lang: s.language)
+            let title = s.displayTitle ?? s.title ?? s.language ?? "Subtitles"
+            externalSubs.append((u, title, s.language))
+            player.addSubtitle(u, title: title, lang: s.language)
         }
     }
 
@@ -216,17 +278,65 @@ final class EnginePlayerModel {
 }
 
 struct EngineVideoSurface: UIViewRepresentable {
-    let player: MPVCore
+    let video: UIView
+    /// Bumps when the engine swaps cores, so the new picture replaces the old.
+    let generation: Int
     func makeUIView(context: Context) -> UIView {
         let outer = UIView()
         outer.backgroundColor = .black
         outer.isUserInteractionEnabled = false
-        player.view.frame = outer.bounds
-        player.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        outer.addSubview(player.view)
+        attach(video, to: outer)
         return outer
     }
-    func updateUIView(_ uiView: UIView, context: Context) {}
+    func updateUIView(_ uiView: UIView, context: Context) {
+        if video.superview !== uiView { uiView.subviews.forEach { $0.removeFromSuperview() }; attach(video, to: uiView) }
+    }
+    private func attach(_ v: UIView, to outer: UIView) {
+        v.frame = outer.bounds
+        v.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        outer.addSubview(v)
+    }
+}
+
+/// Subtitles drawn by the app above the picture (the native core hands them over instead of drawing them).
+struct EngineSubtitleView: View {
+    let subtitle: EngineSubtitle?
+    var body: some View {
+        GeometryReader { g in
+            switch subtitle {
+            case .text(let line)?:
+                VStack {
+                    Spacer()
+                    Text(line)
+                        .font(.system(size: max(17, g.size.height * 0.045), weight: .semibold))
+                        .foregroundStyle(.white)
+                        .shadow(color: .black, radius: 2)
+                        .shadow(color: .black.opacity(0.8), radius: 6)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
+                        .padding(.bottom, g.size.height * 0.07)
+                }
+                .frame(maxWidth: .infinity)
+            case .image(let img, let rect)?:
+                // Place the picture inside the video frame (16:9-ish letterboxing is handled by fitting the frame).
+                let frame = Self.videoFrame(in: g.size)
+                Image(decorative: img, scale: 1)
+                    .resizable()
+                    .frame(width: rect.width * frame.width, height: rect.height * frame.height)
+                    .position(x: frame.minX + rect.midX * frame.width, y: frame.minY + rect.midY * frame.height)
+            case nil:
+                EmptyView()
+            }
+        }
+        .allowsHitTesting(false)
+        .ignoresSafeArea()
+    }
+    static func videoFrame(in size: CGSize) -> CGRect {
+        let aspect: CGFloat = 16.0 / 9.0
+        var w = size.width, h = w / aspect
+        if h > size.height { h = size.height; w = h * aspect }
+        return CGRect(x: (size.width - w) / 2, y: (size.height - h) / 2, width: w, height: h)
+    }
 }
 
 #if os(iOS)
@@ -245,6 +355,8 @@ struct EnginePlayerScreen: View {
     @State private var standby: PlayerModel?
     @State private var standbyHandle = VideoSurfaceHandle()
     @State private var poppingOut = false
+    /// Picture in Picture straight from the native core's own layer (no hand-off needed).
+    @State private var nativePiP: AVPictureInPictureController?
 
     var body: some View {
         ZStack {
@@ -255,10 +367,11 @@ struct EnginePlayerScreen: View {
                     .allowsHitTesting(false)
             }
             if let model {
-                EngineVideoSurface(player: model.player)
+                EngineVideoSurface(video: model.player.videoView, generation: model.coreGeneration)
                     .scaleEffect(fill ? 1.33 : 1)
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
+                EngineSubtitleView(subtitle: model.subtitle)
                 // Taps land on this clear layer above the video.
                 Color.clear
                     .contentShape(Rectangle())
@@ -314,8 +427,10 @@ struct EnginePlayerScreen: View {
             let m = EnginePlayerModel(request: request, client: app.client)
             model = m
             await m.start()
+            setUpNativePiP(m)
             scheduleHide()
         }
+        .onChange(of: model?.coreGeneration) { _, _ in if let model { setUpNativePiP(model) } }
         .onDisappear {
             Task { await model?.stop() }
             // A warm-up that never made it into Picture in Picture shouldn't keep playing.
@@ -432,7 +547,19 @@ struct EnginePlayerScreen: View {
     /// The Huefin Engine can't float in a little window itself. So Apple's player (which can) quietly loads the same
     /// video behind it, muted. Once it's playing at the same moment, the sound switches over and the picture
     /// shrinks into the corner, with no black screen or reload in between.
+    private func setUpNativePiP(_ m: EnginePlayerModel) {
+        nativePiP = nil
+        #if canImport(Libavformat) && canImport(Libavcodec) && canImport(Libswresample)
+        if let native = m.player as? NativeCore { nativePiP = native.makePiPController() }
+        #endif
+    }
+
     private func popOut(_ m: EnginePlayerModel) {
+        if m.usesNativeCore, let nativePiP, nativePiP.isPictureInPicturePossible {
+            controlsVisible = false
+            nativePiP.startPictureInPicture()
+            return
+        }
         guard !poppingOut, standby == nil else { return }
         withAnimation { poppingOut = true }
         controlsVisible = false

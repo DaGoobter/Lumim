@@ -44,15 +44,15 @@ final class MPVVideoView: UIView {
 /// - Dolby Vision is reshaped by libplacebo from its own metadata, so Profile 5 shows its true colours and
 ///   Profiles 7 and 8 get the Dolby Vision grade on top of their HDR10 picture.
 /// - Any audio (TrueHD, DTS-HD, FLAC…) is decoded to multichannel sound for the TV, receiver or headphones.
-final class MPVCore {
-    enum EndReason { case finished, failed(String) }
-    struct Track: Hashable { let id: Int32; let name: String; let selected: Bool }
-
+final class MPVCore: EngineCore {
     let view = MPVVideoView()
+    var videoView: UIView { view }
+    var engineName: String { "mpv" }
+    var overlaySubtitle: EngineSubtitle? { nil }
     /// Called on the main thread.
     var onFileLoaded: (() -> Void)?
     var onPlaybackRestart: (() -> Void)?
-    var onEnd: ((EndReason) -> Void)?
+    var onEnd: ((EngineEnd) -> Void)?
     var onVideoReconfig: (() -> Void)?
 
     private let lock = NSLock()
@@ -213,7 +213,7 @@ final class MPVCore {
     var volume: Double { get { double("volume") ?? 100 } set { setDouble("volume", newValue) } }
 
     /// Audio ("audio") or subtitle ("sub") tracks, with readable names.
-    func tracks(_ type: String) -> [Track] {
+    func tracks(_ type: String) -> [EngineTrack] {
         let n = Int(int("track-list/count") ?? 0)
         return (0..<n).compactMap { i in
             guard string("track-list/\(i)/type") == type, let id = int("track-list/\(i)/id") else { return nil }
@@ -231,7 +231,7 @@ final class MPVCore {
             if flag("track-list/\(i)/forced") { parts.append("Forced") }
             var seen = Set<String>()
             let name = parts.filter { seen.insert($0).inserted }.joined(separator: " · ")
-            return Track(id: Int32(id), name: name.isEmpty ? (type == "audio" ? "Track \(id)" : "Subtitles \(id)") : name,
+            return EngineTrack(id: Int32(id), name: name.isEmpty ? (type == "audio" ? "Track \(id)" : "Subtitles \(id)") : name,
                          selected: flag("track-list/\(i)/selected"))
         }
     }
@@ -293,6 +293,8 @@ final class MPVCore {
     // MARK: Apple TV display mode
 
     #if os(tvOS)
+    var displaySignature: String { (string("video-params/gamma") ?? "") + "@" + String(double("container-fps") ?? 0) }
+
     /// Asks the TV to switch to the video's dynamic range and frame rate ("Match Content" in Apple TV Settings),
     /// like Apple's own player does. Returns true if a switch was requested.
     @MainActor @discardableResult

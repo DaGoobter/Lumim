@@ -90,18 +90,25 @@ final class TVEngineViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        let surface = model.player.view
+        attachCore()
+        model.onCoreChange = { [weak self] in self?.attachCore() }
+        Task { await model.start(); reveal() }
+    }
+
+    /// Puts the current core's picture on screen (again, if the engine swapped cores).
+    private func attachCore() {
+        videoView.subviews.forEach { $0.removeFromSuperview() }
+        let surface = model.player.videoView
         surface.frame = videoView.bounds
         surface.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         videoView.addSubview(surface)
-        // Switch the TV to the video's HDR mode and frame rate (Match Content), holding the picture until it has.
+        // Switch the TV to the video's HDR / Dolby Vision mode and frame rate (Match Content), holding the picture until it has.
         model.player.onVideoReconfig = { [weak self] in self?.matchDisplay() }
-        Task { await model.start(); reveal() }
     }
 
     private var matchedGamma: String?
     private func matchDisplay() {
-        let gamma = (model.player.string("video-params/gamma") ?? "") + "@" + String(model.player.double("container-fps") ?? 0)
+        let gamma = model.player.displaySignature
         guard gamma != matchedGamma, model.player.matchDisplay(in: view.window) else { return }
         matchedGamma = gamma
         let wasPaused = model.player.isPaused
@@ -244,6 +251,7 @@ private struct EngineOverlay: View {
     var body: some View {
         let m = model
         ZStack {
+        EngineSubtitleView(subtitle: m.subtitle)
         if m.isLoading && m.errorMessage == nil { ProgressView().scaleEffect(1.5) }
         if let e = m.errorMessage {
             VStack(spacing: 16) {
