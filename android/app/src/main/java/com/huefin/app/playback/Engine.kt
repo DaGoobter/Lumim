@@ -77,6 +77,8 @@ object EngineDecider {
     suspend fun useEngine(req: PlaybackRequest, c: JellyfinClient?, maxBitrate: Int): Boolean {
         val mode = PlaybackEngine.current()
         if (mode == PlaybackEngine.Apple || req.item.isLiveChannel || req.item.isAudio) return false
+        // The engine crashed the app last time it started: Android's player until the tester turns it back on.
+        if (Prefs.bool(com.huefin.app.core.CrashReport.ENGINE_OFF_AFTER_CRASH)) return false
         req.localPath?.let { path ->
             val ext = path.substringAfterLast('.', "").lowercase()
             return mode == PlaybackEngine.Prism || ext !in setOf("mp4", "m4v", "mov", "mkv", "webm", "ts", "")

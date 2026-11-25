@@ -79,8 +79,6 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     // The Huefin Engine: mpv 0.41 + FFmpeg + libplacebo (Dolby Vision reshaping, HDR tone mapping).
     implementation("dev.jdtech.mpv:libmpv:1.0.0")
-    // TrueHD, DTS and friends for Android's own player, so DV/HDR files with that audio stay in true DV/HDR.
-    implementation("org.jellyfin.media3:media3-ffmpeg-decoder:1.5.0+1")
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")

@@ -52,11 +52,7 @@ class ExoBackend(context: Context) : Backend {
     override var onEnded: () -> Unit = {}
     override var onError: (String) -> Unit = {}
     override var onReady: () -> Unit = {}
-    // FFmpeg (Jellyfin's build of Media3's decoder) adds TrueHD, DTS and other audio Android can't decode,
-    // so Dolby Vision and HDR files with that audio still play in Android's own player, in true DV/HDR.
-    val exo: ExoPlayer = ExoPlayer.Builder(context, androidx.media3.exoplayer.DefaultRenderersFactory(context)
-            .setExtensionRendererMode(androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
-            .setEnableDecoderFallback(true))
+    val exo: ExoPlayer = ExoPlayer.Builder(context, androidx.media3.exoplayer.DefaultRenderersFactory(context).setEnableDecoderFallback(true))
         .setMediaSourceFactory(DefaultMediaSourceFactory(OkHttpDataSource.Factory(JellyfinClient.http)))
         .setSeekBackIncrementMs(10_000).setSeekForwardIncrementMs(10_000)
         .build().apply {

@@ -31,6 +31,8 @@ class MpvBackend(context: Context) : Backend {
 
     private val app = context.applicationContext
     private val main = Handler(Looper.getMainLooper())
+    // If mpv takes the app down while starting, the next launch switches the engine off (see CrashReport).
+    private val breadcrumb = com.huefin.app.core.CrashReport.engineStarting(true)
     private val mpv: MPVLib = MPVLib.create(app) ?: throw IllegalStateException("The Huefin Engine couldn't start on this device.")
     private var surfaceAttached = false
     private var pending: (() -> Unit)? = null
@@ -70,7 +72,9 @@ class MpvBackend(context: Context) : Backend {
         override fun event(eventId: Int) {
             when (eventId) {
                 MPV_EVENT_FILE_LOADED -> main.post { loaded = true; addExternalSubs() }
-                MPV_EVENT_PLAYBACK_RESTART -> main.post { if (!readySent) { readySent = true; onReady() } }
+                MPV_EVENT_PLAYBACK_RESTART -> main.post {
+                    if (!readySent) { readySent = true; com.huefin.app.core.CrashReport.engineStarting(false); onReady() }
+                }
                 // With keep-open, a file that finishes stays open (eof-reached), so an end here is a stop or a failure.
                 MPV_EVENT_END_FILE -> main.post {
                     if (ignoreNextEnd) ignoreNextEnd = false
@@ -210,6 +214,7 @@ class MpvBackend(context: Context) : Backend {
     override fun release() {
         if (released) return
         released = true
+        com.huefin.app.core.CrashReport.engineStarting(false)
         pending = null
         runCatching { mpv.removeObserver(observer) }
         runCatching { if (surfaceAttached) { mpv.setPropertyString("vo", "null"); mpv.detachSurface() } }

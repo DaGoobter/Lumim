@@ -20,7 +20,7 @@ class MainActivity : ComponentActivity() {
             registerForActivityResult(ActivityResultContracts.RequestPermission()) {}.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
         handle(intent)
-        setContent { HuefinTheme { HuefinRoot() } }
+        setContent { HuefinTheme { HuefinRoot(); com.huefin.app.core.CrashReportDialog() } }
     }
 
     override fun onNewIntent(intent: Intent) {
