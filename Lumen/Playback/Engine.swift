@@ -1,7 +1,7 @@
 import Foundation
 
 /// Decides who plays a video: Apple's player (best for HDR, Dolby Vision, AirPlay, PiP) or the
-/// Huefin Engine (VLC), which plays nearly any file as-is so the server doesn't have to convert it.
+/// Huefin Engine (mpv + libplacebo), which plays nearly any file as-is with HDR and Dolby Vision shown as intended.
 enum PlaybackEngine: String, CaseIterable, Identifiable {
     case auto, apple, prism
     var id: String { rawValue }

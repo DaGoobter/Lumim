@@ -18,7 +18,7 @@ struct PlayerScreen: View {
             case .none:
                 ZStack { Color.black.ignoresSafeArea(); ProgressView().tint(.white) }
             case .some(true):
-                #if canImport(VLCKitSPM)
+                #if canImport(Libmpv)
                 EnginePlayerScreen(request: request)
                 #else
                 AppleVideoPlayerScreen(request: request)

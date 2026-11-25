@@ -13,9 +13,9 @@ packages:
   ZIPFoundation:
     url: https://github.com/weichsel/ZIPFoundation
     from: 0.9.16
-  VLCKitSPM:
-    url: https://github.com/koombea/vlckit-spm
-    from: 3.6.0
+  MPVKit:
+    url: https://github.com/mpvkit/MPVKit
+    exactVersion: 1.1.0-n9.0.2
   GoogleCast:
     url: https://github.com/SRGSSR/google-cast-sdk
     from: 4.8.0
@@ -28,7 +28,8 @@ targets:
       - path: Shared
     dependencies:
       - package: ZIPFoundation
-      - package: VLCKitSPM
+      - package: MPVKit
+        product: MPVKit
       - package: GoogleCast
       - target: PrismActivity
     info:
@@ -97,9 +98,11 @@ targets:
       - path: Lumen/Playback/SyncPlay.swift
       - path: Lumen/Playback/Engine.swift
       - path: Lumen/Playback/PlaybackPrefs.swift
-      - path: Lumen/Playback/VLCPlayer.swift
+      - path: Lumen/Playback/EnginePlayer.swift
+      - path: Lumen/Playback/MPVCore.swift
     dependencies:
-      - package: VLCKitSPM
+      - package: MPVKit
+        product: MPVKit
     info:
       path: HuefinTV/Info.plist
       properties:

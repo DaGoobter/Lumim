@@ -1,14 +1,13 @@
 import SwiftUI
 import AVFoundation
 import AVKit
-#if canImport(VLCKitSPM)
-import VLCKitSPM
+#if canImport(Libmpv)
 
-/// The Huefin Engine: VLC's decoders play MKV, AVI, DTS, TrueHD, PGS subtitles and other files that
-/// Apple's player can't, straight from the original file, so the server doesn't convert anything.
+/// The Huefin Engine (mpv, see MPVCore): plays MKV, AVI, DTS, TrueHD, PGS subtitles and other files that
+/// Apple's player can't, straight from the original file, with HDR and Dolby Vision shown as intended.
 @MainActor @Observable
 final class EnginePlayerModel {
-    @ObservationIgnored let player = VLCMediaPlayer()
+    @ObservationIgnored let player = MPVCore()
     private(set) var item: BaseItem
     private(set) var isPlaying = false
     private(set) var isLoading = true
@@ -24,6 +23,10 @@ final class EnginePlayerModel {
     /// 100 = normal, up to 200 = boosted.
     private(set) var volume: Int32 = 100
     private(set) var segments: [MediaSegment] = []
+    /// How the picture is being drawn ("Dolby Vision P5 → HDR (PQ) · hardware decode").
+    private(set) var pictureInfo = ""
+    @ObservationIgnored private var started = false
+    @ObservationIgnored private var ended = false
 
     @ObservationIgnored private var request: PlaybackRequest
     @ObservationIgnored private let client: JellyfinClient?
@@ -48,6 +51,22 @@ final class EnginePlayerModel {
                 self?.tick()
             }
         }
+        guard player.isReady else { errorMessage = "The Huefin Engine couldn't start on this device."; isLoading = false; return }
+        player.onPlaybackRestart = { [weak self] in
+            guard let self else { return }
+            self.isLoading = false
+            self.pictureInfo = self.player.pictureDescription
+            if !self.startedReport { self.startedReport = true; Task { await self.report("Sessions/Playing") } }
+        }
+        player.onEnd = { [weak self] reason in
+            guard let self, !self.stopped else { return }
+            switch reason {
+            case .finished: Task { await self.finished() }
+            case .failed(let why):
+                self.isLoading = false
+                self.errorMessage = "The Huefin Engine couldn't open this file (\(why))."
+            }
+        }
         await load()
     }
 
@@ -66,14 +85,8 @@ final class EnginePlayerModel {
             errorMessage = "Not connected to your server."
             return
         }
-        let media = VLCMedia(url: url)
-        media.addOptions([
-            "network-caching": 3000,
-            "start-time": Double(request.startTicks) / 10_000_000,
-        ])
-        player.media = media
-        player.play()
-        player.rate = speed
+        player.load(url, start: Double(request.startTicks) / 10_000_000)
+        if speed != 1 { player.speed = Double(speed) }
         // Intro markers and outside subtitle files load alongside the video, never holding it up.
         if let client {
             Task { [weak self] in
@@ -100,7 +113,7 @@ final class EnginePlayerModel {
             let ext = ["ass", "ssa", "vtt", "srt"].contains(codec) ? codec : "srt"
             let u = client.url("Videos/\(item.id)/\(src.id)/Subtitles/\(idx)/0/Stream.\(ext)",
                                query: ["api_key": client.accessToken])
-            _ = player.addPlaybackSlave(u, type: .subtitle, enforce: false)
+            player.addSubtitle(u, title: s.displayTitle ?? s.title ?? s.language ?? "Subtitles", lang: s.language)
         }
     }
 
@@ -110,28 +123,15 @@ final class EnginePlayerModel {
 
     private func tick() {
         guard !stopped else { return }
-        let t = Double(player.time.intValue) / 1000
-        if t >= 0 { currentTime = t }
-        let len = Double(player.media?.length.intValue ?? 0) / 1000
+        let t = player.time
+        if t >= 0, !isLoading { currentTime = t }
+        let len = player.duration
         if len > 0 { duration = len } else if let r = item.runTimeTicks { duration = Double(r) / 10_000_000 }
         isPlaying = player.isPlaying
-        // VLC can keep saying "buffering" on network streams while the picture is moving; trust the clock.
-        let advancing = t > lastTickTime + 0.05 && player.isPlaying
-        if t >= 0 { lastTickTime = t }
-        switch advancing ? .playing : player.state {
-        case .playing:
-            isLoading = false
-            if !tracksLoaded || player.numberOfSubtitlesTracks != Int32(subtitleTracks.count) { loadTracks() }
-            if !startedReport { startedReport = true; Task { await report("Sessions/Playing") } }
-        case .error:
-            isLoading = false
-            errorMessage = "The Huefin Engine couldn't open this file."
-        case .ended:
-            Task { await finished() }
-        case .buffering, .opening:
-            break
-        default:
-            isLoading = false
+        if !isLoading {
+            let subs = player.tracks("sub").count
+            if !tracksLoaded || subs != subtitleTracks.filter({ $0.index >= 0 }).count { loadTracks() }
+            if pictureInfo.isEmpty || Int(t) % 10 == 0 { pictureInfo = player.pictureDescription }
         }
         if Date().timeIntervalSince(lastReport) > 10, startedReport {
             lastReport = Date()
@@ -140,22 +140,20 @@ final class EnginePlayerModel {
     }
 
     private func loadTracks() {
-        let aNames = player.audioTrackNames as? [String] ?? []
-        let aIdx = (player.audioTrackIndexes as? [NSNumber] ?? []).map(\.int32Value)
-        audioTracks = zip(aIdx, aNames).filter { $0.0 >= 0 }.map { Track(index: $0.0, name: $0.1) }
+        let audio = player.tracks("audio")
+        audioTracks = audio.map { Track(index: $0.id, name: $0.name) }
         if audioTracks.count == serverAudioNames.count {
             audioTracks = zip(audioTracks, serverAudioNames).map { Track(index: $0.0.index, name: $0.1) }
         }
-        let sNames = player.videoSubTitlesNames as? [String] ?? []
-        let sIdx = (player.videoSubTitlesIndexes as? [NSNumber] ?? []).map(\.int32Value)
-        subtitleTracks = zip(sIdx, sNames).map { Track(index: $0.0, name: $0.0 < 0 ? "Off" : $0.1) }
-        let realSubs = subtitleTracks.filter { $0.index >= 0 }
-        if !realSubs.isEmpty, realSubs.count <= serverSubNames.count {
-            subtitleTracks = subtitleTracks.filter { $0.index < 0 } + zip(realSubs, serverSubNames).map { Track(index: $0.0.index, name: $0.1) }
+        let subs = player.tracks("sub")
+        var named = subs.map { Track(index: $0.id, name: $0.name) }
+        if !named.isEmpty, named.count <= serverSubNames.count {
+            named = zip(named, serverSubNames).map { Track(index: $0.0.index, name: $0.1) }
         }
-        audioTrack = player.currentAudioTrackIndex
-        subtitleTrack = player.currentVideoSubTitleIndex
-        tracksLoaded = !audioTracks.isEmpty || player.time.intValue > 3000
+        subtitleTracks = [Track(index: -1, name: "Off")] + named
+        audioTrack = audio.first(where: \.selected)?.id ?? -1
+        subtitleTrack = subs.first(where: \.selected)?.id ?? -1
+        tracksLoaded = !audioTracks.isEmpty || currentTime > 3
     }
 
     // MARK: Controls
@@ -165,21 +163,21 @@ final class EnginePlayerModel {
     }
 
     func togglePlay() {
-        if player.isPlaying { player.pause() } else { player.play() }
+        if player.isPaused { player.play() } else { player.pause() }
         isPlaying.toggle()
     }
 
     func seek(to seconds: Double) {
         currentTime = seconds
-        player.time = VLCTime(int: Int32(max(0, seconds) * 1000))
+        player.seek(to: seconds)
     }
 
     func skip(by seconds: Double) { seek(to: min(max(0, currentTime + seconds), max(duration, 1))) }
 
-    func setAudio(_ index: Int32) { player.currentAudioTrackIndex = index; audioTrack = index }
-    func setSubtitle(_ index: Int32) { player.currentVideoSubTitleIndex = index; subtitleTrack = index }
-    func setSpeed(_ s: Float) { speed = s; player.rate = s }
-    func setVolume(_ v: Int32) { volume = v; player.audio?.volume = v }
+    func setAudio(_ index: Int32) { player.selectAudio(index); audioTrack = index }
+    func setSubtitle(_ index: Int32) { player.selectSubtitle(index); subtitleTrack = index }
+    func setSpeed(_ s: Float) { speed = s; player.speed = Double(s) }
+    func setVolume(_ v: Int32) { volume = v; player.volume = Double(v) }
 
     private func finished() async {
         guard !stopped, let client, item.type == "Episode" else { return }
@@ -203,13 +201,14 @@ final class EnginePlayerModel {
         }
         stopped = true
         player.stop()
+        player.destroy()
     }
 
     private func report(_ path: String) async {
         guard let client, request.localDownload == nil else { return }
         var body: [String: Any] = [
             "ItemId": item.id, "PositionTicks": Int64(currentTime * 10_000_000),
-            "IsPaused": !player.isPlaying, "PlayMethod": "DirectPlay", "CanSeek": true,
+            "IsPaused": player.isPaused, "PlayMethod": "DirectPlay", "CanSeek": true,
         ]
         if let id = request.mediaSourceId ?? item.mediaSources?.first?.id { body["MediaSourceId"] = id }
         await client.reportPlayback(path, body: body)
@@ -217,22 +216,14 @@ final class EnginePlayerModel {
 }
 
 struct EngineVideoSurface: UIViewRepresentable {
-    let player: VLCMediaPlayer
+    let player: MPVCore
     func makeUIView(context: Context) -> UIView {
-        // VLC puts its picture inside `drawable` and attaches its own tap handler to the drawable's parent,
-        // which steals taps from Huefin's controls. Two wrappers that ignore touches keep all of that out of the way.
         let outer = UIView()
         outer.backgroundColor = .black
         outer.isUserInteractionEnabled = false
-        let middle = UIView(frame: outer.bounds)
-        middle.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        middle.isUserInteractionEnabled = false
-        let drawable = UIView(frame: middle.bounds)
-        drawable.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        drawable.isUserInteractionEnabled = false
-        middle.addSubview(drawable)
-        outer.addSubview(middle)
-        player.drawable = drawable
+        player.view.frame = outer.bounds
+        player.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        outer.addSubview(player.view)
         return outer
     }
     func updateUIView(_ uiView: UIView, context: Context) {}
@@ -268,7 +259,7 @@ struct EnginePlayerScreen: View {
                     .scaleEffect(fill ? 1.33 : 1)
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
-                // Taps land on this clear layer above the video, so they always reach Huefin (not VLC's views).
+                // Taps land on this clear layer above the video.
                 Color.clear
                     .contentShape(Rectangle())
                     .ignoresSafeArea()
@@ -356,6 +347,7 @@ struct EnginePlayerScreen: View {
                         PlayerCircleButton(symbol: "pip.enter", label: "Picture in Picture") { popOut(m) }
                     }
                     Menu {
+                        if !m.pictureInfo.isEmpty { Section("Picture") { Text(m.pictureInfo) } }
                         Section("Volume boost") {
                             ForEach([Int32(100), 125, 150, 200], id: \.self) { v in
                                 Button { m.setVolume(v) } label: { check(v == 100 ? "Normal" : "\(v)%", v == m.volume) }
@@ -482,10 +474,10 @@ struct EnginePlayerScreen: View {
     }
 }
 #endif // os(iOS)
-#endif // VLCKitSPM
+#endif // Libmpv
 
 enum EngineAvailability {
-    #if canImport(VLCKitSPM)
+    #if canImport(Libmpv)
     static let available = true
     #else
     static let available = false

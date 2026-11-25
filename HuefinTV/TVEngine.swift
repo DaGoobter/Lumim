@@ -1,6 +1,5 @@
 import SwiftUI
 import UIKit
-import VLCKitSPM
 
 /// On-screen state for the engine's controls.
 @MainActor @Observable
@@ -63,7 +62,6 @@ final class TVEngineViewController: UIViewController {
         root.backgroundColor = .black
         videoView.isUserInteractionEnabled = false
         videoView.backgroundColor = .black
-        // VLC attaches its own tap handler to the drawable's parent; keep that parent a non-interactive wrapper.
         let wrapper = UIView(frame: root.bounds)
         wrapper.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         wrapper.isUserInteractionEnabled = false
@@ -92,8 +90,30 @@ final class TVEngineViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        model.player.drawable = videoView
+        let surface = model.player.view
+        surface.frame = videoView.bounds
+        surface.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        videoView.addSubview(surface)
+        // Switch the TV to the video's HDR mode and frame rate (Match Content), holding the picture until it has.
+        model.player.onVideoReconfig = { [weak self] in self?.matchDisplay() }
         Task { await model.start(); reveal() }
+    }
+
+    private var matchedGamma: String?
+    private func matchDisplay() {
+        let gamma = (model.player.string("video-params/gamma") ?? "") + "@" + String(model.player.double("container-fps") ?? 0)
+        guard gamma != matchedGamma, model.player.matchDisplay(in: view.window) else { return }
+        matchedGamma = gamma
+        let wasPaused = model.player.isPaused
+        model.player.pause()
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(300))
+            for _ in 0..<40 {   // a TV mode switch usually takes 1–3 seconds
+                guard let self, self.view.window?.avDisplayManager.isDisplayModeSwitchInProgress == true else { break }
+                try? await Task.sleep(for: .milliseconds(150))
+            }
+            if !wasPaused { self?.model.player.play() }
+        }
     }
 
     override var preferredFocusEnvironments: [UIFocusEnvironment] { [view] }
@@ -185,6 +205,7 @@ final class TVEngineViewController: UIViewController {
         closing = true
         hideTask?.cancel()
         let m = model
+        MPVCore.resetDisplay(in: view.window)
         Task { await m.stop() }
         dismiss(animated: true) { AppRouter.shared.playerClosedAt = Date() }
     }
@@ -194,6 +215,7 @@ final class TVEngineViewController: UIViewController {
         if isBeingDismissed && !closing {
             closing = true
             let m = model
+            MPVCore.resetDisplay(in: view.window ?? presentingViewController?.view.window)
             Task { await m.stop() }
             AppRouter.shared.playerClosedAt = Date()
         }

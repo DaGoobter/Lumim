@@ -51,33 +51,36 @@ class MpvBackend(context: Context) : Backend {
     /** "passthrough" or "accurate", for the info panel. */
     var pictureMode = "accurate"; private set
 
+    /** A file was open when a new one was asked for; mpv reports that old file's end first, which isn't an error. */
+    @Volatile private var ignoreNextEnd = false
+
     private val observer = object : MPVLib.EventObserver {
         override fun eventProperty(property: String, value: Double) {
             when (property) { "time-pos" -> timePos = value; "duration" -> durationS = value }
         }
         override fun eventProperty(property: String, value: Boolean) {
-            when (property) { "pause" -> paused = value; "paused-for-cache" -> cacheWait = value; "seeking" -> seeking = value }
+            when (property) {
+                "pause" -> paused = value; "paused-for-cache" -> cacheWait = value; "seeking" -> seeking = value
+                "eof-reached" -> if (value && loaded) main.post { onEnded() }
+            }
         }
+        override fun eventProperty(property: String, value: Long) {}
         override fun eventProperty(property: String, value: String) { if (property == "sub-text") subText = value.ifBlank { null } }
         override fun eventProperty(property: String) { if (property == "sub-text") subText = null }
         override fun event(eventId: Int) {
             when (eventId) {
-                MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED -> main.post { loaded = true; addExternalSubs() }
-                MPVLib.MpvEvent.MPV_EVENT_PLAYBACK_RESTART -> main.post { if (!readySent) { readySent = true; onReady() } }
-            }
-        }
-        override fun eventEndFile(reason: Int, error: Int) {
-            main.post {
-                when (reason) {
-                    MPVLib.MpvEndFileReason.MPV_END_FILE_REASON_EOF -> onEnded()
-                    MPVLib.MpvEndFileReason.MPV_END_FILE_REASON_ERROR -> if (!released) onError("The Huefin Engine couldn't open this file.")
+                MPV_EVENT_FILE_LOADED -> main.post { loaded = true; addExternalSubs() }
+                MPV_EVENT_PLAYBACK_RESTART -> main.post { if (!readySent) { readySent = true; onReady() } }
+                // With keep-open, a file that finishes stays open (eof-reached), so an end here is a stop or a failure.
+                MPV_EVENT_END_FILE -> main.post {
+                    if (ignoreNextEnd) ignoreNextEnd = false
+                    else if (!loaded && !released) onError("The Huefin Engine couldn't open this file.")
                 }
             }
         }
     }
 
     init {
-        mpv.requestLogMessages("warn")   // the default logs every URL, and those carry the server key
         val o = mapOf(
             "vo" to "gpu-next", "gpu-context" to "android", "opengl-es" to "yes",
             "hwdec" to "mediacodec-copy", "hwdec-codecs" to "h264,hevc,mpeg4,mpeg2video,vp8,vp9,av1",
@@ -85,7 +88,7 @@ class MpvBackend(context: Context) : Backend {
             "tone-mapping" to "auto", "hdr-compute-peak" to "auto", "target-colorspace-hint" to "no",
             "cache" to "yes", "demuxer-max-bytes" to "150MiB", "demuxer-max-back-bytes" to "50MiB", "demuxer-readahead-secs" to "30",
             "network-timeout" to "30", "user-agent" to "Huefin for Android",
-            "volume-max" to "200", "keep-open" to "no", "idle" to "yes", "force-window" to "no",
+            "volume-max" to "200", "keep-open" to "yes", "msg-level" to "all=warn", "idle" to "yes", "force-window" to "no",
             "input-default-bindings" to "no", "input-vo-keyboard" to "no", "osd-level" to "0",
             "sub-ass-override" to "no", "sub-scale-with-window" to "yes", "sub-use-margins" to "yes",
             "save-position-on-quit" to "no", "ytdl" to "no",
@@ -97,6 +100,7 @@ class MpvBackend(context: Context) : Backend {
         listOf("time-pos" to MPVLib.MpvFormat.MPV_FORMAT_DOUBLE, "duration" to MPVLib.MpvFormat.MPV_FORMAT_DOUBLE,
             "pause" to MPVLib.MpvFormat.MPV_FORMAT_FLAG, "paused-for-cache" to MPVLib.MpvFormat.MPV_FORMAT_FLAG,
             "seeking" to MPVLib.MpvFormat.MPV_FORMAT_FLAG, "sub-text" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
+            "eof-reached" to MPVLib.MpvFormat.MPV_FORMAT_FLAG,
         ).forEach { (p, f) -> mpv.observeProperty(p, f) }
     }
 
@@ -153,6 +157,7 @@ class MpvBackend(context: Context) : Backend {
     }
 
     override fun prepare(url: String, startMs: Long, subtitles: List<SubtitleSource>, hls: Boolean) {
+        ignoreNextEnd = loaded
         readySent = false; loaded = false; externalSubs = subtitles
         timePos = startMs / 1000.0
         val go = {
@@ -215,6 +220,11 @@ class MpvBackend(context: Context) : Backend {
     }
 
     companion object {
+        // mpv's event numbers (client.h); spelled out because this libmpv build doesn't name them.
+        private const val MPV_EVENT_END_FILE = 7
+        private const val MPV_EVENT_FILE_LOADED = 8
+        private const val MPV_EVENT_PLAYBACK_RESTART = 21
+
         /** Surround formats the connected receiver or TV says it can decode itself (HDMI / ARC / eARC). */
         fun passthroughCodecs(context: Context): List<String> {
             val am = context.getSystemService(AudioManager::class.java) ?: return emptyList()

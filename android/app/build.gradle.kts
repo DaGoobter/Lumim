@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.huefin.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.huefin.app"
@@ -77,8 +77,8 @@ dependencies {
     implementation("com.google.android.gms:play-services-cast-framework:22.0.0")
     implementation("androidx.mediarouter:mediarouter:1.7.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
-    // The Huefin Engine: mpv 0.42 + FFmpeg + libplacebo (Dolby Vision reshaping, HDR tone mapping).
-    implementation("dev.jdtech.mpv:libmpv:1.1.0")
+    // The Huefin Engine: mpv 0.41 + FFmpeg + libplacebo (Dolby Vision reshaping, HDR tone mapping).
+    implementation("dev.jdtech.mpv:libmpv:1.0.0")
     // TrueHD, DTS and friends for Android's own player, so DV/HDR files with that audio stay in true DV/HDR.
     implementation("org.jellyfin.media3:media3-ffmpeg-decoder:1.5.0+1")
 
