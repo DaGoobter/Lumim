@@ -52,6 +52,8 @@ class PlayerModel(var request: PlaybackRequest, val backend: Backend) {
     var liveStatus by mutableStateOf<String?>(null); private set
     var fill by mutableStateOf(false)
     var volumeBoost by mutableStateOf(100)
+    /** Subtitle text the screen draws itself (Huefin Engine in HDR passthrough). */
+    var overlaySubtitle by mutableStateOf<String?>(null); private set
 
     val isLive get() = item.isLiveChannel
     val isOffline get() = request.localPath != null
@@ -92,6 +94,7 @@ class PlayerModel(var request: PlaybackRequest, val backend: Backend) {
         val startMs = startTicks / 10_000
         request.localPath?.let { path ->
             playMethod = "Offline (downloaded)"
+            item.mediaSources?.firstOrNull()?.videoStream?.let { v -> backend.setVideoHint(v.videoRangeType ?: v.videoRange, v.codec) }
             backend.prepare(java.io.File(path).toURI().toString(), startMs, emptyList(), path.endsWith(".m3u8"))
             return
         }
@@ -99,11 +102,12 @@ class PlayerModel(var request: PlaybackRequest, val backend: Backend) {
         val max = AppState.maxBitrate
         val info = try {
             c.playbackInfo(item.id, max, EngineDecider.profile(max), startTicks, mediaSourceId = request.mediaSourceId,
-                enableDirectPlay = true, subtitleStreamIndex = if (backend is VlcBackend) null else -1)
+                enableDirectPlay = true, subtitleStreamIndex = if (backend is MpvBackend) null else -1)
         } catch (e: Exception) { error = e.message ?: "Couldn't start playback."; loading = false; return }
         val src = info.mediaSources.firstOrNull { it.id == request.mediaSourceId } ?: info.mediaSources.firstOrNull()
             ?: run { error = "Nothing playable in this item."; loading = false; return }
         mediaSourceId = src.id; playSessionId = info.playSessionId; liveStreamId = src.liveStreamId
+        src.videoStream?.let { v -> backend.setVideoHint(v.videoRangeType ?: v.videoRange, v.codec) }
         val subs = mutableListOf<SubtitleSource>()
         val url: String
         var hls = false
@@ -113,10 +117,10 @@ class PlayerModel(var request: PlaybackRequest, val backend: Backend) {
                     ?: c.liveHLSURL(item.id, src.id, src.liveStreamId, info.playSessionId, max, com.huefin.app.core.DeviceProfile.capabilities(com.huefin.app.HuefinApp.instance).hevc)
                 hls = true; reportedMethod = "Transcode"; playMethod = "Live stream (HLS)"
             }
-            backend is VlcBackend || src.supportsDirectPlay == true -> {
+            backend is MpvBackend || src.supportsDirectPlay == true -> {
                 url = c.directPlayURL(item.id, src.id, src.container)
                 reportedMethod = "DirectPlay"
-                playMethod = if (backend is VlcBackend) "Huefin Engine (original file)" else "Direct Play (original file)"
+                playMethod = if (backend is MpvBackend) "Huefin Engine (original file)" else "Direct Play (original file)"
                 src.subtitleStreams.filter { it.isExternal == true }.forEach { s -> subtitleFor(c, src.id, s)?.let(subs::add) }
             }
             src.transcodingUrl != null -> {
@@ -163,6 +167,8 @@ class PlayerModel(var request: PlaybackRequest, val backend: Backend) {
         val d = backend.durationMs / 1000.0
         duration = if (d > 0) d else (item.runTimeTicks ?: 0) / 10_000_000.0
         isPlaying = backend.isPlaying
+        overlaySubtitle = backend.overlaySubtitle
+        if (backend is MpvBackend && playMethod.startsWith("Huefin Engine")) playMethod = "Huefin Engine · ${backend.detail}"
         // Some streams keep reporting "buffering" while they play; if the clock is moving, it's playing.
         val pos = backend.positionMs
         val moving = backend.isPlaying && pos > lastTickPos + 50

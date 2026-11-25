@@ -16,9 +16,6 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.huefin.app.core.JellyfinClient
-import org.videolan.libvlc.LibVLC
-import org.videolan.libvlc.Media
-import org.videolan.libvlc.util.VLCVideoLayout
 
 data class SubtitleSource(val url: String, val mime: String, val language: String?, val label: String)
 data class Track(val id: String, val label: String, val selected: Boolean, val language: String? = null)
@@ -40,6 +37,12 @@ interface Backend {
     var onEnded: () -> Unit
     var onError: (String) -> Unit
     var onReady: () -> Unit
+    /** What the server says about the video (VideoRangeType like "HDR10" or "DOVI", and the codec), before prepare. */
+    fun setVideoHint(rangeType: String?, codec: String?) {}
+    /** Text subtitles the app must draw itself (when the engine can't draw on the picture). */
+    val overlaySubtitle: String? get() = null
+    /** One line about how the picture is being drawn, for the info panel. */
+    val detail: String get() = ""
 }
 
 /** Android's player (Media3 ExoPlayer). */
@@ -49,7 +52,11 @@ class ExoBackend(context: Context) : Backend {
     override var onEnded: () -> Unit = {}
     override var onError: (String) -> Unit = {}
     override var onReady: () -> Unit = {}
-    val exo: ExoPlayer = ExoPlayer.Builder(context)
+    // FFmpeg (Jellyfin's build of Media3's decoder) adds TrueHD, DTS and other audio Android can't decode,
+    // so Dolby Vision and HDR files with that audio still play in Android's own player, in true DV/HDR.
+    val exo: ExoPlayer = ExoPlayer.Builder(context, androidx.media3.exoplayer.DefaultRenderersFactory(context)
+            .setExtensionRendererMode(androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+            .setEnableDecoderFallback(true))
         .setMediaSourceFactory(DefaultMediaSourceFactory(OkHttpDataSource.Factory(JellyfinClient.http)))
         .setSeekBackIncrementMs(10_000).setSeekForwardIncrementMs(10_000)
         .build().apply {
@@ -114,63 +121,4 @@ class ExoBackend(context: Context) : Backend {
         playerView?.resizeMode = if (fill) AspectRatioFrameLayout.RESIZE_MODE_ZOOM else AspectRatioFrameLayout.RESIZE_MODE_FIT
     }
     override fun release() { playerView?.player = null; exo.release() }
-}
-
-/** The Huefin Engine (libVLC): plays MKV, AVI, DTS, TrueHD, PGS subtitles and more straight from the original file. */
-class VlcBackend(context: Context) : Backend {
-    override val name = "Huefin Engine"
-    override var onEnded: () -> Unit = {}
-    override var onError: (String) -> Unit = {}
-    override var onReady: () -> Unit = {}
-    private val lib = LibVLC(context.applicationContext, arrayListOf("--network-caching=3000", "--no-stats", "--audio-time-stretch"))
-    private val mp = org.videolan.libvlc.MediaPlayer(lib)
-    private var layout: VLCVideoLayout? = null
-    private var buffering = false
-    private var readySent = false
-    override val supportsBoost = true
-
-    init {
-        mp.setEventListener { e ->
-            when (e.type) {
-                org.videolan.libvlc.MediaPlayer.Event.EndReached -> onEnded()
-                org.videolan.libvlc.MediaPlayer.Event.EncounteredError -> onError("The Huefin Engine couldn't open this file.")
-                org.videolan.libvlc.MediaPlayer.Event.Buffering -> buffering = e.buffering < 100f
-                org.videolan.libvlc.MediaPlayer.Event.Playing -> { buffering = false; if (!readySent) { readySent = true; onReady() } }
-            }
-        }
-    }
-
-    override fun createView(context: Context): View = VLCVideoLayout(context).also {
-        layout = it
-        mp.attachViews(it, null, true, false)
-    }
-
-    override fun prepare(url: String, startMs: Long, subtitles: List<SubtitleSource>, hls: Boolean) {
-        readySent = false
-        val media = Media(lib, Uri.parse(url))
-        media.setHWDecoderEnabled(true, false)
-        if (startMs > 0) media.addOption(":start-time=${startMs / 1000.0}")
-        mp.media = media
-        media.release()
-        subtitles.forEach { mp.addSlave(org.videolan.libvlc.interfaces.IMedia.Slave.Type.Subtitle, Uri.parse(it.url), false) }
-        mp.play()
-    }
-
-    override fun play() { mp.play() }
-    override fun pause() { mp.pause() }
-    override fun seekTo(ms: Long) { mp.time = ms }
-    override val positionMs get() = mp.time.coerceAtLeast(0)
-    override val durationMs get() = mp.length.coerceAtLeast(0)
-    override val isPlaying get() = mp.isPlaying
-    override val isBuffering get() = buffering
-    override fun setSpeed(speed: Float) { mp.rate = speed }
-    override fun audioTracks() = (mp.audioTracks ?: emptyArray()).filter { it.id >= 0 }.map { Track(it.id.toString(), it.name ?: "Track", it.id == mp.audioTrack) }
-    override fun subtitleTracks() = (mp.spuTracks ?: emptyArray()).filter { it.id >= 0 }.map { Track(it.id.toString(), it.name ?: "Subtitles", it.id == mp.spuTrack) }
-    override fun selectAudio(id: String) { mp.audioTrack = id.toInt() }
-    override fun selectSubtitle(id: String?) { mp.spuTrack = id?.toInt() ?: -1 }
-    override fun setFill(fill: Boolean) { mp.videoScale = if (fill) org.videolan.libvlc.MediaPlayer.ScaleType.SURFACE_FILL else org.videolan.libvlc.MediaPlayer.ScaleType.SURFACE_BEST_FIT }
-    override fun setVolumeBoost(percent: Int) { mp.volume = percent.coerceIn(0, 200) }
-    override fun release() {
-        runCatching { mp.stop(); mp.detachViews(); mp.release(); lib.release() }
-    }
 }

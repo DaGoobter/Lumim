@@ -67,12 +67,10 @@ object DeviceProfile {
             if (c.vp9) add("vp9")
             if (c.av1) add("av1")
         }.joinToString(",")
-        // What Android decodes itself. DTS and TrueHD go to the Huefin Engine (VLC) instead of the server.
-        val audio = buildList {
-            addAll(listOf("aac", "mp3", "mp2", "opus", "vorbis", "flac", "alac", "pcm_s16le", "pcm_s24le"))
-            if (c.ac3) add("ac3")
-            if (c.eac3) add("eac3")
-        }.joinToString(",")
+        // Android's player decodes these itself; FFmpeg inside Huefin covers Dolby (AC-3, E-AC-3, TrueHD) and DTS,
+        // or sends them untouched to a receiver that can decode them.
+        val audio = listOf("aac", "mp3", "mp2", "opus", "vorbis", "flac", "alac", "pcm_s16le", "pcm_s24le",
+            "ac3", "eac3", "truehd", "mlp", "dts", "dca").joinToString(",")
 
         val ranges = buildList {
             add("SDR")
@@ -135,14 +133,14 @@ object DeviceProfile {
         val c = capabilities(context)
         fun yes(b: Boolean) = if (b) "Yes" else "No"
         return listOf(
-            "Dolby Vision decoder" to (if (c.dolbyVisionDecoder) "Yes" else "No (plays HDR10 layer of DV files)"),
+"Dolby Vision decoder" to (if (c.dolbyVisionDecoder) "Yes (true Dolby Vision)" else "No (HDR10 layer; Profile 5 via Huefin Engine)"),
             "HDR10 display" to yes(c.hdr10),
             "HDR10+ display" to yes(c.hdr10Plus),
             "HLG display" to yes(c.hlg),
             "HEVC decoder" to yes(c.hevc),
             "AV1 decoder" to yes(c.av1),
             "Dolby Digital" to yes(c.ac3 || c.eac3),
-            "DTS / TrueHD" to "Huefin Engine",
+            "DTS / TrueHD" to "Yes (Huefin's FFmpeg, or untouched to your receiver)",
         )
     }
 }

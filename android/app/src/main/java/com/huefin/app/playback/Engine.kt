@@ -9,7 +9,8 @@ import com.huefin.app.core.Prefs
 
 /**
  * Who plays a video: Android's own player (ExoPlayer: HDR, Dolby Vision, best battery) or the
- * Huefin Engine (VLC), which plays nearly any file as-is so the server doesn't have to convert it.
+ * Huefin Engine (mpv + libplacebo), which plays nearly any file as-is, reshapes Dolby Vision Profile 5 and
+ * tone-maps HDR for screens that can't show it, so the server doesn't have to convert anything.
  */
 enum class PlaybackEngine(val label: String) {
     Auto("Automatic"), Apple("Android player only"), Prism("Huefin Engine always");

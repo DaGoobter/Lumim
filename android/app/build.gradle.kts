@@ -43,7 +43,10 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true; buildConfig = true }
-    packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
+    packaging {
+        resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" }
+        jniLibs { useLegacyPackaging = true; pickFirsts += "**/libc++_shared.so" }
+    }
 }
 
 dependencies {
@@ -74,7 +77,10 @@ dependencies {
     implementation("com.google.android.gms:play-services-cast-framework:22.0.0")
     implementation("androidx.mediarouter:mediarouter:1.7.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("org.videolan.android:libvlc-all:3.6.0")
+    // The Huefin Engine: mpv 0.42 + FFmpeg + libplacebo (Dolby Vision reshaping, HDR tone mapping).
+    implementation("dev.jdtech.mpv:libmpv:1.1.0")
+    // TrueHD, DTS and friends for Android's own player, so DV/HDR files with that audio stay in true DV/HDR.
+    implementation("org.jellyfin.media3:media3-ffmpeg-decoder:1.5.0+1")
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")

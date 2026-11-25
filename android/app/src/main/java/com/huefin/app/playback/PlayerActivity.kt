@@ -111,7 +111,7 @@ class PlayerActivity : ComponentActivity() {
         }
         lifecycleScope.launch {
             val engine = EngineDecider.useEngine(request, AppState.client, AppState.maxBitrate) && SyncPlay.groupId == null
-            val backend: Backend = if (engine) VlcBackend(this@PlayerActivity) else ExoBackend(this@PlayerActivity)
+            val backend: Backend = if (engine) runCatching { MpvBackend(this@PlayerActivity) }.getOrNull() ?: ExoBackend(this@PlayerActivity) else ExoBackend(this@PlayerActivity)
             val m = PlayerModel(request, backend)
             m.onClose = { finish() }
             model = m
@@ -181,6 +181,13 @@ private fun PlayerScreen(m: PlayerModel, inPip: Boolean, tabletopHinge: Int?, on
         AndroidView({ ctx -> m.backend.createView(ctx) }, videoModifier
             .pointerInput(Unit) { detectTapGestures(onTap = { visible = !visible; lastTouch = System.currentTimeMillis() },
                 onDoubleTap = { m.toggleFill() }) })
+        m.overlaySubtitle?.let { line ->
+            Text(line.replace("\\N", "\n"), Modifier.align(if (hingeDp != null) Alignment.TopCenter else Alignment.BottomCenter)
+                .padding(start = 32.dp, end = 32.dp, top = (hingeDp ?: 0.dp) - 90.dp.coerceAtMost(hingeDp ?: 0.dp), bottom = if (inPip) 6.dp else 48.dp)
+                .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(6.dp)).padding(horizontal = 10.dp, vertical = 4.dp),
+                color = Color.White, fontSize = if (inPip) 11.sp else 20.sp, fontWeight = FontWeight.SemiBold,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center, lineHeight = if (inPip) 13.sp else 26.sp)
+        }
         if (inPip) return@BoxWithConstraints
 
         if (m.loading && m.error == null || m.liveStatus != null) {
@@ -237,7 +244,7 @@ private fun TopBar(m: PlayerModel, onClose: () -> Unit, onPip: () -> Unit, onSyn
         RoundIcon(Icons.Filled.Close, "Close", onClose)
         Column(Modifier.weight(1f)) {
             Text(m.item.displayTitle, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1)
-            Text(listOfNotNull(m.item.episodeLabel, if (m.backend is VlcBackend) "Huefin Engine" else null).joinToString(" · "),
+            Text(listOfNotNull(m.item.episodeLabel, if (m.backend is MpvBackend) "Huefin Engine" else null).joinToString(" · "),
                 color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelMedium, maxLines = 1)
         }
         Box {
