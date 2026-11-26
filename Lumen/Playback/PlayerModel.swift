@@ -487,6 +487,16 @@ final class PlayerModel {
         updateAutoSkip()
     }
 
+    /// MP4/MOV files whose video keeps its setup inside the stream (hev1/avc3) show black in Apple's player.
+    private static func hasHiddenSetup(_ src: MediaSource, itemId: String, client: JellyfinClient) async -> Bool {
+        let containers = (src.container ?? "").lowercased()
+        guard ["mp4", "m4v", "mov"].contains(where: { containers.contains($0) }) else { return false }
+        let codec = src.mediaStreams?.first(where: { $0.type == "Video" })?.codec?.lowercased() ?? ""
+        guard codec == "hevc" || codec == "h264" else { return false }
+        let url = client.directPlayURL(itemId: itemId, mediaSourceId: src.id, container: src.container)
+        return await MP4Probe.needsServerStream(itemId: itemId, url: url, authorization: client.authorizationHeader)
+    }
+
     /// Sound but no picture after 4 seconds of direct play: switch to the server's repackaged stream.
     private func checkPicture() {
         guard let probe = pictureProbe, let item = player.currentItem, player.timeControlStatus == .playing else { return }
@@ -503,6 +513,7 @@ final class PlayerModel {
         pictureProbe = nil
         item.remove(probe)
         forceServerStream = true
+        MP4Probe.remember(request.item.id, needsServerStream: true)   // next time, skip straight to the server's stream
         let ticks = Int64(t * 10_000_000)
         Task { [weak self] in
             guard let self else { return }
@@ -676,11 +687,17 @@ final class PlayerModel {
                     diagnostics = StreamDiagnostics.from(source: src, usingHLS: true,
                                                          audioIndex: audioIndex, subtitleIndex: subtitleIndex)
                     diagnostics.playMethod = "Live stream (HLS)"
-                } else if src.supportsDirectPlay == true && !customTracks && !airPlayMode {
+                } else if src.supportsDirectPlay == true && !customTracks && !airPlayMode,
+                          !(await Self.hasHiddenSetup(src, itemId: request.item.id, client: client)) {
                     url = client.directPlayURL(itemId: request.item.id, mediaSourceId: src.id, container: src.container)
                     reportedMethod = "DirectPlay"
                     diagnostics = StreamDiagnostics.from(source: src, usingHLS: false,
                                                          audioIndex: audioIndex, subtitleIndex: subtitleIndex)
+                } else if src.supportsDirectPlay == true && !customTracks && !airPlayMode && !forceServerStream {
+                    // The file hides its video setup (hev1/avc3): ask again for the server's repackaged stream.
+                    forceServerStream = true
+                    await load(startTicks: startTicks)
+                    return
                 } else if let t = src.transcodingUrl,
                           let u = client.absoluteURL(serverRelative: t, allowSubtitleBurnIn: subtitleIndex >= 0) {
                     url = u

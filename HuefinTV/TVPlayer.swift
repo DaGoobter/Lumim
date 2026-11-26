@@ -82,7 +82,15 @@ final class PlayerModel {
             // The person's default audio and subtitle languages (Settings).
             let choice = app.trackPrefs.choose(for: src)
             audioIndex = choice.audio; subtitleIndex = choice.subtitle
-            let custom = (choice.audio != nil && choice.audio != src.defaultAudioStreamIndex) || subtitleIndex >= 0 || forceServerStream
+            var custom = (choice.audio != nil && choice.audio != src.defaultAudioStreamIndex) || subtitleIndex >= 0 || forceServerStream
+            // MP4s whose video hides its setup data (hev1/avc3) show black in Apple's player: use the server's stream.
+            if !custom, !target.isLiveChannel, src.supportsDirectPlay == true,
+               ["mp4", "m4v", "mov"].contains(where: { (src.container ?? "").lowercased().contains($0) }),
+               await MP4Probe.needsServerStream(itemId: target.id,
+                                                url: client.directPlayURL(itemId: target.id, mediaSourceId: src.id, container: src.container),
+                                                authorization: client.authorizationHeader) {
+                custom = true; forceServerStream = true
+            }
             // When the server has to repackage the file (MKV and friends), have it re-encode the audio too.
             // Copying the audio track as-is into Apple's stream format lets sound drift out of sync with the picture.
             let repackaged = !target.isLiveChannel && (custom || src.supportsDirectPlay != true)
@@ -185,6 +193,7 @@ final class PlayerModel {
         guard pictureWaitTicks >= 8 else { return }
         pictureProbe = nil; current.remove(probe)
         forceServerStream = true
+        MP4Probe.remember(item.id, needsServerStream: true)
         let ticks = Int64((now.seconds.isFinite ? now.seconds : 0) * 10_000_000)
         Task { await load(item, startTicks: ticks) }
     }
