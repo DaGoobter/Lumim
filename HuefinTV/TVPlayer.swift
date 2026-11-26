@@ -22,6 +22,10 @@ final class PlayerModel {
     @ObservationIgnored private let app: AppState
     @ObservationIgnored private var client: JellyfinClient? { app.client }
     @ObservationIgnored private var playSessionId: String?
+    // Sound but no picture (e.g. HEVC tagged 'hev1'): after 4 s of direct play with no frame, use the server's stream.
+    @ObservationIgnored private var pictureProbe: AVPlayerItemVideoOutput?
+    @ObservationIgnored private var pictureWaitTicks = 0
+    @ObservationIgnored private var forceServerStream = false
     @ObservationIgnored private var mediaSourceId: String?
     @ObservationIgnored private var liveStreamId: String?
     @ObservationIgnored private var method = "DirectPlay"
@@ -78,7 +82,7 @@ final class PlayerModel {
             // The person's default audio and subtitle languages (Settings).
             let choice = app.trackPrefs.choose(for: src)
             audioIndex = choice.audio; subtitleIndex = choice.subtitle
-            let custom = (choice.audio != nil && choice.audio != src.defaultAudioStreamIndex) || subtitleIndex >= 0
+            let custom = (choice.audio != nil && choice.audio != src.defaultAudioStreamIndex) || subtitleIndex >= 0 || forceServerStream
             // When the server has to repackage the file (MKV and friends), have it re-encode the audio too.
             // Copying the audio track as-is into Apple's stream format lets sound drift out of sync with the picture.
             let repackaged = !target.isLiveChannel && (custom || src.supportsDirectPlay != true)
@@ -109,6 +113,12 @@ final class PlayerModel {
             let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": ["Authorization": client.authorizationHeader]])
             let playerItem = AVPlayerItem(asset: asset)
             playerItem.externalMetadata = metadata(for: target)
+            pictureProbe = nil; pictureWaitTicks = 0
+            if method == "DirectPlay" && !target.isLiveChannel {
+                let probe = AVPlayerItemVideoOutput(pixelBufferAttributes: nil)
+                playerItem.add(probe)
+                pictureProbe = probe
+            }
             if target.isLiveChannel {
                 playerItem.automaticallyPreservesTimeOffsetFromLive = true
                 playerItem.configuredTimeOffsetFromLive = CMTime(seconds: 9, preferredTimescale: 1)
@@ -165,10 +175,25 @@ final class PlayerModel {
 
     // MARK: Progress, skipping, up next
 
+    private func checkPicture() {
+        guard let probe = pictureProbe, let current = player.currentItem, player.timeControlStatus == .playing else { return }
+        let now = player.currentTime()
+        if probe.hasNewPixelBuffer(forItemTime: now) || probe.copyPixelBuffer(forItemTime: now, itemTimeForDisplay: nil) != nil {
+            pictureProbe = nil; current.remove(probe); return
+        }
+        pictureWaitTicks += 1
+        guard pictureWaitTicks >= 8 else { return }
+        pictureProbe = nil; current.remove(probe)
+        forceServerStream = true
+        let ticks = Int64((now.seconds.isFinite ? now.seconds : 0) * 10_000_000)
+        Task { await load(item, startTicks: ticks) }
+    }
+
     private func tick(_ seconds: Double) {
         guard seconds.isFinite else { return }
         currentTime = seconds
         Task { await report("Sessions/Playing/Progress") }
+        checkPicture()
         if activeSkip?.start != nil, PlaybackPrefs.autoSkipIntro, isPlaying, let s = activeSkip, !skipped.contains(s.start), !SyncPlayManager.shared.controls(self) {
             skipSegment()
         }
