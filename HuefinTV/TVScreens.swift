@@ -196,21 +196,35 @@ struct TVHomeView: View {
 struct TVLibrariesView: View {
     @Environment(AppState.self) private var app
     @State private var views: [BaseItem] = []
+    @AppStorage("huefin.libraryMode") private var mode = "libraries"
     var body: some View {
         ScrollView {
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 40), count: 4), spacing: 44) {
-                ForEach(views) { lib in
-                    NavigationLink(value: lib) {
-                        ZStack(alignment: .bottomLeading) {
-                            TVImage(url: app.client?.imageURL(lib.id, maxWidth: 900, tag: lib.imageTag("Primary")))
-                            LinearGradient(colors: [.clear, .black.opacity(0.8)], startPoint: .center, endPoint: .bottom)
-                            Text(lib.name ?? "").font(.headline).padding(20)
-                        }.frame(height: 200)
-                    }.buttonStyle(.card)
+            VStack(alignment: .leading, spacing: 40) {
+                HStack(spacing: 20) {
+                    ForEach([("libraries", "Libraries"), ("studios", "Studios"), ("networks", "Networks")], id: \.0) { tag, title in
+                        Button(title) { mode = tag }.buttonStyle(TVHueButtonStyle(filled: mode == tag, hue: Theme.blue, expand: false))
+                    }
+                }
+                switch mode {
+                case "studios": TVStudioGrid(kind: .studio)
+                case "networks": TVStudioGrid(kind: .network)
+                default:
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 40), count: 4), spacing: 44) {
+                        ForEach(views) { lib in
+                            NavigationLink(value: lib) {
+                                ZStack(alignment: .bottomLeading) {
+                                    TVImage(url: app.client?.imageURL(lib.id, maxWidth: 900, tag: lib.imageTag("Primary")))
+                                    LinearGradient(colors: [.clear, .black.opacity(0.8)], startPoint: .center, endPoint: .bottom)
+                                    Text(lib.name ?? "").font(.headline).padding(20)
+                                }.frame(height: 200)
+                            }.buttonStyle(.card)
+                        }
+                    }
                 }
             }.padding(80)
         }
         .itemDestinations()
+        .navigationDestination(for: StudioBrand.self) { TVStudioBrandView(brand: $0) }
         .task { if views.isEmpty { views = (try? await app.client?.userViews()) ?? [] } }
     }
 }
