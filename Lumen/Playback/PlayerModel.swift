@@ -148,6 +148,12 @@ final class PlayerModel {
     @ObservationIgnored private var reportedStart = false
     @ObservationIgnored private var stopped = false
     @ObservationIgnored private var loadGeneration = 0
+    // Picture check: some files play their sound but Apple's decoder never produces a picture (e.g. HEVC tagged
+    // 'hev1', whose setup data sits inside the video). If no frame appears within a few seconds of direct play,
+    // ask the server for a repackaged stream instead, which fixes the file on the way.
+    @ObservationIgnored private var pictureProbe: AVPlayerItemVideoOutput?
+    @ObservationIgnored private var pictureWaitTicks = 0
+    @ObservationIgnored private var forceServerStream = false
     @ObservationIgnored private var externalCancellable: AnyCancellable?
     /// True while video is going to an AirPlay screen (car, TV); we then send a stream any receiver can decode.
     private(set) var airPlayMode = false
@@ -475,9 +481,34 @@ final class PlayerModel {
         }
         isPlaying = player.timeControlStatus != .paused
         if let size = player.currentItem?.presentationSize, size != .zero { videoSize = size }
+        checkPicture()
         updateNowPlaying()
         updateUpNext()
         updateAutoSkip()
+    }
+
+    /// Sound but no picture after 4 seconds of direct play: switch to the server's repackaged stream.
+    private func checkPicture() {
+        guard let probe = pictureProbe, let item = player.currentItem, player.timeControlStatus == .playing else { return }
+        let now = player.currentTime()
+        if probe.hasNewPixelBuffer(forItemTime: now) || probe.copyPixelBuffer(forItemTime: now, itemTimeForDisplay: nil) != nil {
+            pictureProbe = nil                       // the picture is fine; stop checking
+            item.remove(probe)
+            return
+        }
+        // Counted in clock ticks (every half second while playing), so seeking doesn't skew it.
+        pictureWaitTicks += 1
+        guard pictureWaitTicks >= 8 else { return }
+        let t = now.seconds.isFinite ? now.seconds : 0
+        pictureProbe = nil
+        item.remove(probe)
+        forceServerStream = true
+        let ticks = Int64(t * 10_000_000)
+        Task { [weak self] in
+            guard let self else { return }
+            if let old = self.playSessionId, let client = self.client { await client.stopEncoding(playSessionId: old) }
+            await self.load(startTicks: ticks)
+        }
     }
 
     // MARK: Lock screen / Control Center
@@ -602,7 +633,7 @@ final class PlayerModel {
                 guard let client else { throw JellyfinError.noMediaSource }
                 // A non-default track needs the server's stream, which carries exactly the chosen tracks.
                 // The video is still copied, so Dolby Vision/HDR is kept.
-                let customTracks = subtitleIndex >= 0 || audioIndex != nil
+                let customTracks = subtitleIndex >= 0 || audioIndex != nil || forceServerStream
                 let info = try await client.playbackInfo(itemId: request.item.id, maxBitrate: maxBitrate,
                                                          startTicks: startTicks, audioStreamIndex: audioIndex,
                                                          subtitleStreamIndex: subtitleIndex,
@@ -667,6 +698,13 @@ final class PlayerModel {
             }
 
             let item = AVPlayerItem(asset: asset)
+            pictureProbe = nil
+            pictureWaitTicks = 0
+            if reportedMethod == "DirectPlay" && !isLive && request.item.mediaType != "Audio" {
+                let probe = AVPlayerItemVideoOutput(pixelBufferAttributes: nil)
+                item.add(probe)
+                pictureProbe = probe
+            }
             if isLive {
                 // Sit a few seconds behind the live edge and stay there, so a slow segment doesn't freeze the picture.
                 item.automaticallyPreservesTimeOffsetFromLive = true
