@@ -16,6 +16,11 @@ object Prefs {
     val deviceId: String
         get() = sp.getString("deviceId", null) ?: UUID.randomUUID().toString().also { sp.edit().putString("deviceId", it).apply() }
 
+    /** Library tab: "libraries", "studios" or "networks". */
+    var libraryMode: String
+        get() = string("huefin.libraryMode") ?: "libraries"
+        set(v) = set("huefin.libraryMode", v)
+
     fun bool(key: String, def: Boolean = false) = sp.getBoolean(key, def)
     fun int(key: String, def: Int = 0) = sp.getInt(key, def)
     fun string(key: String): String? = sp.getString(key, null)

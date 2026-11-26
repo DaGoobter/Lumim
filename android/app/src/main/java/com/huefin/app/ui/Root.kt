@@ -197,6 +197,7 @@ private fun MainScaffold(key: String) {
 fun NavGraphBuilder.sharedRoutes(nav: NavHostController) {
     composable("item/{id}") { ItemRouteScreen(it.arguments?.getString("id") ?: "", nav) }
     composable("library/{id}") { LibraryGridScreen(it.arguments?.getString("id") ?: "", nav) }
+    composable("studio/{id}") { StudioBrandScreen(it.arguments?.getString("id") ?: "", nav) }
     composable("settings") { SettingsScreen(nav) }
     composable("requests") { RequestsScreen(nav) }
     composable("family") { FamilyScreen(nav) }

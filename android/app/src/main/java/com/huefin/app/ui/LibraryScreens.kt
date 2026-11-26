@@ -81,10 +81,18 @@ fun LibrariesScreen(nav: NavHostController) {
     LaunchedEffect(AppState.client) {
         runCatching { AppState.client?.userViews() ?: emptyList() }.onSuccess { views = it; error = null }.onFailure { error = it.message }
     }
+    var mode by rememberSaveable { mutableStateOf(com.huefin.app.core.Prefs.libraryMode) }
     Scaffold(containerColor = Color.Transparent, topBar = { HuefinTopBar("Library", null) { AccountButton(nav) } }) { pad ->
-        LazyVerticalGrid(GridCells.Adaptive(280.dp), Modifier.fillMaxSize().background(
-            Brush.verticalGradient(listOf(LocalHue.current.copy(alpha = 0.22f), Hue.night, Hue.night))),
-            contentPadding = PaddingValues(16.dp, pad.calculateTopPadding() + 8.dp, 16.dp, 24.dp),
+      Column(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(LocalHue.current.copy(alpha = 0.22f), Hue.night, Hue.night)))
+          .padding(top = pad.calculateTopPadding())) {
+        BrowseModeRow(mode) { mode = it; com.huefin.app.core.Prefs.libraryMode = it }
+        if (mode == "studios" || mode == "networks") {
+            StudioGrid(if (mode == "studios") com.huefin.app.core.StudioBrand.Kind.Studio else com.huefin.app.core.StudioBrand.Kind.Network) {
+                nav.navigate("studio/" + android.net.Uri.encode(it.id))
+            }
+        } else
+        LazyVerticalGrid(GridCells.Adaptive(280.dp), Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 24.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             error?.let { item(span = { GridItemSpan(maxLineSpan) }) { ErrorBanner(it) } }
             items(views, key = { it.id }) { lib ->
@@ -97,6 +105,7 @@ fun LibrariesScreen(nav: NavHostController) {
                 }
             }
         }
+      }
     }
 }
 
