@@ -74,7 +74,12 @@ enum DeviceCapabilities {
         }
 
         var codecProfiles: [J] = [
-            ["Type": "Video", "Codec": "hevc", "Conditions": [rangeCondition(ranges)] as [J]] as J,
+            // Apple only shows HEVC tagged 'hvc1' or 'dvh1'. Files tagged 'hev1' play sound over a black screen,
+            // so the server repackages those (copying the picture, fixing the tag) instead of sending them as-is.
+            ["Type": "Video", "Codec": "hevc", "Conditions": [
+                rangeCondition(ranges),
+                ["Condition": "EqualsAny", "Property": "VideoCodecTag", "Value": "hvc1|dvh1", "IsRequired": false] as J,
+            ] as [J]] as J,
             ["Type": "Video", "Codec": "h264", "Conditions": [
                 rangeCondition("SDR"),
                 ["Condition": "LessThanEqual", "Property": "VideoLevel", "Value": "52", "IsRequired": false] as J,
