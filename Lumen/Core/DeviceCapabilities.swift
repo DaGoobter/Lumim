@@ -82,6 +82,8 @@ enum DeviceCapabilities {
             ] as [J]] as J,
             ["Type": "Video", "Codec": "h264", "Conditions": [
                 rangeCondition("SDR"),
+                // Same story as hev1: 'avc3' keeps its setup inside the video, which Apple's player won't show.
+                ["Condition": "EqualsAny", "Property": "VideoCodecTag", "Value": "avc1", "IsRequired": false] as J,
                 ["Condition": "LessThanEqual", "Property": "VideoLevel", "Value": "52", "IsRequired": false] as J,
             ] as [J]] as J,
         ]

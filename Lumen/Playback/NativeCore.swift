@@ -3,6 +3,7 @@ import AVFoundation
 import AVKit
 import CoreMedia
 import AudioToolbox
+import VideoToolbox
 #if canImport(Libavformat) && canImport(Libavcodec) && canImport(Libswresample)
 import Libavformat
 import Libavcodec
@@ -189,7 +190,15 @@ final class NativeCore: NSObject, EngineCore {
 
         let videoIndex = av_find_best_stream(ctx, AVMEDIA_TYPE_VIDEO, -1, -1, nil, 0)
         guard videoIndex >= 0, let vStream = ctx.pointee.streams[Int(videoIndex)],
-              let format = makeVideoFormat(vStream) else { fail("", fallback: true, at: start); return }
+              let prepared = Self.prepareVideo(ctx, vStream, videoIndex),
+              let format = makeVideoFormat(vStream, config: prepared.config),
+              // Pre-flight: Apple's decoder must turn the first keyframe into a picture before we commit to it.
+              // Anything it can't show (odd tags, missing setup data, unusual profiles) goes to mpv instead of
+              // playing sound over a black screen.
+              Self.decodesFirstFrame(format, keyframe: prepared.keyframe)
+        else { fail("", fallback: true, at: start); return }
+        // Back to the beginning after peeking at the first frames (the start position is applied below).
+        av_seek_frame(ctx, -1, 0, AVSEEK_FLAG_BACKWARD)
         let durUs = ctx.pointee.duration
         let fps = vStream.pointee.avg_frame_rate
         DispatchQueue.main.async { [weak self] in
@@ -321,11 +330,8 @@ final class NativeCore: NSObject, EngineCore {
     // MARK: - Video
 
     /// Describes the video to Apple's decoder: HEVC / H.264 configuration, Dolby Vision record, HDR colour.
-    private func makeVideoFormat(_ st: UnsafeMutablePointer<AVStream>) -> CMVideoFormatDescription? {
-        guard let par = st.pointee.codecpar?.pointee, par.extradata_size > 0, let extra = par.extradata else { return nil }
-        let config = Data(bytes: extra, count: Int(par.extradata_size))
-        // MKV/MP4 carry a configuration record (first byte 1) and length-prefixed NAL units, which Apple takes as-is.
-        guard config.first == 1 else { return nil }
+    private func makeVideoFormat(_ st: UnsafeMutablePointer<AVStream>, config: Data) -> CMVideoFormatDescription? {
+        guard let par = st.pointee.codecpar?.pointee, config.first == 1 else { return nil }
         let isHEVC = par.codec_id == AV_CODEC_ID_HEVC
         guard isHEVC || par.codec_id == AV_CODEC_ID_H264 else { return nil }
         var atoms: [String: Any] = [isHEVC ? "hvcC" : "avcC": config]
@@ -383,6 +389,156 @@ final class NativeCore: NSObject, EngineCore {
                                                     width: par.width, height: par.height,
                                                     extensions: ext as CFDictionary, formatDescriptionOut: &desc)
         return status == noErr ? desc : nil
+    }
+
+    // MARK: - Making odd files playable
+
+    /// Gets the decoder setup (HEVC 'hvcC' / H.264 'avcC') ready and finds the first keyframe.
+    ///
+    /// Some files keep their setup data (VPS/SPS/PPS) inside the video itself instead of in the file header —
+    /// MP4s tagged 'hev1' or 'avc3', some web downloads and TV recordings. Apple's decoder needs it in the header,
+    /// so Huefin reads the first frames, pulls the setup data out, and rebuilds a complete header.
+    fileprivate static func prepareVideo(_ ctx: UnsafeMutablePointer<AVFormatContext>, _ st: UnsafeMutablePointer<AVStream>,
+                                         _ index: Int32) -> (config: Data, keyframe: Data?)? {
+        guard let par = st.pointee.codecpar?.pointee, par.extradata_size > 0, let extra = par.extradata else { return nil }
+        var config = Data(bytes: extra, count: Int(par.extradata_size))
+        // MKV/MP4 carry a configuration record (first byte 1) and length-prefixed NAL units, which Apple takes as-is.
+        guard config.first == 1 else { return nil }
+        let isHEVC = par.codec_id == AV_CODEC_ID_HEVC
+        guard isHEVC || par.codec_id == AV_CODEC_ID_H264 else { return nil }
+        let nalLength = isHEVC ? (config.count > 21 ? Int(config[21] & 3) + 1 : 4) : (config.count > 4 ? Int(config[4] & 3) + 1 : 4)
+        let needed: [UInt8] = isHEVC ? [32, 33, 34] : [7, 8]
+        let present = Set(Self.parameterSets(in: config, hevc: isHEVC).map(\.type))
+        let complete = needed.allSatisfy { present.contains($0) }
+
+        // Read until the first keyframe (and gather any setup data on the way).
+        var found: [UInt8: Data] = [:]
+        var keyframe: Data?
+        let pkt = av_packet_alloc()
+        defer { var p = pkt; av_packet_free(&p) }
+        var budget = 400
+        while budget > 0, keyframe == nil, let p = pkt, av_read_frame(ctx, p) >= 0 {
+            defer { av_packet_unref(p) }
+            budget -= 1
+            guard p.pointee.stream_index == index, let data = p.pointee.data, p.pointee.size > 0 else { continue }
+            let bytes = Data(bytes: data, count: Int(p.pointee.size))
+            for nal in Self.nalUnits(bytes, lengthSize: nalLength) {
+                guard let first = nal.first else { continue }
+                let type = isHEVC ? (first >> 1) & 0x3F : first & 0x1F
+                if needed.contains(type), found[type] == nil { found[type] = nal }
+            }
+            if p.pointee.flags & AV_PKT_FLAG_KEY != 0 { keyframe = bytes }
+        }
+        if !complete {
+            guard needed.allSatisfy({ found[$0] != nil }) else { return nil }
+            config = isHEVC ? Self.rebuildHVCC(header: config, sets: needed.compactMap { t in found[t].map { (t, $0) } })
+                            : Self.rebuildAVCC(header: config, sps: found[7]!, pps: found[8]!)
+        }
+        return (config, keyframe)
+    }
+
+    /// Splits length-prefixed video data into its NAL units.
+    fileprivate static func nalUnits(_ data: Data, lengthSize: Int) -> [Data] {
+        var out: [Data] = []
+        var i = data.startIndex
+        while i + lengthSize <= data.endIndex {
+            var len = 0
+            for k in 0..<lengthSize { len = (len << 8) | Int(data[i + k]) }
+            i += lengthSize
+            guard len > 0, i + len <= data.endIndex else { break }
+            out.append(data.subdata(in: i..<(i + len)))
+            i += len
+        }
+        return out
+    }
+
+    /// The setup NAL units already inside a configuration record.
+    fileprivate static func parameterSets(in config: Data, hevc: Bool) -> [(type: UInt8, data: Data)] {
+        let b = [UInt8](config)
+        var out: [(UInt8, Data)] = []
+        func u16(_ i: Int) -> Int { i + 1 < b.count ? Int(b[i]) << 8 | Int(b[i + 1]) : 0 }
+        if hevc {
+            guard b.count > 22 else { return [] }
+            var i = 23
+            for _ in 0..<Int(b[22]) {
+                guard i + 3 <= b.count else { break }
+                let type = b[i] & 0x3F; let count = u16(i + 1); i += 3
+                for _ in 0..<count {
+                    let len = u16(i); i += 2
+                    guard len > 0, i + len <= b.count else { return out }
+                    out.append((type, Data(b[i..<(i + len)]))); i += len
+                }
+            }
+        } else {
+            guard b.count > 6 else { return [] }
+            var i = 6
+            for _ in 0..<Int(b[5] & 0x1F) {
+                let len = u16(i); i += 2
+                guard len > 0, i + len <= b.count else { return out }
+                out.append((7, Data(b[i..<(i + len)]))); i += len
+            }
+            guard i < b.count else { return out }
+            let pps = Int(b[i]); i += 1
+            for _ in 0..<pps {
+                let len = u16(i); i += 2
+                guard len > 0, i + len <= b.count else { return out }
+                out.append((8, Data(b[i..<(i + len)]))); i += len
+            }
+        }
+        return out
+    }
+
+    fileprivate static func rebuildHVCC(header: Data, sets: [(UInt8, Data)]) -> Data {
+        var out = Data(header.prefix(22))
+        out.append(UInt8(sets.count))
+        for (type, nal) in sets {
+            out.append(0x80 | type)                       // array_completeness = 1
+            out.append(0); out.append(1)                  // one NAL unit
+            out.append(UInt8(nal.count >> 8)); out.append(UInt8(nal.count & 0xFF))
+            out.append(nal)
+        }
+        return out
+    }
+
+    fileprivate static func rebuildAVCC(header: Data, sps: Data, pps: Data) -> Data {
+        var out = Data([1, sps.count > 1 ? sps[sps.startIndex + 1] : header[1], sps.count > 2 ? sps[sps.startIndex + 2] : header[2],
+                        sps.count > 3 ? sps[sps.startIndex + 3] : header[3], header.count > 4 ? header[4] | 0xFC : 0xFF, 0xE1])
+        out.append(UInt8(sps.count >> 8)); out.append(UInt8(sps.count & 0xFF)); out.append(sps)
+        out.append(1)
+        out.append(UInt8(pps.count >> 8)); out.append(UInt8(pps.count & 0xFF)); out.append(pps)
+        return out
+    }
+
+    /// Asks Apple's decoder to decode one keyframe. False means it can't show this video (so mpv should).
+    fileprivate static func decodesFirstFrame(_ format: CMVideoFormatDescription, keyframe: Data?) -> Bool {
+        guard let keyframe, !keyframe.isEmpty else { return true }   // nothing to test with; the live check still runs
+        var session: VTDecompressionSession?
+        guard VTDecompressionSessionCreate(allocator: kCFAllocatorDefault, formatDescription: format, decoderSpecification: nil,
+                                           imageBufferAttributes: nil, outputCallback: nil,
+                                           decompressionSessionOut: &session) == noErr, let session else { return false }
+        defer { VTDecompressionSessionInvalidate(session) }
+        var block: CMBlockBuffer?
+        guard CMBlockBufferCreateWithMemoryBlock(allocator: kCFAllocatorDefault, memoryBlock: nil, blockLength: keyframe.count,
+                                                 blockAllocator: kCFAllocatorDefault, customBlockSource: nil, offsetToData: 0,
+                                                 dataLength: keyframe.count, flags: 0, blockBufferOut: &block) == noErr, let block,
+              keyframe.withUnsafeBytes({ CMBlockBufferReplaceDataBytes(with: $0.baseAddress!, blockBuffer: block,
+                                                                         offsetIntoDestination: 0, dataLength: keyframe.count) }) == noErr
+        else { return false }
+        var sample: CMSampleBuffer?
+        var size = keyframe.count
+        guard CMSampleBufferCreateReady(allocator: kCFAllocatorDefault, dataBuffer: block, formatDescription: format,
+                                        sampleCount: 1, sampleTimingEntryCount: 0, sampleTimingArray: nil,
+                                        sampleSizeEntryCount: 1, sampleSizeArray: &size, sampleBufferOut: &sample) == noErr,
+              let sample else { return false }
+        final class Result: @unchecked Sendable { var ok = false }
+        let result = Result()
+        let status = VTDecompressionSessionDecodeFrame(session, sampleBuffer: sample, flags: [], infoFlagsOut: nil) { status, _, image, _, _ in
+            result.ok = status == noErr && image != nil
+        }
+        VTDecompressionSessionWaitForAsynchronousFrames(session)
+        // kVTInvalidSessionErr happens when the app is in the background; don't blame the file for that.
+        if status == kVTInvalidSessionErr { return true }
+        return status == noErr && result.ok
     }
 
     private static func cmTime(_ v: Int64, _ tb: AVRational) -> CMTime {
