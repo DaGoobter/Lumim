@@ -32,12 +32,22 @@ struct PlayerScreen: View {
             // Starting something new closes any video floating in Picture in Picture.
             await PiPSession.shared.endForNewVideo()
             // Watch Together needs Apple's player (it's the one wired to the group), and so does Picture in Picture.
-            if request.forceApple || !EngineAvailability.available || SyncPlayManager.shared.groupId != nil {
+            // EngineGuard.tripped: the engine crashed earlier on this build, so stay on Apple's player.
+            if request.forceApple || EngineGuard.tripped || !EngineAvailability.available || SyncPlayManager.shared.groupId != nil {
                 useEngine = false
             } else {
-                useEngine = await EngineDecider.useEngine(for: request, client: app.client, maxBitrate: app.maxBitrate)
+                let engine = await EngineDecider.useEngine(for: request, client: app.client, maxBitrate: app.maxBitrate)
+                // Mark the engine as starting; if the app dies in the next 20 seconds, the next launch switches it off.
+                if engine { EngineGuard.engineStarting() }
+                useEngine = engine
             }
         }
+        .task(id: useEngine) {
+            guard useEngine == true else { return }
+            try? await Task.sleep(for: .seconds(20))
+            EngineGuard.engineSurvived()
+        }
+        .onDisappear { EngineGuard.engineSurvived() }
     }
 }
 

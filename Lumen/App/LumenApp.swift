@@ -33,6 +33,8 @@ struct LumenApp: App {
     @State private var app = AppState()
     @State private var downloads = DownloadManager.shared
 
+    init() { EngineGuard.checkLastRun() }
+
     var body: some Scene {
         WindowGroup {
             RootView()
@@ -56,8 +58,11 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            if app.client != nil {
+            if let client = app.client {
                 MainTabView()
+                    .task(id: client.baseURL) {
+                        await CrashReporter.shared.upload(baseURL: client.baseURL, authorization: client.authorizationHeader)
+                    }
                     .id(app.session?.key)   // switching account rebuilds every screen
             } else {
                 LoginView()
