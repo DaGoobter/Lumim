@@ -40,7 +40,7 @@ object SessionSocket {
             put("SupportsMediaControl", true)
             put("SupportedCommands", buildJsonArray { listOf("DisplayMessage", "Play", "Pause", "Seek", "Stop", "PlayPause", "SetVolume").forEach { add(JsonPrimitive(it)) } })
         }) }
-        val wsUrl = c.url("socket", mapOf("api_key" to c.accessToken, "deviceId" to JellyfinClient.deviceId)).replaceFirst("http", "ws")
+        val wsUrl = c.url("socket", mapOf("ApiKey" to c.accessToken, "deviceId" to JellyfinClient.deviceId)).replaceFirst("http", "ws")
         socket = JellyfinClient.http.newWebSocket(Request.Builder().url(wsUrl).build(), object : WebSocketListener() {
             override fun onMessage(webSocket: WebSocket, text: String) { AppState.scope.launch { handle(text) } }
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { dropped(webSocket) }

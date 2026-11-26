@@ -38,7 +38,7 @@ final class SessionSocket {
         guard var comps = URLComponents(url: client.baseURL.appendingPathComponent("socket"), resolvingAgainstBaseURL: false)
         else { return }
         comps.scheme = comps.scheme == "https" ? "wss" : "ws"
-        comps.queryItems = [URLQueryItem(name: "api_key", value: client.accessToken),
+        comps.queryItems = [URLQueryItem(name: "ApiKey", value: client.accessToken),
                             URLQueryItem(name: "deviceId", value: JellyfinClient.deviceId)]
         guard let url = comps.url else { return }
         let task = URLSession.shared.webSocketTask(with: url)

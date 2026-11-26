@@ -308,7 +308,7 @@ final class JellyfinClient {
             "UserId": userId, "DeviceId": Self.deviceId, "MaxStreamingBitrate": "320000000",
             "Container": "mp3,aac,m4a,m4b,flac,alac,wav,aiff",
             "TranscodingContainer": "mp3", "TranscodingProtocol": "http", "AudioCodec": "mp3",
-            "api_key": accessToken,
+            "ApiKey": accessToken,
         ])
     }
 
@@ -382,7 +382,7 @@ final class JellyfinClient {
             "AllowVideoStreamCopy": "true",
             "AllowAudioStreamCopy": "true",
             "RequireAvc": "false",
-            "api_key": accessToken,
+            "ApiKey": accessToken,
         ])
     }
 
@@ -468,12 +468,12 @@ final class JellyfinClient {
         let ext = container?.split(separator: ",").first.map(String.init) ?? "mp4"
         return url("Videos/\(itemId)/stream.\(ext)", query: [
             "static": "true", "mediaSourceId": mediaSourceId,
-            "deviceId": Self.deviceId, "api_key": accessToken,
+            "deviceId": Self.deviceId, "ApiKey": accessToken,
         ])
     }
 
     func originalDownloadURL(itemId: String) -> URL {
-        url("Items/\(itemId)/Download", query: ["api_key": accessToken])
+        url("Items/\(itemId)/Download", query: ["ApiKey": accessToken])
     }
 
     /// Server-returned paths (like TranscodingUrl) are relative to the server root.
@@ -484,7 +484,7 @@ final class JellyfinClient {
         var full = base + (path.hasPrefix("/") ? path : "/" + path)
         let lower = full.lowercased()
         if !lower.contains("api_key=") && !lower.contains("apikey="), let accessToken {
-            full += (full.contains("?") ? "&" : "?") + "api_key=\(accessToken)"
+            full += (full.contains("?") ? "&" : "?") + "ApiKey=\(accessToken)"
         }
         return URL(string: full)
     }

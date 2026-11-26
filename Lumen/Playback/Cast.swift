@@ -33,7 +33,7 @@ final class CastManager: NSObject, GCKSessionManagerListener, GCKRemoteMediaClie
             "MediaSourceId": item.mediaSources?.first?.id ?? item.id,
             "DeviceId": JellyfinClient.deviceId + "-cast",
             "VideoCodec": "h264", "AudioCodec": "aac", "MaxStreamingBitrate": "20000000",
-            "TranscodingMaxAudioChannels": "2", "SegmentContainer": "ts", "api_key": api.accessToken,
+            "TranscodingMaxAudioChannels": "2", "SegmentContainer": "ts", "ApiKey": api.accessToken,
         ])
         let meta = GCKMediaMetadata(metadataType: item.type == "Episode" ? .tvShow : .movie)
         meta.setString(item.displayTitle, forKey: kGCKMetadataKeyTitle)

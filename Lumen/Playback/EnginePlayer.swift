@@ -172,7 +172,7 @@ final class EnginePlayerModel {
             let codec = (s.codec ?? "srt").lowercased()
             let ext = ["ass", "ssa", "vtt", "srt"].contains(codec) ? codec : "srt"
             let u = client.url("Videos/\(item.id)/\(src.id)/Subtitles/\(idx)/0/Stream.\(ext)",
-                               query: ["api_key": client.accessToken])
+                               query: ["ApiKey": client.accessToken])
             let title = s.displayTitle ?? s.title ?? s.language ?? "Subtitles"
             externalSubs.append((u, title, s.language))
             player.addSubtitle(u, title: title, lang: s.language)

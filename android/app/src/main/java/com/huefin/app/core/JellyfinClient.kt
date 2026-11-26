@@ -183,7 +183,7 @@ class JellyfinClient(val baseUrl: String, var accessToken: String? = null, var u
     suspend fun playlistItems(playlistId: String): List<BaseItem> = get<ItemsResult>("Playlists/$playlistId/Items",
         mapOf("userId" to userId, "fields" to LIST_FIELDS)).items
     fun audioURL(itemId: String): String = url("Audio/$itemId/universal", mapOf(
-        "userId" to userId, "deviceId" to deviceId, "api_key" to accessToken, "maxStreamingBitrate" to "320000",
+        "userId" to userId, "deviceId" to deviceId, "ApiKey" to accessToken, "maxStreamingBitrate" to "320000",
         "container" to "opus,mp3,aac,m4a,flac,ogg,wav", "transcodingContainer" to "aac", "audioCodec" to "aac",
         "transcodingProtocol" to "http"))
 
@@ -231,9 +231,9 @@ class JellyfinClient(val baseUrl: String, var accessToken: String? = null, var u
     fun directPlayURL(itemId: String, mediaSourceId: String, container: String?): String {
         val ext = container?.split(",")?.firstOrNull() ?: "mp4"
         return url("Videos/$itemId/stream.$ext", mapOf("static" to "true", "mediaSourceId" to mediaSourceId,
-            "deviceId" to deviceId, "api_key" to accessToken))
+            "deviceId" to deviceId, "ApiKey" to accessToken))
     }
-    fun originalDownloadURL(itemId: String) = url("Items/$itemId/Download", mapOf("api_key" to accessToken))
+    fun originalDownloadURL(itemId: String) = url("Items/$itemId/Download", mapOf("ApiKey" to accessToken))
 
     fun liveHLSURL(channelId: String, mediaSourceId: String, liveStreamId: String?, playSessionId: String?, maxBitrate: Int,
                    hevc: Boolean): String = url("Videos/$channelId/master.m3u8", mapOf(
@@ -242,7 +242,7 @@ class JellyfinClient(val baseUrl: String, var accessToken: String? = null, var u
         "SegmentContainer" to "ts", "SegmentLength" to LIVE_SEGMENT_LENGTH.toString(),
         "MinSegments" to LIVE_MIN_SEGMENTS.toString(), "BreakOnNonKeyFrames" to "false",
         "TranscodingMaxAudioChannels" to "6", "MaxStreamingBitrate" to maxBitrate.toString(),
-        "AllowVideoStreamCopy" to "true", "AllowAudioStreamCopy" to "true", "RequireAvc" to "false", "api_key" to accessToken))
+        "AllowVideoStreamCopy" to "true", "AllowAudioStreamCopy" to "true", "RequireAvc" to "false", "ApiKey" to accessToken))
 
     /** Server-relative paths (TranscodingUrl) → absolute, with the key attached and subtitle burn-in removed. */
     fun absoluteURL(serverRelative: String, live: Boolean = false): String {
@@ -251,7 +251,7 @@ class JellyfinClient(val baseUrl: String, var accessToken: String? = null, var u
         var full = baseUrl.trimEnd('/') + (if (path.startsWith("/")) path else "/$path")
         val lower = full.lowercase()
         if (!lower.contains("api_key=") && !lower.contains("apikey=") && accessToken != null) {
-            full += (if (full.contains("?")) "&" else "?") + "api_key=$accessToken"
+            full += (if (full.contains("?")) "&" else "?") + "ApiKey=$accessToken"
         }
         return full
     }
@@ -301,7 +301,7 @@ class JellyfinClient(val baseUrl: String, var accessToken: String? = null, var u
         runCatching { get<PlaybackExtras>("Users/${userId ?: ""}/Items/$itemId", mapOf("Fields" to "Chapters,Trickplay")) }
             .getOrDefault(PlaybackExtras())
     fun trickplayTileURL(itemId: String, width: Int, index: Int, mediaSourceId: String) =
-        url("Videos/$itemId/Trickplay/$width/$index.jpg", mapOf("mediaSourceId" to mediaSourceId, "api_key" to accessToken))
+        url("Videos/$itemId/Trickplay/$width/$index.jpg", mapOf("mediaSourceId" to mediaSourceId, "ApiKey" to accessToken))
 
     suspend fun searchSubtitles(itemId: String, language: String): List<RemoteSubtitleInfo> =
         get("Items/$itemId/RemoteSearch/Subtitles/$language", mapOf("isPerfectMatch" to "false"))

@@ -69,7 +69,7 @@ object Cast {
         val url = api.url("Videos/${item.id}/master.m3u8", mapOf(
             "MediaSourceId" to (item.mediaSources?.firstOrNull()?.id ?: item.id), "DeviceId" to JellyfinClient.deviceId + "-cast",
             "VideoCodec" to "h264", "AudioCodec" to "aac", "MaxStreamingBitrate" to "20000000", "TranscodingMaxAudioChannels" to "2",
-            "SegmentContainer" to "ts", "api_key" to api.accessToken))
+            "SegmentContainer" to "ts", "ApiKey" to api.accessToken))
         val meta = MediaMetadata(if (item.type == "Episode") MediaMetadata.MEDIA_TYPE_TV_SHOW else MediaMetadata.MEDIA_TYPE_MOVIE).apply {
             putString(MediaMetadata.KEY_TITLE, item.displayTitle)
             item.episodeLabel?.let { putString(MediaMetadata.KEY_SUBTITLE, it) }

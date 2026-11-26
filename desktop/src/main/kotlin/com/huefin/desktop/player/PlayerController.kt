@@ -204,7 +204,7 @@ class PlayerController(start: BaseItem, private val startTicks: Long, val onClos
         // Subtitle files kept next to the video on the server.
         pendingSubs = src.mediaStreams.orEmpty().filter { it.type == "Subtitle" && it.isExternal == true && it.index != null }.map { s ->
             val ext = when ((s.codec ?: "").lowercase()) { "ass", "ssa" -> "ass"; "vtt", "webvtt" -> "vtt"; else -> "srt" }
-            Triple(c.url("Videos/${target.id}/${src.id}/Subtitles/${s.index}/0/Stream.$ext", mapOf("api_key" to c.accessToken)),
+            Triple(c.url("Videos/${target.id}/${src.id}/Subtitles/${s.index}/0/Stream.$ext", mapOf("ApiKey" to c.accessToken)),
                 s.displayTitle ?: s.title ?: s.language ?: "Subtitles", s.language ?: "")
         }
         open(url, if (target.isLiveChannel) 0 else ticks)

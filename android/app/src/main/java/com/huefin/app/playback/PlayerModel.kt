@@ -143,7 +143,7 @@ class PlayerModel(var request: PlaybackRequest, val backend: Backend) {
         if (codec in setOf("pgssub", "dvdsub", "dvbsub", "pgs")) return null   // picture subtitles can't be sent as text
         val (ext, mime) = when (codec) { "ass", "ssa" -> "ass" to "text/x-ssa"; "srt", "subrip" -> "srt" to "application/x-subrip"; else -> "vtt" to "text/vtt" }
         val label = listOfNotNull(s.displayTitle ?: s.title, if (s.isForced == true) "Forced" else null).joinToString(" · ").ifEmpty { s.language ?: "Subtitles" }
-        return SubtitleSource(c.url("Videos/${item.id}/$sourceId/Subtitles/$idx/0/Stream.$ext", mapOf("api_key" to c.accessToken)), mime, s.language, label)
+        return SubtitleSource(c.url("Videos/${item.id}/$sourceId/Subtitles/$idx/0/Stream.$ext", mapOf("ApiKey" to c.accessToken)), mime, s.language, label)
     }
 
     private suspend fun loadExtras() {
