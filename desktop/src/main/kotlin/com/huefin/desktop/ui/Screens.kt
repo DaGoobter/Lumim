@@ -32,6 +32,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.huefin.desktop.core.StudioBrand
 import com.huefin.desktop.core.AppState
 import com.huefin.desktop.core.BaseItem
 import com.huefin.desktop.core.JellyfinClient
@@ -148,8 +149,16 @@ fun LibrariesScreen() {
     var views by remember { mutableStateOf<List<BaseItem>>(emptyList()) }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(AppState.client) { runCatching { AppState.client?.userViews() ?: emptyList() }.onSuccess { views = it }.onFailure { error = it.message } }
+    var mode by remember { mutableStateOf(Prefs.string("huefin.libraryMode") ?: "libraries") }
     Column {
         PageHeader("Library")
+        Box(Modifier.widthIn(max = 520.dp).padding(horizontal = 8.dp)) {
+            BrowseModeRow(mode) { mode = it; Prefs.set("huefin.libraryMode", it) }
+        }
+        if (mode == "studios" || mode == "networks") {
+            StudioGrid(if (mode == "studios") StudioBrand.Kind.Studio else StudioBrand.Kind.Network) { Nav.push(Route.Path("studio/" + it.id)) }
+            return@Column
+        }
         LazyVerticalGrid(GridCells.Adaptive(340.dp), contentPadding = PaddingValues(24.dp), horizontalArrangement = Arrangement.spacedBy(18.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
             error?.let { item(span = { GridItemSpan(maxLineSpan) }) { ErrorBanner(it) } }
             gridItems(views, key = { it.id }) { lib ->
@@ -445,6 +454,7 @@ fun PathScreen(path: String) {
         path.startsWith("admin/user/") -> com.huefin.desktop.admin.AdminUserScreen(path.removePrefix("admin/user/"), nav)
         path.startsWith("admin/") -> com.huefin.desktop.admin.AdminSectionScreen(path.removePrefix("admin/"), nav)
         path.startsWith("book/") -> BookScreen(path.removePrefix("book/"), nav)
+        path.startsWith("studio/") -> StudioBrandScreen(path.removePrefix("studio/"), nav)
         else -> PageHeader("Not found")
     }
 }
