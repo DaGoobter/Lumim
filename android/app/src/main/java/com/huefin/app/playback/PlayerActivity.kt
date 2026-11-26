@@ -101,6 +101,7 @@ class PlayerActivity : ComponentActivity() {
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
         val request = Player.pending ?: run { finish(); return }
+        com.huefin.app.core.CrashReport.step("Player opened: ${request.item.type} ${request.item.id.take(8)}")
         Player.pending = null
         lifecycleScope.launch {
             WindowInfoTracker.getOrCreate(this@PlayerActivity).windowLayoutInfo(this@PlayerActivity).collect { info ->
@@ -115,6 +116,7 @@ class PlayerActivity : ComponentActivity() {
                 com.huefin.app.core.CrashReport.engineStarting(false)
                 com.huefin.app.core.CrashReport.note("The Huefin Engine couldn't load, so Android's player was used.", it)
             }.getOrNull() ?: ExoBackend(this@PlayerActivity) else ExoBackend(this@PlayerActivity)
+            com.huefin.app.core.CrashReport.step("Player: ${backend.name} (engine wanted: $engine)")
             val m = PlayerModel(request, backend)
             m.onClose = { finish() }
             model = m

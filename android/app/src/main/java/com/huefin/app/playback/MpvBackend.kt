@@ -133,6 +133,7 @@ class MpvBackend(context: Context) : Backend {
             mpv.setPropertyString("hwdec", if (profile5) "no" else "mediacodec-copy")
             setVo("gpu-next")
         }
+        com.huefin.app.core.CrashReport.step("Engine picture: $pictureMode, hwdec ${mpv.getPropertyString("hwdec")}")
     }
     private var vo = "gpu-next"
     private fun setVo(v: String) { vo = v; if (surfaceAttached) mpv.setPropertyString("vo", v) }

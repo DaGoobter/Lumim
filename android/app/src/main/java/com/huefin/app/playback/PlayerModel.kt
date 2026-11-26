@@ -76,9 +76,9 @@ class PlayerModel(var request: PlaybackRequest, val backend: Backend) {
     var onClose: () -> Unit = {}
 
     init {
-        backend.onEnded = { scope.launch { ended() } }
-        backend.onError = { msg -> scope.launch { if (isLive) reconnectLive() else { error = msg; loading = false } } }
-        backend.onReady = { scope.launch { loading = false } }
+        backend.onEnded = { com.huefin.app.core.CrashReport.step("Video ended"); scope.launch { ended() } }
+        backend.onError = { msg -> com.huefin.app.core.CrashReport.step("Playback error: $msg"); scope.launch { if (isLive) reconnectLive() else { error = msg; loading = false } } }
+        backend.onReady = { com.huefin.app.core.CrashReport.step("Video playing"); scope.launch { loading = false } }
     }
 
     fun start() {
@@ -132,6 +132,7 @@ class PlayerModel(var request: PlaybackRequest, val backend: Backend) {
             }
             else -> { error = "The server can't stream this item."; loading = false; return }
         }
+        com.huefin.app.core.CrashReport.step("Starting: $playMethod · ${src.container} · ${src.videoStream?.codec} ${src.videoStream?.videoRangeType} · audio ${src.audioStreams.joinToString { it.codec ?: "?" }}")
         backend.prepare(url, if (isLive) 0 else startMs, subs, hls)
         report("Sessions/Playing")
     }

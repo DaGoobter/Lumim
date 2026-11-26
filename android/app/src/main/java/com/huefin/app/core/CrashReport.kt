@@ -40,12 +40,24 @@ object CrashReport {
     /** Marks the engine as starting (written to disk at once, so it survives a native crash). */
     fun engineStarting(on: Boolean) { Prefs.sp.edit().putBoolean(ENGINE_STARTING, on).commit() }
     private lateinit var app: Application
+    private const val TRAIL = "crash-trail.txt"
+
+    /** Records what the app was doing (the last 40 steps survive a crash, so a report says where it happened). */
+    fun step(what: String) {
+        runCatching {
+            val f = File(app.filesDir, TRAIL)
+            val lines = (if (f.exists()) f.readLines().takeLast(39) else emptyList()) +
+                (java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.US).format(java.util.Date()) + "  " + what)
+            f.writeText(lines.joinToString("\n"))
+        }
+    }
+    private fun trail(): String = runCatching { File(app.filesDir, TRAIL).readText() }.getOrDefault("(none)")
 
     fun install(a: Application) {
         app = a
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { t, e ->
-            runCatching { File(a.filesDir, FILE).writeText(header() + "Thread: ${t.name}\n\n" + e.stackTraceToString()) }
+            runCatching { File(a.filesDir, FILE).writeText(header() + "Thread: ${t.name}\n\n" + e.stackTraceToString() + "\n\nLast steps:\n" + trail()) }
             previous?.uncaughtException(t, e)
         }
         if (Prefs.bool(ENGINE_STARTING)) {
@@ -53,21 +65,28 @@ object CrashReport {
             Prefs.set(ENGINE_OFF_AFTER_CRASH, true)
         }
         if (Build.VERSION.SDK_INT >= 30) runCatching {
-            val last = a.getSystemService(ActivityManager::class.java).getHistoricalProcessExitReasons(null, 0, 1).firstOrNull() ?: return@runCatching
+            val exits = a.getSystemService(ActivityManager::class.java).getHistoricalProcessExitReasons(null, 0, 3)
+            val last = exits.firstOrNull() ?: return@runCatching
             val seen = Prefs.string(SEEN)?.toLongOrNull() ?: 0L
             if (last.timestamp <= seen) return@runCatching
             Prefs.set(SEEN, last.timestamp.toString())
+            val bad = setOf(ApplicationExitInfo.REASON_CRASH, ApplicationExitInfo.REASON_CRASH_NATIVE, ApplicationExitInfo.REASON_ANR)
+            if (last.reason !in bad) return@runCatching
             val f = File(a.filesDir, FILE)
-            val recentJava = f.exists() && f.lastModified() >= last.timestamp - 5_000
-            when (last.reason) {
-                ApplicationExitInfo.REASON_CRASH_NATIVE -> f.writeText(header() +
-                    "Native crash (inside a video engine or system library).\n${last.description ?: ""}\n" +
-                    "Process: ${last.processName}  ·  signal/status ${last.status}\n" +
-                    "Engine was starting: ${Prefs.bool(ENGINE_OFF_AFTER_CRASH)}")
-                ApplicationExitInfo.REASON_CRASH -> if (!recentJava) f.writeText(header() + "Crash: ${last.description ?: "unknown"}")
-                ApplicationExitInfo.REASON_ANR -> f.writeText(header() + "Froze (not responding): ${last.description ?: ""}")
-                else -> {}
+            val javaTrace = if (f.exists() && f.lastModified() >= last.timestamp - 10_000) "\n\n--- Java crash ---\n" + f.readText() else ""
+            val kind = when (last.reason) {
+                ApplicationExitInfo.REASON_CRASH_NATIVE -> "Native crash (inside a video engine or system library)"
+                ApplicationExitInfo.REASON_ANR -> "Froze (not responding)"
+                else -> "Crash"
             }
+            val history = exits.joinToString("\n") { e ->
+                "  ${java.util.Date(e.timestamp)} · reason ${e.reason} · status ${e.status} · ${e.description ?: "-"} · ${e.processName}"
+            }
+            val anr = if (last.reason == ApplicationExitInfo.REASON_ANR)
+                runCatching { last.traceInputStream?.bufferedReader()?.readText()?.take(6000) }.getOrNull() ?: "" else ""
+            f.writeText(header() + "$kind: ${last.description ?: "-"}\n" +
+                "Engine was starting: ${Prefs.bool(ENGINE_OFF_AFTER_CRASH)}\n\nRecent exits:\n$history\n\nLast steps:\n${trail()}" +
+                javaTrace + (if (anr.isNotEmpty()) "\n\n--- Threads ---\n$anr" else ""))
         }
     }
 

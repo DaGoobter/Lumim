@@ -17,6 +17,7 @@ class HuefinApp : Application(), ImageLoaderFactory {
         instance = this
         Prefs.init(this)
         com.huefin.app.core.CrashReport.install(this)
+        com.huefin.app.core.CrashReport.step("App started")
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel("downloads", "Downloads", NotificationManager.IMPORTANCE_LOW))
         nm.createNotificationChannel(NotificationChannel("messages", "Family messages", NotificationManager.IMPORTANCE_HIGH))
