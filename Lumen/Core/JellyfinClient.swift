@@ -195,6 +195,16 @@ final class JellyfinClient {
         ])
     }
 
+    /// Every movie and show with just its studio/network tags, for the Studios & Networks grid.
+    func studioIndex() async throws -> [StudioTaggedItem] {
+        struct Result: Decodable { let items: [StudioTaggedItem] }
+        let r: Result = try await get("Items", query: [
+            "userId": userId, "recursive": "true", "includeItemTypes": "Movie,Series", "fields": "Studios",
+            "enableImages": "false", "enableUserData": "false",
+        ])
+        return r.items
+    }
+
     func genres(parentId: String?) async -> [String] {
         let r: ItemsResult? = try? await get("Genres", query: ["userId": userId, "parentId": parentId, "sortBy": "SortName"])
         return r?.items.compactMap(\.name) ?? []

@@ -4,24 +4,43 @@ struct LibrariesView: View {
     @Environment(AppState.self) private var app
     @State private var views: [BaseItem] = []
     @State private var error: String?
+    /// Libraries, Studios or Networks; remembered between launches.
+    @AppStorage("huefin.libraryMode") private var mode = "libraries"
 
     var body: some View {
         ScrollView {
-            if let error { ErrorBanner(message: error) { Task { await load() } }.padding(.top) }
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 14)], spacing: 14) {
-                ForEach(views) { lib in
-                    NavigationLink(value: lib) { LibraryTile(library: lib) }
-                        .buttonStyle(CardPressStyle())
-                }
+            Picker("Browse by", selection: $mode) {
+                Text("Libraries").tag("libraries")
+                Text("Studios").tag("studios")
+                Text("Networks").tag("networks")
             }
-            .padding()
+            .pickerStyle(.segmented)
+            .padding(.horizontal).padding(.top, 4)
+
+            switch mode {
+            case "studios": StudioGridView(kind: .studio).padding(.vertical)
+            case "networks": StudioGridView(kind: .network).padding(.vertical)
+            default:
+                if let error { ErrorBanner(message: error) { Task { await load() } }.padding(.top) }
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 14)], spacing: 14) {
+                    ForEach(views) { lib in
+                        NavigationLink(value: lib) { LibraryTile(library: lib) }
+                            .buttonStyle(CardPressStyle())
+                    }
+                }
+                .padding()
+            }
         }
         .background(TintedBackdrop(color: nil))
         .navigationTitle("Library")
         .toolbar { ToolbarItem(placement: .topBarTrailing) { AccountButton() } }
         .task { if views.isEmpty { await load() } }
-        .refreshable { await load() }
+        .refreshable {
+            if mode == "libraries" { await load() }
+            else if let c = app.client { await StudioCatalog.shared.load(c, force: true) }
+        }
         .navigationDestination(for: BaseItem.self) { ItemRouter(item: $0) }
+        .navigationDestination(for: StudioBrand.self) { StudioBrandView(brand: $0) }
     }
 
     private func load() async {
