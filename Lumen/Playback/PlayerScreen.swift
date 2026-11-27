@@ -143,7 +143,9 @@ struct AppleVideoPlayerScreen: View {
 
                 // Hosts the system volume control (also hides the big system volume overlay while watching).
                 if app.showVolumeSlider {
-                    SystemVolumeHost(volume: volume).frame(width: 1, height: 1).opacity(0.01)
+                    SystemVolumeHost(volume: volume).frame(width: 1, height: 1).clipped().opacity(0.01)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .allowsHitTesting(false)
                 }
 
                 if let zoomHUD {
@@ -712,6 +714,10 @@ final class SystemVolume {
     @ObservationIgnored private var observation: NSKeyValueObservation?
 
     init() {
+        // Invisible: iOS 26 draws the slider knob as a glass pill that shows through low opacity, so clip it to 1pt.
+        view.clipsToBounds = true
+        view.alpha = 0.0001
+        view.isUserInteractionEnabled = false
         observation = AVAudioSession.sharedInstance().observe(\.outputVolume, options: [.new]) { [weak self] session, _ in
             let v = session.outputVolume
             DispatchQueue.main.async { self?.level = v }

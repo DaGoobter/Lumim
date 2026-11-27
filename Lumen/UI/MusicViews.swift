@@ -483,7 +483,7 @@ struct NowPlayingView: View {
                 }
             }
             .foregroundStyle(.white)
-            .overlay { SystemVolumeHost(volume: volume).frame(width: 1, height: 1).opacity(0.01) }
+            .overlay(alignment: .topLeading) { SystemVolumeHost(volume: volume).frame(width: 1, height: 1).clipped().opacity(0.01).allowsHitTesting(false) }
         } else {
             Color.black.onAppear { dismiss() }
         }
