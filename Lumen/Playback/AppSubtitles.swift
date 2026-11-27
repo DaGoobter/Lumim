@@ -45,7 +45,9 @@ final class AppSubtitles {
     private static func fetch(_ c: JellyfinClient, _ itemId: String, _ sourceId: String, _ index: Int, _ ext: String) async -> Data? {
         var req = URLRequest(url: c.url("Videos/\(itemId)/\(sourceId)/Subtitles/\(index)/0/Stream.\(ext)"))
         req.setValue(c.authorizationHeader, forHTTPHeaderField: "Authorization")
-        req.timeoutInterval = 30
+        // Subtitles inside a big file are pulled out by reading the whole file the first time (a minute or two on
+        // a 20 GB movie); after that the server keeps them, so allow for the slow first time.
+        req.timeoutInterval = 240
         guard let (data, resp) = try? await URLSession.shared.data(for: req),
               (resp as? HTTPURLResponse)?.statusCode == 200, !data.isEmpty else { return nil }
         return data

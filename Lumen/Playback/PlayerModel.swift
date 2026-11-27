@@ -652,7 +652,7 @@ final class PlayerModel {
         let oldSub = subtitleIndex
         subtitleIndex = subtitle
         if audio == audioIndex && before == serverSubtitle(in: source) && drawsSubtitles && oldSub != subtitle {
-            await refreshAppSubtitles()
+            if let item = player.currentItem { await applySubtitleSelection(item) } else { await refreshAppSubtitles() }
             return
         }
         audioIndex = audio
@@ -854,10 +854,22 @@ final class PlayerModel {
 
     /// The server's stream carries only the chosen subtitle; make sure the player shows (or hides) it.
     private func applySubtitleSelection(_ item: AVPlayerItem) async {
+        guard let group = try? await item.asset.loadMediaSelectionGroup(for: .legible) else {
+            await refreshAppSubtitles(); return
+        }
+        if subtitlesDrawnByApp {
+            // Until Huefin's copy has downloaded (the first time can take a minute on a huge file), let the player
+            // show the file's own subtitle in the same language; then switch to Huefin's, which can be adjusted.
+            let lang = stream(subtitleIndex, in: source)?.language
+            let interim = appSubs == nil ? group.options.first { o in
+                !o.hasMediaCharacteristic(.containsOnlyForcedSubtitles) && Languages.matches(o.extendedLanguageTag ?? o.locale?.identifier, lang ?? "")
+            } : nil
+            item.select(interim, in: group)
+            await refreshAppSubtitles()
+            if appSubs != nil, item === player.currentItem { item.select(nil, in: group) }
+            return
+        }
         await refreshAppSubtitles()
-        guard let group = try? await item.asset.loadMediaSelectionGroup(for: .legible) else { return }
-        // Huefin draws it: keep the player's own subtitle display off so nothing shows twice.
-        if subtitlesDrawnByApp { item.select(nil, in: group); return }
         if subtitleIndex >= 0 {
             let option = group.options.first { !$0.hasMediaCharacteristic(.containsOnlyForcedSubtitles) } ?? group.options.first
             item.select(option, in: group)
