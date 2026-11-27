@@ -281,7 +281,7 @@ struct ItemDetailView: View {
     private func play(_ it: BaseItem) async {
         if it.isSeries {
             guard let client = app.client else { return }
-            let next = (try? await client.nextUp(seriesId: it.id))?.first ?? episodes.first
+            let next = await client.firstEpisode(seriesId: it.id) ?? episodes.first
             if let next { playRequest = PlaybackRequest(item: next, startTicks: next.resumeTicks) }
             return
         }
@@ -311,7 +311,7 @@ struct ItemDetailView: View {
                 (extras, parts) = await (x, p)
             }
             if full.isSeries {
-                seasons = try await client.seasons(seriesId: full.id)
+                seasons = (try? await client.seasons(seriesId: full.id)) ?? []
                 if selectedSeason == nil {
                     let next = try? await client.nextUp(seriesId: full.id).first
                     selectedSeason = next?.seasonId ?? seasons.first?.id
@@ -325,8 +325,12 @@ struct ItemDetailView: View {
     }
 
     private func loadEpisodes() async {
-        guard let client = app.client, let seriesId = shown?.id, let season = selectedSeason else { return }
-        episodes = (try? await client.episodes(seriesId: seriesId, seasonId: season)) ?? []
+        guard let client = app.client, let seriesId = shown?.id else { return }
+        if let season = selectedSeason {
+            episodes = (try? await client.episodes(seriesId: seriesId, seasonId: season)) ?? []
+        }
+        // Odd folder layouts can leave a season with nothing in it: show every episode instead of a blank page.
+        if episodes.isEmpty { episodes = (try? await client.episodes(seriesId: seriesId, seasonId: nil)) ?? [] }
     }
 }
 

@@ -342,11 +342,18 @@ final class JellyfinClient {
         return r.items
     }
 
-    func episodes(seriesId: String, seasonId: String) async throws -> [BaseItem] {
+    func episodes(seriesId: String, seasonId: String?) async throws -> [BaseItem] {
         let r: ItemsResult = try await get("Shows/\(seriesId)/Episodes", query: [
             "userId": userId, "seasonId": seasonId, "fields": "Overview,PrimaryImageAspectRatio",
         ])
-        return r.items
+        return r.items.filter { $0.type == nil || $0.type == "Episode" }
+    }
+
+    /// The episode to start for a series: Next Up, else the first real episode. Never a season or folder,
+    /// so shows whose folders are laid out oddly still play.
+    func firstEpisode(seriesId: String) async -> BaseItem? {
+        if let next = (try? await nextUp(seriesId: seriesId))?.first(where: { $0.type == "Episode" }) { return next }
+        return (try? await episodes(seriesId: seriesId, seasonId: nil))?.first
     }
 
     // MARK: Live TV

@@ -378,6 +378,7 @@ struct TVDetailView: View {
         .task(id: season?.id) {
             guard let s = season, let sid = showId, episodes.first?.seasonId != s.id else { return }
             episodes = (try? await app.client?.episodes(seriesId: sid, seasonId: s.id)) ?? []
+            if episodes.isEmpty { episodes = (try? await app.client?.episodes(seriesId: sid, seasonId: nil)) ?? [] }
         }
     }
 
@@ -401,7 +402,7 @@ struct TVDetailView: View {
 
     private func play() async {
         if i.isSeries {
-            let next = (try? await app.client?.nextUp(seriesId: i.id))?.first ?? episodes.first
+            let next = await app.client?.firstEpisode(seriesId: i.id) ?? episodes.first
             if let next { AppRouter.shared.playRequest = PlaybackRequest(item: next, startTicks: next.resumeTicks) }
         } else { AppRouter.shared.playRequest = PlaybackRequest(item: i, startTicks: i.resumeTicks) }
     }

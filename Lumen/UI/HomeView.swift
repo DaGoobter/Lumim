@@ -139,7 +139,7 @@ struct HomeView: View {
     private func play(_ item: BaseItem) async {
         if item.isSeries {
             guard let client = app.client,
-                  let next = try? await client.nextUp(seriesId: item.id).first else {
+                  let next = await client.firstEpisode(seriesId: item.id) else {
                 detailItem = item
                 return
             }
