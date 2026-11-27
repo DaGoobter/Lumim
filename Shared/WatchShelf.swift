@@ -5,7 +5,7 @@ import Foundation
 /// the widget and Top Shelf simply show "Open Huefin".
 enum WatchShelf {
     #if os(tvOS)
-    static let groupID = "group.com.lumenplayer.tv"
+    static let groupID = "group.app.huefin.tvshelf"
     #else
     static let groupID = "group.com.lumenplayer.app"
     #endif
@@ -21,7 +21,25 @@ enum WatchShelf {
         let imageURL: String?
     }
 
-    static var folder: URL? { FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: groupID) }
+    /// Sideloading tools rename the group when they re-sign (often adding the Apple ID's team code),
+    /// so use whichever group the installed copy was actually given, read from its provisioning profile.
+    static let grantedGroups: [String] = {
+        guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
+              let raw = try? Data(contentsOf: url),
+              let start = raw.range(of: Data("<?xml".utf8)),
+              let end = raw.range(of: Data("</plist>".utf8), in: start.lowerBound..<raw.endIndex),
+              let plist = try? PropertyListSerialization.propertyList(from: raw[start.lowerBound..<end.upperBound], format: nil) as? [String: Any],
+              let ent = plist["Entitlements"] as? [String: Any],
+              let groups = ent["com.apple.security.application-groups"] as? [String] else { return [] }
+        return groups
+    }()
+
+    static var folder: URL? {
+        let fm = FileManager.default
+        let candidates = grantedGroups.filter { $0.hasPrefix(groupID) } + [groupID] + grantedGroups
+        for id in candidates { if let u = fm.containerURL(forSecurityApplicationGroupIdentifier: id) { return u } }
+        return nil
+    }
     private static var listFile: URL? { folder?.appendingPathComponent("continue-watching.json") }
 
     static func load() -> [Item] {

@@ -65,6 +65,11 @@ jobs:
           codesign --force --sign - --entitlements HuefinTV/HuefinTV.entitlements "$APP"
           codesign -d --entitlements - "$APP" 2>/dev/null | grep -A3 application-groups || true
           zip -qry HuefinTV.ipa Payload
+          # Backup build with no app group and no Top Shelf extension: installs with any sideloading tool / Apple ID.
+          mkdir -p Basic/Payload && cp -R "$APP" Basic/Payload/
+          rm -rf Basic/Payload/HuefinTV.app/PlugIns/HuefinTopShelf.appex
+          codesign --force --sign - Basic/Payload/HuefinTV.app
+          (cd Basic && zip -qry ../HuefinTV-Basic.ipa Payload)
           # Make sure the Huefin Engine (mpv) really made it into the app.
           if strings Payload/HuefinTV.app/HuefinTV | grep -q "target-colorspace-hint"; then echo "Huefin Engine: included"; else echo "::error::Huefin Engine (mpv) is missing from the app"; exit 1; fi
           ls -la HuefinTV.ipa Payload/HuefinTV.app
@@ -74,7 +79,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: HuefinTV-ipa-${{ matrix.os }}
-          path: HuefinTV.ipa
+          path: |
+            HuefinTV.ipa
+            HuefinTV-Basic.ipa
           retention-days: 30
 
       - name: Publish to the "appletv-latest" release (direct download link)
@@ -82,5 +89,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view appletv-latest >/dev/null 2>&1 || gh release create appletv-latest --title "Huefin for Apple TV (latest)" --notes "Newest Apple TV build. Install HuefinTV.ipa with Sideloadly (choose your Apple TV as the device)." --prerelease || true
-          gh release upload appletv-latest HuefinTV.ipa --clobber
+          gh release view appletv-latest >/dev/null 2>&1 || gh release create appletv-latest --title "Huefin for Apple TV (latest)" --notes "Newest Apple TV build. Install HuefinTV.ipa with Sideloadly (choose your Apple TV as the device). If your sideloading tool fails on the app group, install HuefinTV-Basic.ipa instead (everything except the Top Shelf row)." --prerelease || true
+          gh release upload appletv-latest HuefinTV.ipa HuefinTV-Basic.ipa --clobber
