@@ -1,6 +1,7 @@
 import SwiftUI
 import AVFoundation
 import AVKit
+import Combine
 #if canImport(Libmpv)
 
 /// The Huefin Engine: plays MKV, AVI, DTS, TrueHD, PGS subtitles and other files that Apple's player can't,
@@ -426,6 +427,8 @@ struct EngineSubtitleView: View {
 /// Full-screen player for the Huefin Engine.
 struct EnginePlayerScreen: View {
     let request: PlaybackRequest
+    /// Hands the video to Apple's player (AirPlay to a TV), continuing at the same moment.
+    var handToApple: ((PlaybackRequest) -> Void)? = nil
     @Environment(AppState.self) private var app
     @Environment(\.dismiss) private var dismiss
     @State private var model: EnginePlayerModel?
@@ -522,6 +525,9 @@ struct EnginePlayerScreen: View {
         }
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
+        .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.routeChangeNotification).receive(on: RunLoop.main)) { _ in
+            airPlayRouteChanged()
+        }
         .task {
             guard model == nil else { return }
             let m = EnginePlayerModel(request: request, client: app.client)
@@ -561,6 +567,9 @@ struct EnginePlayerScreen: View {
                     if AVPictureInPictureController.isPictureInPictureSupported() {
                         PlayerCircleButton(symbol: "pip.enter", label: "Picture in Picture") { popOut(m) }
                     }
+                    // AirPlay: choosing a TV hands the video to Apple's player (which can send video over AirPlay).
+                    RoutePicker().frame(width: 26, height: 26).playerCircle()
+                        .accessibilityLabel("AirPlay")
                     Menu {
                         if !m.pictureInfo.isEmpty { Section("Picture") { Text(m.pictureInfo) } }
                         Section("Volume boost") {
@@ -658,6 +667,21 @@ struct EnginePlayerScreen: View {
         Task {
             await model?.stop()
             dismiss()
+        }
+    }
+
+    /// The sound just moved to an AirPlay device (an Apple TV or AirPlay TV was picked): the engine draws video
+    /// itself and can't send it over AirPlay, so Apple's player takes over at this exact moment.
+    private func airPlayRouteChanged() {
+        guard let m = model, let handToApple, !poppingOut,
+              AVAudioSession.sharedInstance().currentRoute.outputs.contains(where: { $0.portType == .airPlay }) else { return }
+        poppingOut = true
+        var req = PlaybackRequest(item: m.item, startTicks: Int64(max(0, m.currentTime) * 10_000_000))
+        req.mediaSourceId = request.mediaSourceId
+        req.forceApple = true
+        Task {
+            await m.stop()
+            handToApple(req)
         }
     }
 

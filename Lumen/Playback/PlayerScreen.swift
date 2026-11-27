@@ -11,6 +11,8 @@ struct PlayerScreen: View {
     let request: PlaybackRequest
     @Environment(AppState.self) private var app
     @State private var useEngine: Bool?
+    /// The engine handed the video to Apple's player (AirPlay), continuing from this request.
+    @State private var handedOff: PlaybackRequest?
 
     var body: some View {
         Group {
@@ -19,7 +21,11 @@ struct PlayerScreen: View {
                 ZStack { Color.black.ignoresSafeArea(); ProgressView().tint(.white) }
             case .some(true):
                 #if canImport(Libmpv)
-                EnginePlayerScreen(request: request)
+                if let handedOff {
+                    AppleVideoPlayerScreen(request: handedOff)
+                } else {
+                    EnginePlayerScreen(request: request, handToApple: { handedOff = $0 })
+                }
                 #else
                 AppleVideoPlayerScreen(request: request)
                 #endif
