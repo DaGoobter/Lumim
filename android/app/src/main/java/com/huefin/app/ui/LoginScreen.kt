@@ -25,6 +25,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -73,6 +74,17 @@ fun LoginScreen(adding: Boolean, onDone: () -> Unit) {
                 Image(painterResource(R.drawable.huefin_mark), "Huefin", Modifier.padding(top = 48.dp).size(108.dp))
                 Text("huefin", fontSize = 46.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-1.5).sp)
                 Text(if (adding) "Add a user or another server" else "Connect to your Jellyfin server", color = Hue.secondaryText)
+                // Servers found on this network: tap one instead of typing its address.
+                var found by remember { mutableStateOf<List<com.huefin.app.core.ServerDiscovery.Found>>(emptyList()) }
+                LaunchedEffect(Unit) {
+                    found = com.huefin.app.core.ServerDiscovery.scan()
+                    if (found.size == 1 && server.isBlank()) server = found[0].address
+                }
+                found.forEach { f ->
+                    SoftButton(modifier = Modifier.fillMaxWidth(), onClick = { server = f.address }) {
+                        Text((if (server == f.address) "✓  " else "") + f.name + "  ·  " + f.address, maxLines = 1)
+                    }
+                }
                 field("Server", server, { server = it }, KeyboardType.Uri)
                 if (code == null) {
                     field("Username", username, { username = it }, KeyboardType.Text)

@@ -13,6 +13,8 @@ struct TVLoginView: View {
     @State private var error: String?
     @State private var code: String?
     @State private var qcTask: Task<Void, Never>?
+    @State private var found: [ServerDiscovery.Found] = []
+    @State private var searching = false
 
     var body: some View {
         HStack(alignment: .center, spacing: 140) {
@@ -36,6 +38,29 @@ struct TVLoginView: View {
 
             // Form side.
             VStack(alignment: .leading, spacing: 30) {
+                // Servers found on this network: choose one instead of typing with the remote.
+                Color.clear.frame(height: 0).task {
+                    guard !searching, found.isEmpty else { return }
+                    searching = true
+                    found = await ServerDiscovery.scan()
+                    searching = false
+                    if found.count == 1, server.isEmpty { server = found[0].address }
+                }
+                if searching && found.isEmpty {
+                    HStack(spacing: 16) { ProgressView(); Text("Looking for servers on your network…").foregroundStyle(.secondary) }
+                }
+                ForEach(found) { f in
+                    Button { server = f.address } label: {
+                        HStack(spacing: 18) {
+                            Image(systemName: server == f.address ? "checkmark.circle.fill" : "server.rack")
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(f.name).bold()
+                                Text(f.address).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .buttonStyle(TVHueButtonStyle())
+                }
                 field("Server", "e.g. 192.168.1.20:8096") {
                     TextField("Server address", text: $server)
                         .textContentType(.URL).autocorrectionDisabled().textInputAutocapitalization(.never)

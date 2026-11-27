@@ -13,6 +13,8 @@ struct LoginView: View {
     @State private var busy = false
     @State private var error: String?
     @State private var glow = false
+    @State private var found: [ServerDiscovery.Found] = []
+    @State private var searching = false
 
     var body: some View {
         ZStack {
@@ -33,6 +35,8 @@ struct LoginView: View {
                         Text("huefin").font(.system(size: 46, weight: .heavy)).tracking(-1.5)
                         Text(adding ? "Add a user or another server" : "Connect to your Jellyfin server").foregroundStyle(.secondary)
                     }
+
+                    foundServers
 
                     VStack(spacing: 12) {
                         field("Server address", systemImage: "server.rack") {
@@ -83,7 +87,46 @@ struct LoginView: View {
             withAnimation(.easeInOut(duration: 6).repeatForever(autoreverses: true)) { glow = true }
             if adding, server.isEmpty, let s = app.session { server = s.serverURL }
         }
+        .task { await lookForServers() }
         .onDisappear { quickTask?.cancel() }
+    }
+
+    /// Jellyfin servers found on this network: tap one instead of typing its address.
+    @ViewBuilder
+    private var foundServers: some View {
+        if searching && found.isEmpty {
+            HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Looking for servers on your network…").font(.footnote) }
+                .foregroundStyle(.secondary)
+        } else if !found.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Found on your network").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                ForEach(found) { f in
+                    Button { server = f.address } label: {
+                        HStack {
+                            Image(systemName: "server.rack").foregroundStyle(Theme.violet)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(f.name).font(.headline)
+                                Text(f.address + (f.version.isEmpty ? "" : " · Jellyfin \(f.version)")).font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if server == f.address { Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.violet) }
+                        }
+                        .padding(12)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private func lookForServers() async {
+        guard !searching else { return }
+        searching = true
+        found = await ServerDiscovery.scan()
+        searching = false
+        // One server and nothing typed yet: fill it in.
+        if found.count == 1, server.isEmpty { server = found[0].address }
     }
 
     /// Sign in without typing a password: approve the code on any device that's already signed in.
