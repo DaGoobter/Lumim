@@ -338,8 +338,10 @@ final class JellyfinClient {
     }
 
     func seasons(seriesId: String) async throws -> [BaseItem] {
-        let r: ItemsResult = try await get("Shows/\(seriesId)/Seasons", query: ["userId": userId])
-        return r.items
+        let r: ItemsResult = try await get("Shows/\(seriesId)/Seasons", query: ["userId": userId, "fields": "ChildCount"])
+        // Hide empty "seasons" (leftover extras/sample folders) so they don't show up as blank tabs.
+        let filled = r.items.filter { ($0.childCount ?? 1) > 0 }
+        return filled.isEmpty ? r.items : filled
     }
 
     func episodes(seriesId: String, seasonId: String?) async throws -> [BaseItem] {
