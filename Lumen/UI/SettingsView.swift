@@ -364,6 +364,8 @@ struct SettingsView: View {
             }
 
             Section("This device") {
+                LabeledContent("Home Screen widget", value: WatchShelf.folder != nil ? "Connected" : "Not set up")
+                    .help(WatchShelf.grantedGroups.joined(separator: ", "))
                 capability("Dolby Vision", DeviceCapabilities.dolbyVision)
                 capability("HDR10", DeviceCapabilities.hdr10)
                 capability("HLG", DeviceCapabilities.hlg)
