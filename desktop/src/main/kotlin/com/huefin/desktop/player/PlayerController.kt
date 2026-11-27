@@ -271,7 +271,7 @@ class PlayerController(start: BaseItem, private val startTicks: Long, val onClos
             tracksApplied = true
             val (au, sub) = com.huefin.desktop.core.TrackPrefs.choose(
                 audioTracks.map { Track(it.id.toString(), it.label, it.id == audioTrack) },
-                subtitleTracks.map { Track(it.id.toString(), it.label, it.id == subtitleTrack) })
+                subtitleTracks.map { Track(it.id.toString(), it.label, it.id == subtitleTrack) }, item.seriesId)
             au?.toIntOrNull()?.let { selectAudio(it) }
             selectSubtitle(sub?.toIntOrNull() ?: -1)
         }

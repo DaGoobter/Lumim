@@ -152,6 +152,8 @@ final class EnginePlayerModel {
         }
         currentURL = url
         externalSubs = []
+        namesReady = false; memoryAudioDone = false; memorySubDone = false
+        serverAudioStreams = []; serverSubStreams = []
         thumbs = nil
         if request.localDownload == nil, let client {
             let itemId = item.id, sourceId = request.mediaSourceId
@@ -176,9 +178,12 @@ final class EnginePlayerModel {
 
     /// Subtitles stored as separate files on the server (.srt, .ass) next to the video.
     private func addExternalSubtitles(_ client: JellyfinClient) async {
+        defer { namesReady = true; if tracksLoaded { loadTracks() } }
         guard request.localDownload == nil, let full = try? await client.item(item.id),
               let src = full.mediaSources?.first(where: { $0.id == request.mediaSourceId }) ?? full.mediaSources?.first
         else { return }
+        serverAudioStreams = src.audioStreams.filter { $0.isExternal != true }
+        serverSubStreams = src.subtitleStreams.filter { $0.isExternal != true } + src.subtitleStreams.filter { $0.isExternal == true }
         // The server's names ("English - AC3 - 5.1"), in the same order the engine lists the tracks.
         serverAudioNames = src.audioStreams.filter { $0.isExternal != true }.map { $0.displayTitle ?? $0.language ?? "Audio" }
         serverSubNames = (src.subtitleStreams.filter { $0.isExternal != true } + src.subtitleStreams.filter { $0.isExternal == true })
@@ -262,6 +267,54 @@ final class EnginePlayerModel {
         audioTrack = audio.first(where: \.selected)?.id ?? -1
         subtitleTrack = subs.first(where: \.selected)?.id ?? -1
         tracksLoaded = !audioTracks.isEmpty || currentTime > 3
+        applyShowMemory()
+    }
+
+    // MARK: Per-show track memory
+
+    @ObservationIgnored private var namesReady = false
+    @ObservationIgnored private var memoryAudioDone = false
+    @ObservationIgnored private var memorySubDone = false
+    @ObservationIgnored private var serverAudioStreams: [MediaStream] = []
+    @ObservationIgnored private var serverSubStreams: [MediaStream] = []
+
+    /// The engine track that matches a remembered pick: same name, otherwise same language.
+    private func matchTrack(_ pick: ShowTrackChoice.Pick, _ tracks: [Track], _ streams: [MediaStream]) -> Int32? {
+        let want = ShowTrackChoice.normalized(pick.name)
+        if !want.isEmpty, let t = tracks.first(where: { ShowTrackChoice.normalized($0.name) == want }) { return t.index }
+        guard streams.count == tracks.count, let idx = ShowTrackChoice.match(pick, in: streams),
+              let pos = streams.firstIndex(where: { $0.index == idx }) else { return nil }
+        return tracks[pos].index
+    }
+
+    /// Starts this episode with the audio and subtitles last picked for the show.
+    private func applyShowMemory() {
+        guard (namesReady || request.localDownload != nil), !(memoryAudioDone && memorySubDone) else { return }
+        guard let memory = ShowTrackChoice.load(seriesId: item.seriesId) else { memoryAudioDone = true; memorySubDone = true; return }
+        if !memoryAudioDone, !audioTracks.isEmpty {
+            memoryAudioDone = true
+            if let a = memory.audio, let t = matchTrack(a, audioTracks, serverAudioStreams), t != audioTrack {
+                player.selectAudio(t); audioTrack = t
+            }
+        }
+        if !memorySubDone {
+            guard let sp = memory.subtitle else { memorySubDone = true; return }
+            if sp.off {
+                memorySubDone = true
+                if subtitleTrack != -1 { player.selectSubtitle(-1); subtitleTrack = -1 }
+            } else if let t = matchTrack(sp, Array(subtitleTracks.dropFirst()), serverSubStreams) {
+                memorySubDone = true
+                if t != subtitleTrack { player.selectSubtitle(t); subtitleTrack = t }
+            } else if currentTime > 20 {
+                memorySubDone = true   // outside subtitle files have had time to show up; give up
+            }
+        }
+    }
+
+    private func pick(for index: Int32, in tracks: [Track], streams: [MediaStream]) -> ShowTrackChoice.Pick? {
+        guard let pos = tracks.firstIndex(where: { $0.index == index }) else { return nil }
+        if streams.count == tracks.count { var p = ShowTrackChoice.pick(of: streams[pos]); p.name = tracks[pos].name; return p }
+        return .init(name: tracks[pos].name)
     }
 
     // MARK: Controls
@@ -282,8 +335,17 @@ final class EnginePlayerModel {
 
     func skip(by seconds: Double) { seek(to: min(max(0, currentTime + seconds), max(duration, 1))) }
 
-    func setAudio(_ index: Int32) { player.selectAudio(index); audioTrack = index }
-    func setSubtitle(_ index: Int32) { player.selectSubtitle(index); subtitleTrack = index }
+    func setAudio(_ index: Int32) {
+        player.selectAudio(index); audioTrack = index
+        memoryAudioDone = true
+        ShowTrackChoice.remember(seriesId: item.seriesId, audio: pick(for: index, in: audioTracks, streams: serverAudioStreams))
+    }
+    func setSubtitle(_ index: Int32) {
+        player.selectSubtitle(index); subtitleTrack = index
+        memorySubDone = true
+        ShowTrackChoice.remember(seriesId: item.seriesId, subtitle: index < 0 ? .init(off: true)
+            : pick(for: index, in: Array(subtitleTracks.dropFirst()), streams: serverSubStreams))
+    }
 
     /// Subtitle timing (seconds; positive = later). Remembered per title, like Infuse.
     private(set) var subtitleDelay: Double = 0

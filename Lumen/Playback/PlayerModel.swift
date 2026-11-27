@@ -644,9 +644,25 @@ final class PlayerModel {
         await load(startTicks: isLive ? 0 : ticks)
     }
 
+    /// A track picked by hand is remembered for the rest of the show.
+    private func rememberForShow(audio: Int?, subtitle: Int) {
+        guard let src = source ?? request.item.mediaSources?.first, let seriesId = request.item.seriesId else { return }
+        var a: ShowTrackChoice.Pick?, s: ShowTrackChoice.Pick?
+        if audio != audioIndex {
+            let idx = audio ?? src.defaultAudioStreamIndex
+            if let st = src.audioStreams.first(where: { $0.index == idx }) { a = ShowTrackChoice.pick(of: st) }
+        }
+        if subtitle != subtitleIndex {
+            if subtitle < 0 { s = .init(off: true) }
+            else if let st = src.subtitleStreams.first(where: { $0.index == subtitle }) { s = ShowTrackChoice.pick(of: st) }
+        }
+        ShowTrackChoice.remember(seriesId: seriesId, audio: a, subtitle: s)
+    }
+
     /// Switch audio and/or subtitle track. Reloads the stream at the current position.
     func selectTracks(audio: Int?, subtitle: Int) async {
         guard audio != audioIndex || subtitle != subtitleIndex else { return }
+        rememberForShow(audio: audio, subtitle: subtitle)
         // Only switching between text subtitles (or off) that Huefin draws: instant, no reload.
         let before = serverSubtitle(in: source)
         let oldSub = subtitleIndex
@@ -723,7 +739,7 @@ final class PlayerModel {
                 // First load: apply the user's default languages, then ask again with those tracks.
                 if !appliedPreferences {
                     appliedPreferences = true
-                    let choice = prefs.choose(for: src)
+                    let choice = prefs.choose(for: src, seriesId: request.item.seriesId)
                     if choice.audio != audioIndex || choice.subtitle != subtitleIndex {
                         source = src
                         let before = serverSub, audioBefore = audioIndex

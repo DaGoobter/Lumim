@@ -53,6 +53,12 @@ final class PlayerModel {
 
     func chooseSubtitle(_ index: Int) {
         drawnIndex = index
+        // Remember for the rest of this show.
+        if let s = source?.subtitleStreams.first(where: { $0.index == index }) {
+            ShowTrackChoice.remember(seriesId: item.seriesId, subtitle: ShowTrackChoice.pick(of: s))
+        } else if index < 0 {
+            ShowTrackChoice.remember(seriesId: item.seriesId, subtitle: .init(off: true))
+        }
         Task { await loadDrawnSubtitles() }
         onActionsChanged?()
     }
@@ -129,7 +135,7 @@ final class PlayerModel {
             var info = try await client.playbackInfo(itemId: target.id, maxBitrate: app.playbackBitrate, startTicks: startTicks)
             guard var src = info.mediaSources.first else { throw URLError(.fileDoesNotExist) }
             // The person's default audio and subtitle languages (Settings).
-            let choice = app.trackPrefs.choose(for: src)
+            let choice = app.trackPrefs.choose(for: src, seriesId: target.seriesId)
             audioIndex = choice.audio; subtitleIndex = choice.subtitle
             // Text subtitles are drawn by Huefin (in sync, adjustable); only picture subtitles need the server's stream.
             textSubtitles = target.isLiveChannel ? [] : src.subtitleStreams.filter(AppSubtitles.isText)

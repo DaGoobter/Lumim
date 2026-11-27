@@ -112,3 +112,71 @@ struct TrackPreferences: Codable, Equatable {
         return (audio, subtitle ?? -1)
     }
 }
+
+/// Audio and subtitle choices remembered per show: pick Japanese audio + English subtitles once,
+/// and every other episode of that show starts the same way (like Infuse and Netflix).
+struct ShowTrackChoice: Codable, Equatable {
+    struct Pick: Codable, Equatable {
+        var name: String?
+        var language: String?
+        var forced: Bool = false
+        var off: Bool = false
+    }
+    var audio: Pick?
+    var subtitle: Pick?
+
+    private static func key(_ seriesId: String) -> String { "huefin.showTracks.\(seriesId)" }
+
+    static func load(seriesId: String?) -> ShowTrackChoice? {
+        guard let seriesId, let data = UserDefaults.standard.data(forKey: key(seriesId)) else { return nil }
+        return try? JSONDecoder().decode(ShowTrackChoice.self, from: data)
+    }
+
+    /// Saves one side (audio or subtitle) of the choice, keeping the other.
+    static func remember(seriesId: String?, audio: Pick? = nil, subtitle: Pick? = nil) {
+        guard let seriesId, audio != nil || subtitle != nil else { return }
+        var c = load(seriesId: seriesId) ?? ShowTrackChoice()
+        if let audio { c.audio = audio }
+        if let subtitle { c.subtitle = subtitle }
+        if let data = try? JSONEncoder().encode(c) { UserDefaults.standard.set(data, forKey: key(seriesId)) }
+    }
+
+    /// Server names carry extras that differ between episodes ("- Default", "- External").
+    static func normalized(_ name: String?) -> String {
+        var n = (name ?? "").lowercased()
+        for junk in [" - default", " - external", " - forced", "default", "external"] { n = n.replacingOccurrences(of: junk, with: "") }
+        return n.trimmingCharacters(in: .whitespaces)
+    }
+
+    static func pick(of stream: MediaStream) -> Pick {
+        Pick(name: stream.displayTitle ?? stream.title, language: stream.language, forced: stream.isForced == true)
+    }
+
+    /// The stream index in this file that best matches a remembered pick.
+    static func match(_ pick: Pick, in streams: [MediaStream]) -> Int? {
+        let want = normalized(pick.name)
+        if !want.isEmpty, let s = streams.first(where: { normalized($0.displayTitle ?? $0.title) == want }) { return s.index }
+        guard let lang = pick.language, !lang.isEmpty else { return nil }
+        let same = streams.filter { s in
+            guard let l = s.language?.lowercased() else { return false }
+            return l == lang.lowercased() || Languages.matches(l, lang.lowercased()) || Languages.matches(lang.lowercased(), l)
+        }
+        return (same.first { ($0.isForced == true) == pick.forced } ?? same.first)?.index
+    }
+}
+
+extension TrackPreferences {
+    /// Like choose(for:), but the show's remembered choice wins when there is one.
+    func choose(for source: MediaSource, seriesId: String?) -> (audio: Int?, subtitle: Int) {
+        var choice = choose(for: source)
+        guard let memory = ShowTrackChoice.load(seriesId: seriesId) else { return choice }
+        if let a = memory.audio, let idx = ShowTrackChoice.match(a, in: source.audioStreams) {
+            choice.audio = idx == source.defaultAudioStreamIndex ? nil : idx
+        }
+        if let s = memory.subtitle {
+            if s.off { choice.subtitle = -1 }
+            else if let idx = ShowTrackChoice.match(s, in: source.subtitleStreams) { choice.subtitle = idx }
+        }
+        return choice
+    }
+}

@@ -193,7 +193,7 @@ class PlayerModel(var request: PlaybackRequest, val backend: Backend) {
         val audio = backend.audioTracks()
         if (audio.isEmpty()) return
         tracksApplied = true
-        val (a, sub) = com.huefin.app.core.TrackPrefs.choose(audio, backend.subtitleTracks())
+        val (a, sub) = com.huefin.app.core.TrackPrefs.choose(audio, backend.subtitleTracks(), item.seriesId)
         a?.let { if (!audio.first { t -> t.id == it }.selected) backend.selectAudio(it) }
         backend.selectSubtitle(sub)
     }

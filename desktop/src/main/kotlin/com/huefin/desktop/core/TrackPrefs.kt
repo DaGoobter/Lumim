@@ -49,4 +49,20 @@ object TrackPrefs {
         }
         return audioPick to sub
     }
+
+    // MARK: Choices remembered per show (pick once, every episode of the show starts the same way).
+    private const val OFF = "\u0000off"
+    fun rememberAudio(seriesId: String?, label: String) { if (seriesId != null) Prefs.set("show.audio.$seriesId", label) }
+    fun rememberSubtitle(seriesId: String?, label: String?) { if (seriesId != null) Prefs.set("show.sub.$seriesId", label ?: OFF) }
+    private fun norm(s: String) = s.lowercase().replace("default", "").replace("external", "").trim(' ', '·', '-')
+
+    fun choose(audio: List<Track>, subs: List<Track>, seriesId: String?): Pair<String?, String?> {
+        var (a, s) = choose(audio, subs)
+        if (seriesId == null) return a to s
+        Prefs.string("show.audio.$seriesId")?.let { want -> audio.firstOrNull { norm(it.label) == norm(want) }?.let { a = it.id } }
+        Prefs.string("show.sub.$seriesId")?.let { want ->
+            if (want == OFF) s = null else subs.firstOrNull { norm(it.label) == norm(want) }?.let { s = it.id }
+        }
+        return a to s
+    }
 }

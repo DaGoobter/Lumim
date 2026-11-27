@@ -312,12 +312,12 @@ private fun TopBar(m: PlayerModel, onClose: () -> Unit, onPip: () -> Unit, onSyn
             RoundIcon(Icons.Filled.ClosedCaption, "Audio and subtitles") { tracks = true; onTouch() }
             DropdownMenu(tracks, { tracks = false }) {
                 Text("Audio", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), color = Hue.secondaryText)
-                m.backend.audioTracks().forEach { t -> DropdownMenuItem({ Text((if (t.selected) "✓ " else "") + t.label) }, { m.backend.selectAudio(t.id); tracks = false }) }
+                m.backend.audioTracks().forEach { t -> DropdownMenuItem({ Text((if (t.selected) "✓ " else "") + t.label) }, { m.backend.selectAudio(t.id); com.huefin.app.core.TrackPrefs.rememberAudio(m.item.seriesId, t.label); tracks = false }) }
                 HorizontalDivider()
                 Text("Subtitles", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), color = Hue.secondaryText)
                 val subs = m.backend.subtitleTracks()
-                DropdownMenuItem({ Text((if (subs.none { it.selected }) "✓ " else "") + "Off") }, { m.backend.selectSubtitle(null); tracks = false })
-                subs.forEach { t -> DropdownMenuItem({ Text((if (t.selected) "✓ " else "") + t.label) }, { m.backend.selectSubtitle(t.id); tracks = false }) }
+                DropdownMenuItem({ Text((if (subs.none { it.selected }) "✓ " else "") + "Off") }, { m.backend.selectSubtitle(null); com.huefin.app.core.TrackPrefs.rememberSubtitle(m.item.seriesId, null); tracks = false })
+                subs.forEach { t -> DropdownMenuItem({ Text((if (t.selected) "✓ " else "") + t.label) }, { m.backend.selectSubtitle(t.id); com.huefin.app.core.TrackPrefs.rememberSubtitle(m.item.seriesId, t.label); tracks = false }) }
                 HorizontalDivider()
                 DropdownMenuItem({ Text("Subtitle timing" + if (m.subtitleDelay != 0.0) " (${syncLabel(m.subtitleDelay)})" else "") }, { tracks = false; sync = true })
             }

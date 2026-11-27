@@ -228,7 +228,7 @@ private fun TrackMenu(p: PlayerController, onOpen: (Boolean) -> Unit) {
         IconButton({ open = true; onOpen(true) }) { Icon(Icons.Filled.ClosedCaption, "Audio and subtitles") }
         DropdownMenu(open, { open = false; onOpen(false) }, Modifier.heightIn(max = 520.dp)) {
             Text("Audio", Modifier.padding(horizontal = 14.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium, color = Hue.secondaryText)
-            p.audioTracks.forEach { t -> DropdownMenuItem({ Text((if (t.id == p.audioTrack) "✓  " else "     ") + t.label) }, { p.selectAudio(t.id); open = false; onOpen(false) }) }
+            p.audioTracks.forEach { t -> DropdownMenuItem({ Text((if (t.id == p.audioTrack) "✓  " else "     ") + t.label) }, { p.selectAudio(t.id); com.huefin.desktop.core.TrackPrefs.rememberAudio(p.item.seriesId, t.label); open = false; onOpen(false) }) }
             HorizontalDivider()
             DropdownMenuItem({ Text((if (p.nightMode) "✓  " else "     ") + "Night mode (dialogue boost)") }, { p.toggleNightMode() })
             Text("Audio sync · " + syncLabel(p.audioDelay), Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
@@ -240,8 +240,8 @@ private fun TrackMenu(p: PlayerController, onOpen: (Boolean) -> Unit) {
             }
             HorizontalDivider()
             Text("Subtitles", Modifier.padding(horizontal = 14.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium, color = Hue.secondaryText)
-            DropdownMenuItem({ Text((if (p.subtitleTrack < 0) "✓  " else "     ") + "Off") }, { p.selectSubtitle(-1); open = false; onOpen(false) })
-            p.subtitleTracks.forEach { t -> DropdownMenuItem({ Text((if (t.id == p.subtitleTrack) "✓  " else "     ") + t.label) }, { p.selectSubtitle(t.id); open = false; onOpen(false) }) }
+            DropdownMenuItem({ Text((if (p.subtitleTrack < 0) "✓  " else "     ") + "Off") }, { p.selectSubtitle(-1); com.huefin.desktop.core.TrackPrefs.rememberSubtitle(p.item.seriesId, null); open = false; onOpen(false) })
+            p.subtitleTracks.forEach { t -> DropdownMenuItem({ Text((if (t.id == p.subtitleTrack) "✓  " else "     ") + t.label) }, { p.selectSubtitle(t.id); com.huefin.desktop.core.TrackPrefs.rememberSubtitle(p.item.seriesId, t.label); open = false; onOpen(false) }) }
             HorizontalDivider()
             // Subtitle timing: the menu stays open so you can keep nudging while the video plays.
             Text("Subtitle timing · " + syncLabel(p.subtitleDelay) + "   (G / H keys)", Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
