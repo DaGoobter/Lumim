@@ -221,7 +221,16 @@ struct TVSettingsView: View {
                 }
             }
             Section("Playback") {
-                Picker("Streaming quality", selection: $app.maxBitrate) {
+                Toggle("Automatic quality", isOn: Binding(get: { app.autoQuality }, set: { app.autoQuality = $0; app.persistSettings() }))
+                Button {
+                    app.checkSpeed(force: true)
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Connection · test again")
+                        Text(app.speedStatus).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Picker(app.autoQuality ? "Never more than" : "Streaming quality", selection: $app.maxBitrate) {
                     ForEach([200, 120, 80, 40, 20, 10], id: \.self) { m in Text(m == 200 ? "Maximum" : "\(m) Mbps").tag(m * 1_000_000) }
                 }
                 .onChange(of: app.maxBitrate) { _, _ in app.persistSettings() }

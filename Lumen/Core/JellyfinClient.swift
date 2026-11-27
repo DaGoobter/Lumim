@@ -92,6 +92,27 @@ final class JellyfinClient {
         return try JSONDecoder.jellyfin.decode(T.self, from: data)
     }
 
+    // MARK: Connection speed
+
+    /// Downloads `bytes` of throwaway data from the server (Jellyfin's bitrate test) and returns bits per second.
+    /// The time includes the round trip, so it errs on the safe side.
+    func measureSpeed(bytes: Int) async throws -> Double {
+        var req = URLRequest(url: url("Playback/BitrateTest", query: ["size": String(bytes)]))
+        req.setValue(authorizationHeader, forHTTPHeaderField: "Authorization")
+        req.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        req.timeoutInterval = 15
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 15
+        config.urlCache = nil
+        let start = Date()
+        let (data, response) = try await URLSession(configuration: config).data(for: req)
+        let elapsed = Date().timeIntervalSince(start)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200, !data.isEmpty else {
+            throw JellyfinError.http((response as? HTTPURLResponse)?.statusCode ?? 0)
+        }
+        return Double(data.count * 8) / max(elapsed, 0.001)
+    }
+
     // MARK: Auth
 
     func publicInfo() async throws -> PublicSystemInfo {

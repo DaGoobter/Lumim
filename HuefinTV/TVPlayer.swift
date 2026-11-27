@@ -77,7 +77,7 @@ final class PlayerModel {
         isLoading = true; errorMessage = nil; reportedStart = false; skipped = []
         item = target; pendingSeek = startTicks
         do {
-            var info = try await client.playbackInfo(itemId: target.id, maxBitrate: app.maxBitrate, startTicks: startTicks)
+            var info = try await client.playbackInfo(itemId: target.id, maxBitrate: app.playbackBitrate, startTicks: startTicks)
             guard var src = info.mediaSources.first else { throw URLError(.fileDoesNotExist) }
             // The person's default audio and subtitle languages (Settings).
             let choice = app.trackPrefs.choose(for: src)
@@ -95,7 +95,7 @@ final class PlayerModel {
             // Copying the audio track as-is into Apple's stream format lets sound drift out of sync with the picture.
             let repackaged = !target.isLiveChannel && (custom || src.supportsDirectPlay != true)
             if repackaged {
-                info = try await client.playbackInfo(itemId: target.id, maxBitrate: app.maxBitrate, startTicks: startTicks,
+                info = try await client.playbackInfo(itemId: target.id, maxBitrate: app.playbackBitrate, startTicks: startTicks,
                                                      audioStreamIndex: audioIndex, subtitleStreamIndex: subtitleIndex,
                                                      allowAudioCopy: false)
                 src = info.mediaSources.first ?? src
@@ -107,7 +107,7 @@ final class PlayerModel {
                     url = JellyfinClient.tuningLiveURL(u)
                 } else {
                     url = client.liveHLSURL(channelId: target.id, mediaSourceId: src.id, liveStreamId: src.liveStreamId,
-                                            playSessionId: info.playSessionId, maxBitrate: app.maxBitrate, audioIndex: audioIndex)
+                                            playSessionId: info.playSessionId, maxBitrate: app.playbackBitrate, audioIndex: audioIndex)
                 }
                 method = "Transcode"
             } else if src.supportsDirectPlay == true && !custom {

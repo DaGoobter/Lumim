@@ -36,7 +36,7 @@ struct PlayerScreen: View {
             if request.forceApple || EngineGuard.tripped || !EngineAvailability.available || SyncPlayManager.shared.groupId != nil {
                 useEngine = false
             } else {
-                let engine = await EngineDecider.useEngine(for: request, client: app.client, maxBitrate: app.maxBitrate)
+                let engine = await EngineDecider.useEngine(for: request, client: app.client, maxBitrate: app.playbackBitrate)
                 // Mark the engine as starting; if the app dies in the next 20 seconds, the next launch switches it off.
                 if engine { EngineGuard.engineStarting() }
                 useEngine = engine
@@ -169,7 +169,7 @@ struct AppleVideoPlayerScreen: View {
                 scheduleHide()
                 return
             }
-            let m = PlayerModel(request: request, client: app.client, maxBitrate: app.maxBitrate,
+            let m = PlayerModel(request: request, client: app.client, maxBitrate: app.playbackBitrate,
                                 prefs: app.trackPrefs)
             model = m
             PlayerModel.closeAction = { close() }

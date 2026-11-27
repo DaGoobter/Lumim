@@ -114,7 +114,7 @@ struct ItemDetailView: View {
                 playability = Playability(kind: .original, detail: "Downloaded to this device.")
                 return
             }
-            playability = await EngineDecider.playability(for: it, client: client, maxBitrate: app.maxBitrate,
+            playability = await EngineDecider.playability(for: it, client: client, maxBitrate: app.playbackBitrate,
                                                           mediaSourceId: version)
         }
         .artColor(from: shown.flatMap { app.client?.backdropURL(for: $0, width: 400) }, into: $artColor)

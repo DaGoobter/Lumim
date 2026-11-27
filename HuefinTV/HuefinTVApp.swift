@@ -34,7 +34,7 @@ struct TVRoot: View {
         AudioPlayer.shared.pause()
         // Watch Together needs Apple's player.
         if SyncPlayManager.shared.groupId == nil,
-           await EngineDecider.useEngine(for: req, client: app.client, maxBitrate: app.maxBitrate) {
+           await EngineDecider.useEngine(for: req, client: app.client, maxBitrate: app.playbackBitrate) {
             TVEngineViewController.present(request: req, client: app.client)
         } else {
             appleRequest = req

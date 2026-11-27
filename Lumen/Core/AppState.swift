@@ -37,6 +37,66 @@ final class AppState {
 
     /// Bits per second. High by default so the server prefers untouched (direct) playback.
     var maxBitrate: Int = 200_000_000
+    /// Pick the streaming quality from a quick speed test to the server (on by default).
+    var autoQuality: Bool = true
+    /// The last measured speed to the server, in bits per second.
+    private(set) var measuredBitrate: Int? = nil
+    /// What the speed test found, for Settings.
+    private(set) var speedStatus: String = "Not tested yet"
+    @ObservationIgnored private var lastSpeedTest: Date?
+    @ObservationIgnored private var speedTask: Task<Void, Never>?
+
+    /// The quality limit playback actually uses. With Automatic on, it's what the connection can carry with
+    /// headroom (so big files play untouched when it can, and the server sends a lighter stream when it can't).
+    var playbackBitrate: Int {
+        guard autoQuality, let m = measuredBitrate else { return maxBitrate }
+        // Plenty of speed (home network): no limit, so everything plays untouched.
+        if m >= 150_000_000 { return maxBitrate }
+        return min(maxBitrate, max(1_500_000, Int(Double(m) * 0.7)))
+    }
+
+    /// Speed test against the server. Runs at app open, after network changes, and at most every 10 minutes
+    /// otherwise. Uses a small sample first and only downloads more on fast connections.
+    func checkSpeed(force: Bool = false) {
+        guard let client else { return }
+        if !force, let last = lastSpeedTest, Date().timeIntervalSince(last) < 600 { return }
+        speedTask?.cancel()
+        if measuredBitrate == nil { speedStatus = "Testing…" }
+        let expensive = monitor.currentPath.isExpensive
+        speedTask = Task { [weak self] in
+            var speed: Double = 0
+            do {
+                speed = try await client.measureSpeed(bytes: 1_000_000)
+                if speed > 8_000_000 { speed = try await client.measureSpeed(bytes: 8_000_000) }
+                if speed > 80_000_000 && !expensive { speed = try await client.measureSpeed(bytes: 30_000_000) }
+            } catch {
+                if speed == 0 {
+                    await MainActor.run { if self?.measuredBitrate == nil { self?.speedStatus = "Couldn't test the connection" } }
+                    return
+                }
+            }
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard let self else { return }
+                self.measuredBitrate = Int(speed)
+                self.lastSpeedTest = Date()
+                self.speedStatus = Self.describe(bitrate: Int(speed))
+            }
+        }
+    }
+
+    static func describe(bitrate: Int) -> String {
+        let mbps = Double(bitrate) / 1_000_000
+        let speed = mbps >= 100 ? String(format: "%.0f Mbps", mbps) : String(format: "%.1f Mbps", mbps)
+        switch mbps {
+        case 150...: return "\(speed) · everything plays untouched, including 4K remuxes"
+        case 60..<150: return "\(speed) · 4K plays untouched; the very largest files are lightened"
+        case 25..<60: return "\(speed) · 4K web files and 1080p play untouched"
+        case 10..<25: return "\(speed) · 1080p plays untouched; 4K is lightened"
+        default: return "\(speed) · the server sends a lighter stream so it doesn't stutter"
+        }
+    }
+
     /// Switch to the server's local address when on the same network (faster, no internet round-trip).
     var preferLocal: Bool = true
     /// Default audio/subtitle choices.
@@ -48,6 +108,7 @@ final class AppState {
 
     func persistSettings() {
         UserDefaults.standard.set(maxBitrate, forKey: "lumen.maxBitrate")
+        UserDefaults.standard.set(autoQuality, forKey: "lumen.autoQuality")
         UserDefaults.standard.set(preferLocal, forKey: "lumen.preferLocal")
         UserDefaults.standard.set(showBrightnessSlider, forKey: "lumen.showBrightness")
         UserDefaults.standard.set(showVolumeSlider, forKey: "lumen.showVolume")
@@ -57,6 +118,9 @@ final class AppState {
     init() {
         let saved = UserDefaults.standard.integer(forKey: "lumen.maxBitrate")
         if saved > 0 { maxBitrate = saved }
+        if UserDefaults.standard.object(forKey: "lumen.autoQuality") != nil {
+            autoQuality = UserDefaults.standard.bool(forKey: "lumen.autoQuality")
+        }
         if UserDefaults.standard.object(forKey: "lumen.showBrightness") != nil {
             showBrightnessSlider = UserDefaults.standard.bool(forKey: "lumen.showBrightness")
         }
@@ -138,10 +202,13 @@ final class AppState {
             localStatus = "No home address yet"
         }
 
+        let routeChanged = route != newRoute || client?.baseURL != target
         route = newRoute
         if client?.baseURL != target {
             client = JellyfinClient(baseURL: target, deviceName: UIDevice.current.name, token: s.token, userId: s.userId)
         }
+        // How fast is it to the server from here? Decides the streaming quality when it's on Automatic.
+        checkSpeed(force: routeChanged || measuredBitrate == nil)
         // Back online: resume queued downloads and push any offline watch progress.
         if let client { DownloadManager.shared.attach(client: client) }
 

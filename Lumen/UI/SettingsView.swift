@@ -184,13 +184,22 @@ struct SettingsView: View {
             }
 
             Section {
-                Picker("Max streaming quality", selection: $app.maxBitrate) {
+                Toggle("Automatic quality", isOn: $app.autoQuality)
+                HStack {
+                    Label("Connection", systemImage: "speedometer")
+                    Spacer()
+                    Button("Test again") { app.checkSpeed(force: true) }.font(.footnote)
+                }
+                Text(app.speedStatus).font(.footnote).foregroundStyle(.secondary)
+                Picker(app.autoQuality ? "Never more than" : "Max streaming quality", selection: $app.maxBitrate) {
                     ForEach(bitrates, id: \.self) { Text($0.label).tag($0.value) }
                 }
             } header: {
                 Text("Playback")
             } footer: {
-                Text("Keep this at Maximum for untouched Direct Play. Lower it only if remote playback stutters; the server will then re-encode, which loses Dolby Vision. Downloads always use full quality.")
+                Text(app.autoQuality
+                     ? "Huefin tests the connection to your server when it opens and whenever your network changes. When it's fast enough, files play untouched (full quality, Dolby Vision); when it isn't, the server sends a lighter stream so playback doesn't stutter. Downloads always use full quality."
+                     : "Keep this at Maximum for untouched Direct Play. Lower it only if remote playback stutters; the server will then re-encode, which loses Dolby Vision. Downloads always use full quality.")
             }
 
             Section {
@@ -352,6 +361,7 @@ struct SettingsView: View {
             } else { isAdmin = false; canFamily = false }
         }
         .onChange(of: app.maxBitrate) { app.persistSettings() }
+        .onChange(of: app.autoQuality) { app.persistSettings() }
         .onChange(of: app.preferLocal) {
             app.persistSettings()
             app.scheduleRouteCheck()

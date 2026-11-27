@@ -566,7 +566,7 @@ struct EnginePlayerScreen: View {
         controlsVisible = false
         let req = PlaybackRequest(item: m.item, startTicks: Int64(max(0, m.currentTime) * 10_000_000),
                                   mediaSourceId: request.mediaSourceId, forceApple: true)
-        let s = PlayerModel(request: req, client: app.client, maxBitrate: app.maxBitrate, prefs: app.trackPrefs)
+        let s = PlayerModel(request: req, client: app.client, maxBitrate: app.playbackBitrate, prefs: app.trackPrefs)
         s.player.isMuted = true
         standby = s
         Task {
