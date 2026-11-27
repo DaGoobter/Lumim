@@ -54,6 +54,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -234,6 +238,33 @@ private fun PlayerScreen(m: PlayerModel, inPip: Boolean, tabletopHinge: Int?, on
     if (showSync) WatchTogetherDialog(m) { showSync = false }
 }
 
+private fun syncLabel(d: Double): String =
+    if (d == 0.0) "in sync" else "%s%.1f s %s".format(if (d > 0) "+" else "−", kotlin.math.abs(d), if (d > 0) "later" else "earlier")
+
+/** Subtitle timing: nudge subtitles earlier or later while the video keeps playing. */
+@Composable
+private fun SubtitleSyncPanel(m: PlayerModel, onClose: () -> Unit) {
+    Column(Modifier.padding(12.dp).widthIn(max = 380.dp).background(Color(0xEE1C1C22), RoundedCornerShape(20.dp)).padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Subtitle timing", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            TextButton(onClose) { Text("Done") }
+        }
+        if (!m.backend.supportsSubtitleDelay) {
+            Text("Only the Huefin Engine can shift subtitles. Switch Player to Huefin Engine in Settings to use this.",
+                color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.bodySmall)
+        } else {
+            Text(syncLabel(m.subtitleDelay), color = Color.White, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf(-0.5, -0.1).forEach { d -> OutlinedButton({ m.changeSubtitleDelay(m.subtitleDelay + d) }, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("%.1f".format(d).replace("-", "−"), color = Color.White) } }
+                OutlinedButton({ m.changeSubtitleDelay(0.0) }, enabled = m.subtitleDelay != 0.0, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("Reset", color = Color.White) }
+                listOf(0.1, 0.5).forEach { d -> OutlinedButton({ m.changeSubtitleDelay(m.subtitleDelay + d) }, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("+%.1f".format(d), color = Color.White) } }
+            }
+            Text("Subtitles too early? Press +. Too late? Press −.", color = Color.White.copy(alpha = 0.6f), style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
 @Composable
 private fun RoundIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
     IconButton(onClick, Modifier.size(42.dp).background(Color.White.copy(alpha = 0.14f), CircleShape)) { Icon(icon, label, tint = Color.White) }
@@ -242,6 +273,7 @@ private fun RoundIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, lab
 @Composable
 private fun TopBar(m: PlayerModel, onClose: () -> Unit, onPip: () -> Unit, onSync: () -> Unit, onTouch: () -> Unit, modifier: Modifier) {
     var tracks by remember { mutableStateOf(false) }
+    var sync by remember { mutableStateOf(false) }
     var more by remember { mutableStateOf(false) }
     var info by remember { mutableStateOf(false) }
     val ctx = androidx.compose.ui.platform.LocalContext.current
@@ -262,7 +294,11 @@ private fun TopBar(m: PlayerModel, onClose: () -> Unit, onPip: () -> Unit, onSyn
                 val subs = m.backend.subtitleTracks()
                 DropdownMenuItem({ Text((if (subs.none { it.selected }) "✓ " else "") + "Off") }, { m.backend.selectSubtitle(null); tracks = false })
                 subs.forEach { t -> DropdownMenuItem({ Text((if (t.selected) "✓ " else "") + t.label) }, { m.backend.selectSubtitle(t.id); tracks = false }) }
+                HorizontalDivider()
+                DropdownMenuItem({ Text("Subtitle timing" + if (m.subtitleDelay != 0.0) " (${syncLabel(m.subtitleDelay)})" else "") }, { tracks = false; sync = true })
             }
+            if (sync) androidx.compose.ui.window.Popup(alignment = Alignment.TopEnd, offset = androidx.compose.ui.unit.IntOffset(0, 140),
+                onDismissRequest = { sync = false }) { SubtitleSyncPanel(m) { sync = false } }
         }
         if (!m.isLive) {
             RoundIcon(Icons.Filled.PictureInPictureAlt, "Picture in picture", onPip)

@@ -134,6 +134,7 @@ class PlayerModel(var request: PlaybackRequest, val backend: Backend) {
         }
         com.huefin.app.core.CrashReport.step("Starting: $playMethod · ${src.container} · ${src.videoStream?.codec} ${src.videoStream?.videoRangeType} · audio ${src.audioStreams.joinToString { it.codec ?: "?" }}")
         backend.prepare(url, if (isLive) 0 else startMs, subs, hls)
+        restoreSubtitleDelay()
         report("Sessions/Playing")
     }
 
@@ -276,6 +277,20 @@ class PlayerModel(var request: PlaybackRequest, val backend: Backend) {
     suspend fun waitUntilReady() { repeat(225) { if (!loading || stopped) return; delay(200) } }
 
     fun changeSpeed(s: Float) { speed = s; backend.setSpeed(s) }
+
+    /** Subtitle timing (seconds; positive = later), remembered per title. */
+    var subtitleDelay by mutableStateOf(0.0); private set
+    fun changeSubtitleDelay(seconds: Double) {
+        val v = Math.round(seconds * 10) / 10.0
+        subtitleDelay = v
+        backend.setSubtitleDelay(v)
+        com.huefin.app.core.Prefs.set("huefin.subDelay.${item.id}", v.toString())
+    }
+    private fun restoreSubtitleDelay() {
+        val v = com.huefin.app.core.Prefs.string("huefin.subDelay.${item.id}")?.toDoubleOrNull() ?: 0.0
+        subtitleDelay = v
+        backend.setSubtitleDelay(v)
+    }
     fun setBoost(p: Int) { volumeBoost = p; backend.setVolumeBoost(p) }
     fun toggleFill() { fill = !fill; backend.setFill(fill) }
 

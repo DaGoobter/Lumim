@@ -208,6 +208,8 @@ class MpvBackend(context: Context) : Backend {
     override fun subtitleTracks() = tracks("sub")
     override fun selectAudio(id: String) { mpv.setPropertyString("aid", id) }
     override fun selectSubtitle(id: String?) { mpv.setPropertyString("sid", id ?: "no") }
+    override val supportsSubtitleDelay = true
+    override fun setSubtitleDelay(seconds: Double) { mpv.setPropertyDouble("sub-delay", seconds) }
     override fun setFill(fill: Boolean) { mpv.setPropertyDouble("panscan", if (fill) 1.0 else 0.0) }
     override fun setVolumeBoost(percent: Int) { mpv.setPropertyInt("volume", percent.coerceIn(0, 200)) }
     /** In HDR passthrough the decoder owns the screen, so Huefin draws text subtitles itself. */

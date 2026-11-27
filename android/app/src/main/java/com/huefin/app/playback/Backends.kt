@@ -32,6 +32,9 @@ interface Backend {
     fun selectAudio(id: String); fun selectSubtitle(id: String?)
     fun setFill(fill: Boolean)
     fun setVolumeBoost(percent: Int) {}
+    /** Subtitle timing in seconds (positive = later). Only the Huefin Engine can shift subtitles. */
+    val supportsSubtitleDelay: Boolean get() = false
+    fun setSubtitleDelay(seconds: Double) {}
     val supportsBoost: Boolean get() = false
     fun release()
     var onEnded: () -> Unit
