@@ -66,7 +66,13 @@ final class NativeCore: NSObject, EngineCore {
     private var lastQueuedAudio = 0.0
     private var lastQueuedVideo = 0.0
     private var eof = false
-    private var pendingSeek: Double?
+    private var pendingSeek: (Double, Bool)?
+    /// After a snapped seek: the keyframe time playback really starts from (read by the clock).
+    private var snappedTo: Double?
+    /// When the current start/seek began, to judge how fast the connection is.
+    private var startWall = CACurrentMediaTime()
+    /// How long opening took, for Stream info.
+    private(set) var startTimings = ""
     private var demuxRunning = false
     private var audioStreamIndex: Int32 = -1
     private var subStreamIndex: Int32 = -1
@@ -114,7 +120,7 @@ final class NativeCore: NSObject, EngineCore {
     static func canPlay(_ src: MediaSource?) -> Bool {
         guard EnginePrefs.nativeEnabled, let src, let v = src.mediaStreams?.first(where: { $0.type == "Video" }) else { return false }
         let codec = (v.codec ?? "").lowercased()
-        guard codec == "hevc" || codec == "h264" else { return false }
+        guard codec == "hevc" || codec == "h264" || (codec == "av1" && DeviceCapabilities.av1) else { return false }
         let containers = (src.container ?? "").lowercased().split(separator: ",").map(String.init)
         guard containers.contains(where: { ["mkv", "matroska", "webm", "mp4", "m4v", "mov"].contains($0) }) else { return false }
         let range = v.videoRangeType ?? ""
@@ -135,6 +141,7 @@ final class NativeCore: NSObject, EngineCore {
         cues = [:]; externalSubs = []
         lock.unlock()
         phase = .starting(start)
+        startWall = CACurrentMediaTime()
         startedOnce = false
         sync.setRate(0, time: CMTime(seconds: start, preferredTimescale: 90_000))
         demuxDone = DispatchSemaphore(value: 0)
@@ -177,28 +184,45 @@ final class NativeCore: NSObject, EngineCore {
         defer { demuxDone.signal() }
         var fmt: UnsafeMutablePointer<AVFormatContext>? = nil
         var opts: OpaquePointer? = nil
+        // Keep one connection to the server open across seeks (no new handshake each time) and skip radio metadata.
         for (k, v) in [("reconnect", "1"), ("reconnect_streamed", "1"), ("reconnect_on_network_error", "1"),
-                       ("reconnect_delay_max", "4"), ("rw_timeout", "30000000"), ("user_agent", "Huefin")] {
+                       ("reconnect_delay_max", "4"), ("rw_timeout", "30000000"), ("user_agent", "Huefin"),
+                       ("multiple_requests", "1"), ("icy", "0")] {
             av_dict_set(&opts, k, v, 0)
         }
         let path = url.isFileURL ? url.path : url.absoluteString
+        let t0 = CACurrentMediaTime()
+        fmt = avformat_alloc_context()
+        // MKV and MP4 describe their tracks in the header, so a short look is enough (FFmpeg's default reads up to
+        // 5 MB, which on a big 4K file is a noticeable wait before anything happens).
+        fmt?.pointee.probesize = 2_000_000
+        fmt?.pointee.max_analyze_duration = 1_500_000
         let openResult = avformat_open_input(&fmt, path, nil, &opts)
         av_dict_free(&opts)
         guard openResult >= 0, let ctx = fmt else { fail("Couldn't open the file (\(openResult)).", fallback: true, at: start); return }
         defer { var c: UnsafeMutablePointer<AVFormatContext>? = ctx; avformat_close_input(&c) }
         guard avformat_find_stream_info(ctx, nil) >= 0 else { fail("Couldn't read the file.", fallback: true, at: start); return }
+        let tOpen = CACurrentMediaTime()
 
         let videoIndex = av_find_best_stream(ctx, AVMEDIA_TYPE_VIDEO, -1, -1, nil, 0)
+        // Resuming: go straight to the spot once and test-decode the keyframe there, instead of peeking at the
+        // start of the file, jumping back, then jumping again (three trips to the server before a picture).
+        if start > 0.5 { av_seek_frame(ctx, -1, Int64(start * 1_000_000), AVSEEK_FLAG_BACKWARD) }
+        // Everything read while peeking is kept and played, so nothing has to be downloaded twice.
+        let stash = PacketStash()
+        defer { stash.clear() }
         guard videoIndex >= 0, let vStream = ctx.pointee.streams[Int(videoIndex)],
-              let prepared = Self.prepareVideo(ctx, vStream, videoIndex),
+              let prepared = Self.prepareVideo(ctx, vStream, videoIndex, stash: stash),
               let format = makeVideoFormat(vStream, config: prepared.config),
               // Pre-flight: Apple's decoder must turn the first keyframe into a picture before we commit to it.
               // Anything it can't show (odd tags, missing setup data, unusual profiles) goes to mpv instead of
               // playing sound over a black screen.
               Self.decodesFirstFrame(format, keyframe: prepared.keyframe)
         else { fail("", fallback: true, at: start); return }
-        // Back to the beginning after peeking at the first frames (the start position is applied below).
-        av_seek_frame(ctx, -1, 0, AVSEEK_FLAG_BACKWARD)
+        let tReady = CACurrentMediaTime()
+        DispatchQueue.main.async { [weak self] in
+            self?.startTimings = String(format: "open %.2fs · first frame ready %.2fs", tOpen - t0, tReady - t0)
+        }
         let durUs = ctx.pointee.duration
         let fps = vStream.pointee.avg_frame_rate
         DispatchQueue.main.async { [weak self] in
@@ -245,7 +269,6 @@ final class NativeCore: NSObject, EngineCore {
         defer { var p = pkt; av_packet_free(&p) }
         var seekTarget = start
         var openedAudio = audioStreamIndex
-        if start > 0.5 { av_seek_frame(ctx, -1, Int64(start * 1_000_000), AVSEEK_FLAG_BACKWARD) }
         startFeeding()
 
         while running() {
@@ -257,19 +280,30 @@ final class NativeCore: NSObject, EngineCore {
             let reopen = reopenAudio; reopenAudio = false
             lock.unlock()
             if wantAudio != openedAudio || reopen { openedAudio = wantAudio; openAudio(wantAudio) }
-            if let s = seekTo {
+            if let sk = seekTo {
+                let s = sk.0, snap = sk.1
+                stash.clear()
                 av_seek_frame(ctx, -1, Int64(max(0, s) * 1_000_000), AVSEEK_FLAG_BACKWARD)
                 audio?.flush()
                 for (_, c) in subDecoders { avcodec_flush_buffers(c) }
-                lock.lock(); videoQ = []; audioQ = []; videoBytes = 0; eof = false; lastQueuedAudio = s; lastQueuedVideo = s; lock.unlock()
+                var target = s
+                if snap {
+                    // Big jump (scrubbing): start from the keyframe right there instead of downloading and decoding
+                    // up to several seconds of 4K video to land on the exact frame. Feels instant; lands within a
+                    // couple of seconds of where you let go.
+                    if let k = Self.peekKeyframeTime(ctx, videoIndex, stash: stash), k <= s, s - k < 10 { target = k }
+                }
+                lock.lock(); videoQ = []; audioQ = []; videoBytes = 0; eof = false; lastQueuedAudio = target; lastQueuedVideo = target
+                if target != s { snappedTo = target }
+                lock.unlock()
                 videoFeed.sync { layer.flush() }
                 audioFeed.sync { audioRenderer.flush() }
-                seekTarget = s
+                seekTarget = target
             }
             // Don't read too far ahead of what's playing.
             if bufferedAhead() > 15 || queuedVideoBytes() > 200_000_000 { Thread.sleep(forTimeInterval: 0.02); continue }
 
-            let r = av_read_frame(ctx, pkt)
+            let r = stash.isEmpty ? av_read_frame(ctx, pkt) : stash.take(into: pkt)
             if r < 0 {
                 if r == AVERR_EOF || ctx.pointee.pb?.pointee.eof_reached == 1 { lock.lock(); eof = true; lock.unlock() }
                 else if r != AVERR_EAGAIN { lock.lock(); eof = true; lock.unlock() }
@@ -401,14 +435,14 @@ final class NativeCore: NSObject, EngineCore {
     /// MP4s tagged 'hev1' or 'avc3', some web downloads and TV recordings. Apple's decoder needs it in the header,
     /// so Huefin reads the first frames, pulls the setup data out, and rebuilds a complete header.
     fileprivate static func prepareVideo(_ ctx: UnsafeMutablePointer<AVFormatContext>, _ st: UnsafeMutablePointer<AVStream>,
-                                         _ index: Int32) -> (config: Data, keyframe: Data?)? {
+                                         _ index: Int32, stash: PacketStash? = nil) -> (config: Data, keyframe: Data?)? {
         guard let par = st.pointee.codecpar?.pointee, par.extradata_size > 0, let extra = par.extradata else { return nil }
         var config = Data(bytes: extra, count: Int(par.extradata_size))
         // AV1 (many anime and web files): Apple decodes it in hardware on newer chips (A17 Pro / M3 and later).
         // The file's 'av1C' record goes to the decoder as-is; older devices keep using mpv.
         if par.codec_id == AV_CODEC_ID_AV1 {
             guard config.first == 0x81, VTIsHardwareDecodeSupported(CMVideoCodecType(0x6176_3031)) else { return nil }
-            return (config, firstKeyframe(ctx, index))
+            return (config, firstKeyframe(ctx, index, stash: stash))
         }
         // MKV/MP4 carry a configuration record (first byte 1) and length-prefixed NAL units, which Apple takes as-is.
         guard config.first == 1 else { return nil }
@@ -427,6 +461,7 @@ final class NativeCore: NSObject, EngineCore {
         var budget = 400
         while budget > 0, keyframe == nil, let p = pkt, av_read_frame(ctx, p) >= 0 {
             defer { av_packet_unref(p) }
+            stash?.add(p)
             budget -= 1
             guard p.pointee.stream_index == index, let data = p.pointee.data, p.pointee.size > 0 else { continue }
             let bytes = Data(bytes: data, count: Int(p.pointee.size))
@@ -446,16 +481,37 @@ final class NativeCore: NSObject, EngineCore {
     }
 
     /// Reads ahead to the first keyframe of the video stream (for the decoder pre-flight test).
-    fileprivate static func firstKeyframe(_ ctx: UnsafeMutablePointer<AVFormatContext>, _ index: Int32) -> Data? {
+    fileprivate static func firstKeyframe(_ ctx: UnsafeMutablePointer<AVFormatContext>, _ index: Int32,
+                                          stash: PacketStash? = nil) -> Data? {
         let pkt = av_packet_alloc()
         defer { var p = pkt; av_packet_free(&p) }
         var budget = 400
         while budget > 0, let p = pkt, av_read_frame(ctx, p) >= 0 {
             defer { av_packet_unref(p) }
+            stash?.add(p)
             budget -= 1
             guard p.pointee.stream_index == index, let data = p.pointee.data, p.pointee.size > 0,
                   p.pointee.flags & AV_PKT_FLAG_KEY != 0 else { continue }
             return Data(bytes: data, count: Int(p.pointee.size))
+        }
+        return nil
+    }
+
+    /// After a seek: reads ahead to the first video keyframe (keeping everything read) and returns its time.
+    fileprivate static func peekKeyframeTime(_ ctx: UnsafeMutablePointer<AVFormatContext>, _ index: Int32, stash: PacketStash) -> Double? {
+        let pkt = av_packet_alloc()
+        defer { var p = pkt; av_packet_free(&p) }
+        var budget = 300
+        while budget > 0, let p = pkt, av_read_frame(ctx, p) >= 0 {
+            defer { av_packet_unref(p) }
+            stash.add(p)
+            budget -= 1
+            guard p.pointee.stream_index == index, p.pointee.flags & AV_PKT_FLAG_KEY != 0,
+                  let st = ctx.pointee.streams[Int(index)] else { continue }
+            let ts = p.pointee.pts != AV_NOPTS ? p.pointee.pts : p.pointee.dts
+            guard ts != AV_NOPTS else { return nil }
+            let tb = st.pointee.time_base
+            return Double(ts) * Double(tb.num) / Double(max(1, tb.den))
         }
         return nil
     }
@@ -660,7 +716,7 @@ final class NativeCore: NSObject, EngineCore {
 
     private func startClock() {
         clock?.invalidate()
-        let t = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in self?.clockTick() }
+        let t = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in self?.clockTick() }
         RunLoop.main.add(t, forMode: .common)
         clock = t
     }
@@ -695,8 +751,18 @@ final class NativeCore: NSObject, EngineCore {
         }
 
         switch phase {
-        case .starting(let at):
-            if ahead >= 1.5 || atEnd {
+        case .starting(var at):
+            lock.lock(); let snapped = snappedTo; snappedTo = nil; lock.unlock()
+            if let snapped {
+                at = snapped
+                phase = .starting(snapped)
+                sync.setRate(0, time: CMTime(seconds: snapped, preferredTimescale: 90_000))
+            }
+            // Start as soon as it's safe: half a second of video is enough when it's arriving at least 2.5x faster
+            // than it plays (home network, good connection); otherwise build up 1.5 seconds first.
+            let waited = max(0.05, CACurrentMediaTime() - startWall)
+            let fastLink = ahead >= 0.5 && ahead / waited >= 2.5
+            if fastLink || ahead >= 1.5 || atEnd {
                 phase = .playing
                 sync.setRate(userPaused ? 0 : rate, time: CMTime(seconds: at, preferredTimescale: 90_000))
                 if !startedOnce { startedOnce = true }
@@ -739,7 +805,10 @@ final class NativeCore: NSObject, EngineCore {
     }
     func seek(to seconds: Double) {
         let s = max(0, durationSeconds > 0 ? min(seconds, durationSeconds - 0.5) : seconds)
-        lock.lock(); pendingSeek = s; eof = false; lock.unlock()
+        // Long jumps (scrubbing) snap to the nearest keyframe for speed; short skips land exactly.
+        let snap = abs(s - time) > 30
+        lock.lock(); pendingSeek = (s, snap); snappedTo = nil; eof = false; lock.unlock()
+        startWall = CACurrentMediaTime()
         sync.setRate(0, time: CMTime(seconds: s, preferredTimescale: 90_000))
         phase = .starting(s)
     }
@@ -790,6 +859,7 @@ final class NativeCore: NSObject, EngineCore {
         out = hdrLabel == "SDR" ? "SDR" : "HDR screen"
         #endif
         return "\(hdrLabel) → \(out) · Apple decoder" + (audioLabel.isEmpty ? "" : " · \(audioLabel)")
+            + (startTimings.isEmpty ? "" : " · \(startTimings)")
     }
 
     // MARK: - Apple TV display mode
@@ -1204,3 +1274,21 @@ extension NativeCore {
     }
 }
 #endif
+
+/// Packets already read from the file (while checking the first frame, or finding a keyframe after a seek),
+/// kept so they're played instead of downloaded a second time.
+final class PacketStash {
+    private var packets: [UnsafeMutablePointer<AVPacket>] = []
+    var isEmpty: Bool { packets.isEmpty }
+    func add(_ p: UnsafeMutablePointer<AVPacket>) { if let c = av_packet_clone(p) { packets.append(c) } }
+    /// Moves the oldest kept packet into `pkt` (like av_read_frame; 0 on success).
+    func take(into pkt: UnsafeMutablePointer<AVPacket>?) -> Int32 {
+        guard let pkt, !packets.isEmpty else { return -1 }
+        var first: UnsafeMutablePointer<AVPacket>? = packets.removeFirst()
+        av_packet_move_ref(pkt, first!)
+        av_packet_free(&first)
+        return 0
+    }
+    func clear() { for p in packets { var q: UnsafeMutablePointer<AVPacket>? = p; av_packet_free(&q) }; packets = [] }
+    deinit { clear() }
+}

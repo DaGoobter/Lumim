@@ -132,7 +132,8 @@ final class EnginePlayerModel {
             url = local
         } else if let client {
             // The full item says what's inside the file, which decides the core.
-            let full = (try? await client.item(item.id)) ?? item
+            // Usually already known from the page you pressed Play on; only ask the server when it isn't.
+            let full = item.mediaSources?.isEmpty == false ? item : ((try? await client.item(item.id)) ?? item)
             let src = full.mediaSources?.first(where: { $0.id == request.mediaSourceId }) ?? full.mediaSources?.first
             let sourceId = request.mediaSourceId ?? src?.id ?? item.id
             url = client.directPlayURL(itemId: item.id, mediaSourceId: sourceId, container: src?.container)
