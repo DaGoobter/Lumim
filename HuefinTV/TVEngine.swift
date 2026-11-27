@@ -14,21 +14,34 @@ final class EngineUIState {
 
 /// The small buttons next to the progress bar, like Apple's own player.
 enum EngineMenus {
-    static let buttons: [(title: String, symbol: String)] = [("Subtitles", "captions.bubble"), ("Audio", "speaker.wave.2"), ("Speed", "gauge.with.dots.needle.67percent")]
+    static let buttons: [(title: String, symbol: String)] = [("Subtitles", "captions.bubble"), ("Audio", "speaker.wave.2"),
+                                                             ("Speed", "gauge.with.dots.needle.67percent"), ("Subtitle timing", "timer")]
+    static let timingSteps: [Double] = [-0.5, -0.1, 0, 0.1, 0.5]
+    static func timingLabel(_ d: Double) -> String {
+        d == 0 ? "in sync" : String(format: "%@%.1f s %@", d > 0 ? "+" : "−", abs(d), d > 0 ? "later" : "earlier")
+    }
+    /// The heading of a pop-up (the timing one shows the current setting).
+    @MainActor static func title(_ menu: Int, _ m: EnginePlayerModel) -> String {
+        menu == 3 ? "Subtitle timing · \(timingLabel(m.subtitleDelay))" : buttons[menu].title
+    }
     static let speeds: [Float] = [0.5, 0.75, 1, 1.25, 1.5, 2]
 
     @MainActor static func options(_ menu: Int, _ m: EnginePlayerModel) -> [(name: String, on: Bool)] {
         switch menu {
         case 0: return m.subtitleTracks.map { ($0.name, $0.index == m.subtitleTrack) }
         case 1: return m.audioTracks.map { ($0.name, $0.index == m.audioTrack) }
-        default: return speeds.map { ($0 == 1 ? "Normal" : String(format: "%gx", $0), $0 == m.speed) }
+        case 2: return speeds.map { ($0 == 1 ? "Normal" : String(format: "%gx", $0), $0 == m.speed) }
+        default: return timingSteps.map { ($0 == 0 ? "Reset" : String(format: "%@%.1f s", $0 > 0 ? "+" : "−", abs($0)), false) }
         }
     }
     @MainActor static func choose(_ menu: Int, _ row: Int, _ m: EnginePlayerModel) {
         switch menu {
         case 0: if m.subtitleTracks.indices.contains(row) { m.setSubtitle(m.subtitleTracks[row].index) }
         case 1: if m.audioTracks.indices.contains(row) { m.setAudio(m.audioTracks[row].index) }
-        default: if speeds.indices.contains(row) { m.setSpeed(speeds[row]) }
+        case 2: if speeds.indices.contains(row) { m.setSpeed(speeds[row]) }
+        default:
+            // Subtitles too early: +. Too late: −.
+            if timingSteps.indices.contains(row) { m.setSubtitleDelay(timingSteps[row] == 0 ? 0 : m.subtitleDelay + timingSteps[row]) }
         }
     }
 }
@@ -158,11 +171,13 @@ final class TVEngineViewController: UIViewController {
 
     private func onSelect() {
         if let menu = ui.menu {
-            EngineMenus.choose(menu, ui.row, model); ui.menu = nil; reveal(); return
+            EngineMenus.choose(menu, ui.row, model)
+            if menu != 3 { ui.menu = nil }   // timing stays open so you can keep nudging
+            reveal(); return
         }
         if let b = ui.button, ui.showControls {
             ui.menu = b
-            ui.row = EngineMenus.options(b, model).firstIndex(where: \.on) ?? 0
+            ui.row = b == 3 ? 3 : (EngineMenus.options(b, model).firstIndex(where: \.on) ?? 0)
             hideTask?.cancel(); return
         }
         if let seg = model.activeSkip { model.seek(to: seg.end) }
@@ -325,7 +340,7 @@ private struct EngineOverlay: View {
         let first = max(0, min(ui.row - 3, opts.count - 8))
         let rows = Array(opts.indices).dropFirst(first).prefix(8)
         return VStack(alignment: .leading, spacing: 2) {
-            Text(EngineMenus.buttons[menu].title).font(.caption.bold()).foregroundStyle(.secondary)
+            Text(EngineMenus.title(menu, m)).font(.caption.bold()).foregroundStyle(.secondary)
                 .padding(.horizontal, 18).padding(.bottom, 4)
             if opts.isEmpty { Text("None available").font(.callout).padding(.horizontal, 18).padding(.vertical, 8) }
             ForEach(Array(rows), id: \.self) { r in
