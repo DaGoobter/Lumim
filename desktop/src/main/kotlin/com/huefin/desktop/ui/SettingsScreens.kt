@@ -103,6 +103,15 @@ fun SettingsScreen(nav: NavHostController) {
             }
         }
         item {
+            FormSection("Subtitles", "How text subtitles look in the Huefin Engine. Styled anime subtitles keep their own look. Takes effect the next time a video starts.") {
+                val st = com.huefin.desktop.core.SubtitleStyle
+                FormPicker("Size", st.size, st.sizes) { st.size = it; tick++ }
+                FormDivider(); FormPicker("Color", st.color, st.colors) { st.color = it; tick++ }
+                FormDivider(); FormPicker("Background", st.background, st.backgrounds) { st.background = it; tick++ }
+                FormDivider(); FormPicker("Position", st.position, st.positions) { st.position = it; tick++ }
+            }
+        }
+        item {
             FormSection("Playback", if (AppState.autoQuality) "Huefin tests the connection to your server when it opens and whenever your network changes. When it's fast enough, files play untouched (full quality, HDR); when it isn't, the server sends a lighter stream so playback doesn't stutter. Downloads always use full quality."
                                     else "Keep this at Maximum for untouched Direct Play. Lower it only if remote playback stutters; the server will then re-encode, which loses Dolby Vision. Downloads always use full quality.") {
                 FormToggle("Automatic quality", AppState.autoQuality) { AppState.autoQuality = it; AppState.persistSettings(); tick++ }

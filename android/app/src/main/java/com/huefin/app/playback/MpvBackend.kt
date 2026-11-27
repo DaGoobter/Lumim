@@ -93,6 +93,7 @@ class MpvBackend(context: Context) : Backend {
             "cache" to "yes", "demuxer-max-bytes" to readAheadMiB(app), "demuxer-max-back-bytes" to "50MiB", "demuxer-readahead-secs" to "60",
             // Faster start: MKV/MP4 describe their tracks in the header, so a short look is enough.
             "demuxer-lavf-probesize" to "2000000", "demuxer-lavf-analyzeduration" to "1.5", "cache-pause-wait" to "1",
+        ) + com.huefin.app.core.SubtitleStyle.mpvOptions() + listOf(
             "network-timeout" to "30", "user-agent" to "Huefin for Android",
             "volume-max" to "200", "keep-open" to "yes", "msg-level" to "all=warn", "idle" to "yes", "force-window" to "no",
             "input-default-bindings" to "no", "input-vo-keyboard" to "no", "osd-level" to "0",

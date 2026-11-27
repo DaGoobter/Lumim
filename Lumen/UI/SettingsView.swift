@@ -183,6 +183,8 @@ struct SettingsView: View {
                 }
             }
 
+            SubtitleStyleSection()
+
             Section {
                 Toggle("Automatic quality", isOn: $app.autoQuality)
                 HStack {
@@ -418,3 +420,34 @@ struct SettingsView: View {
         }
     }
 }
+
+/// Settings → Subtitles: how subtitles look, with a live preview.
+struct SubtitleStyleSection: View {
+    @AppStorage(SubtitleStyle.keys.size) private var size = "medium"
+    @AppStorage(SubtitleStyle.keys.color) private var color = "white"
+    @AppStorage(SubtitleStyle.keys.background) private var background = "shadow"
+    @AppStorage(SubtitleStyle.keys.position) private var position = "bottom"
+
+    var body: some View {
+        Section {
+            ZStack {
+                LinearGradient(colors: [Color(red: 0.18, green: 0.22, blue: 0.3), Color(red: 0.42, green: 0.36, blue: 0.3)],
+                               startPoint: .top, endPoint: .bottom)
+                EngineSubtitleView(subtitle: .text("We are in San Diego."))
+                    .id(size + color + background + position)
+            }
+            .frame(height: 150)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
+            Picker("Size", selection: $size) { ForEach(SubtitleStyle.sizes, id: \.id) { Text($0.name).tag($0.id) } }
+            Picker("Color", selection: $color) { ForEach(SubtitleStyle.colors, id: \.id) { Text($0.name).tag($0.id) } }
+            Picker("Background", selection: $background) { ForEach(SubtitleStyle.backgrounds, id: \.id) { Text($0.name).tag($0.id) } }
+            Picker("Position", selection: $position) { ForEach(SubtitleStyle.positions, id: \.id) { Text($0.name).tag($0.id) } }
+        } header: {
+            Text("Subtitles")
+        } footer: {
+            Text("Applies to the subtitles Huefin draws (most subtitles in both players). Styled anime subtitles and Blu-ray picture subtitles keep their own look.")
+        }
+    }
+}
+

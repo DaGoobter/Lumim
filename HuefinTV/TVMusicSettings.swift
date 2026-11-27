@@ -185,6 +185,10 @@ struct TVSettingsView: View {
     @State private var groups: [SyncPlayManager.GroupInfo] = []
     @State private var sync = SyncPlayManager.shared
     @AppStorage(PlaybackPrefs.keys.autoIntro) private var autoIntro = false
+    @AppStorage(SubtitleStyle.keys.size) private var subSize = "medium"
+    @AppStorage(SubtitleStyle.keys.color) private var subColor = "white"
+    @AppStorage(SubtitleStyle.keys.background) private var subBackground = "shadow"
+    @AppStorage(SubtitleStyle.keys.position) private var subPosition = "bottom"
     @AppStorage(PlaybackPrefs.keys.autoCredits) private var autoCredits = false
     @AppStorage("prism.askWhoIsWatching") private var askWho = true
     @AppStorage(EnginePrefs.nativeKey) private var nativeEngine = true
@@ -219,6 +223,12 @@ struct TVSettingsView: View {
                     Text("Someone starts a group from Huefin on their phone or PC (or Jellyfin's web app); join it here and play, pause and seeking are shared.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+            }
+            Section("Subtitles") {
+                Picker("Size", selection: $subSize) { ForEach(SubtitleStyle.sizes, id: \.id) { Text($0.name).tag($0.id) } }
+                Picker("Color", selection: $subColor) { ForEach(SubtitleStyle.colors, id: \.id) { Text($0.name).tag($0.id) } }
+                Picker("Background", selection: $subBackground) { ForEach(SubtitleStyle.backgrounds, id: \.id) { Text($0.name).tag($0.id) } }
+                Picker("Position", selection: $subPosition) { ForEach(SubtitleStyle.positions, id: \.id) { Text($0.name).tag($0.id) } }
             }
             Section("Playback") {
                 Toggle("Automatic quality", isOn: Binding(get: { app.autoQuality }, set: { app.autoQuality = $0; app.persistSettings() }))

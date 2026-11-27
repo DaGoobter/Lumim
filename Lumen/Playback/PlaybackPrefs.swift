@@ -19,3 +19,17 @@ enum PlaybackPrefs {
     static var skipBack: Int { let v = d.integer(forKey: keys.back); return [5, 10, 15, 30].contains(v) ? v : 10 }
     static var skipForward: Int { let v = d.integer(forKey: keys.forward); return [5, 10, 15, 30].contains(v) ? v : 10 }
 }
+
+/// How subtitles look (Settings → Subtitles). Used wherever Huefin draws text subtitles itself.
+enum SubtitleStyle {
+    static let keys = (size: "huefin.sub.size", color: "huefin.sub.color", background: "huefin.sub.background", position: "huefin.sub.position")
+    static let sizes: [(id: String, name: String, scale: Double)] = [("small", "Small", 0.78), ("medium", "Medium", 1), ("large", "Large", 1.3), ("huge", "Extra large", 1.65)]
+    static let colors: [(id: String, name: String)] = [("white", "White"), ("yellow", "Yellow"), ("cyan", "Light blue")]
+    static let backgrounds: [(id: String, name: String)] = [("shadow", "Outline"), ("box", "Dark box"), ("none", "None")]
+    static let positions: [(id: String, name: String, lift: Double)] = [("bottom", "Bottom", 0.07), ("raised", "Raised", 0.16)]
+    private static var d: UserDefaults { .standard }
+    static var scale: Double { sizes.first { $0.id == (d.string(forKey: keys.size) ?? "medium") }?.scale ?? 1 }
+    static var color: String { d.string(forKey: keys.color) ?? "white" }
+    static var background: String { d.string(forKey: keys.background) ?? "shadow" }
+    static var lift: Double { positions.first { $0.id == (d.string(forKey: keys.position) ?? "bottom") }?.lift ?? 0.07 }
+}

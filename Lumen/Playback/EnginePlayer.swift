@@ -380,14 +380,17 @@ struct EngineSubtitleView: View {
             case .text(let line)?:
                 VStack {
                     Spacer()
+                    let box = SubtitleStyle.background == "box", outline = SubtitleStyle.background == "shadow"
                     Text(line)
-                        .font(.system(size: max(17, g.size.height * 0.045), weight: .semibold))
-                        .foregroundStyle(.white)
-                        .shadow(color: .black, radius: 2)
-                        .shadow(color: .black.opacity(0.8), radius: 6)
+                        .font(.system(size: max(15, g.size.height * 0.045 * SubtitleStyle.scale), weight: .semibold))
+                        .foregroundStyle(Self.textColor)
+                        .shadow(color: outline ? .black : .clear, radius: 2)
+                        .shadow(color: outline ? .black.opacity(0.8) : .clear, radius: 6)
                         .multilineTextAlignment(.center)
+                        .padding(.horizontal, box ? 12 : 0).padding(.vertical, box ? 5 : 0)
+                        .background(box ? Color.black.opacity(0.72) : .clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                         .padding(.horizontal, 40)
-                        .padding(.bottom, g.size.height * 0.07)
+                        .padding(.bottom, g.size.height * SubtitleStyle.lift)
                 }
                 .frame(maxWidth: .infinity)
             case .image(let img, let rect)?:
@@ -403,6 +406,13 @@ struct EngineSubtitleView: View {
         }
         .allowsHitTesting(false)
         .ignoresSafeArea()
+    }
+    static var textColor: Color {
+        switch SubtitleStyle.color {
+        case "yellow": return Color(red: 1, green: 0.92, blue: 0.3)
+        case "cyan": return Color(red: 0.6, green: 0.9, blue: 1)
+        default: return .white
+        }
     }
     static func videoFrame(in size: CGSize, aspect: Double = 16.0 / 9.0) -> CGRect {
         let aspect = CGFloat(aspect > 0.2 ? aspect : 16.0 / 9.0)
