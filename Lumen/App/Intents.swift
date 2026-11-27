@@ -6,7 +6,13 @@ import Observation
 @MainActor @Observable
 final class AppRouter {
     static let shared = AppRouter()
-    enum Action: Equatable { case resume, channel(String?), dj }
+    enum Action: Equatable { case resume, channel(String?), dj, play(String) }
+
+    /// huefin://play/<id> (widget, Top Shelf) → play that item.
+    static func action(for url: URL) -> Action? {
+        guard url.scheme == "huefin", let id = url.pathComponents.last, id != "/" else { return nil }
+        return .play(id)
+    }
     var pending: Action?
     /// A video to open full screen from anywhere (Siri, Watch Together).
     var playRequest: PlaybackRequest?
@@ -30,6 +36,8 @@ final class AppRouter {
                 ($0.name ?? "").localizedCaseInsensitiveContains(q) || $0.channelNumber == q
             })
             if let match { playRequest = PlaybackRequest(item: match, startTicks: 0) }
+        case .play(let id):
+            if let item = try? await client.item(id) { playRequest = PlaybackRequest(item: item, startTicks: item.resumeTicks) }
         case .dj:
             let music = (try? await client.userViews())?.first { $0.collectionType == "music" }
             await AudioPlayer.shared.play(station: Stations.dj(libraryId: music?.id), client: client)

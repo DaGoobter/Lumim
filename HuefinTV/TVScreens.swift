@@ -211,6 +211,8 @@ struct TVHomeView: View {
         var out: [(BaseItem, [BaseItem])] = []
         for v in views { if let l = try? await c.latest(parentId: v.id), !l.isEmpty { out.append((v, l)) } }
         resume = await r; nextUp = await n; myList = await fav; latest = out
+        let (rr, nn) = (resume, nextUp)
+        Task.detached(priority: .utility) { await ShelfPublisher.publish(resume: rr, nextUp: nn, client: c) }
         featured = resume.first ?? out.first?.1.first { $0.backdropImageTags?.isEmpty == false }
         loaded = true
     }

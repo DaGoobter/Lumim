@@ -16,6 +16,8 @@ struct HuefinTVApp: App {
                 .environment(app)
                 .environment(AudioPlayer.shared)
                 .preferredColorScheme(.dark)
+                // Continue Watching on the Top Shelf opens huefin://play/<id>.
+                .onOpenURL { url in Task { await AppRouter.shared.open(url, client: app.client) } }
         }
     }
 }

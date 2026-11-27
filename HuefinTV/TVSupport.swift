@@ -50,6 +50,13 @@ final class AppRouter {
     var playerClosedAt: Date?
     var showProfiles = false
     private init() {}
+
+    /// Top Shelf: huefin://play/<id> plays that item.
+    func open(_ url: URL, client: JellyfinClient?) async {
+        guard url.scheme == "huefin", let id = url.pathComponents.last, id != "/", let client,
+              let item = try? await client.item(id) else { return }
+        playRequest = PlaybackRequest(item: item, startTicks: item.resumeTicks)
+    }
 }
 
 /// Apple TV keeps no downloads (tvOS can clear app storage at any time); this stands in for the phone's manager.

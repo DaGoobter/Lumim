@@ -6,6 +6,7 @@ import ActivityKit
 struct PrismWidgets: WidgetBundle {
     var body: some Widget {
         DownloadActivityWidget()
+        ContinueWatchingWidget()
     }
 }
 

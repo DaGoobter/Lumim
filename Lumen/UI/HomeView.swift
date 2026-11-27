@@ -160,6 +160,7 @@ struct HomeView: View {
             let (resumeItems, nextItems, views) = try await (r, n, v)
             resume = resumeItems
             nextUp = nextItems.filter { next in !resumeItems.contains { $0.id == next.id } }
+            Task.detached(priority: .utility) { await ShelfPublisher.publish(resume: resumeItems, nextUp: nextItems, client: client) }
 
             let skip: Set<String> = ["music", "books", "playlists", "livetv", "photos", "boxsets"]
             var rows: [LatestRow] = []

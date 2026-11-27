@@ -57,6 +57,13 @@ jobs:
         run: |
           mkdir -p Payload
           cp -R build/Build/Products/Release-appletvos/HuefinTV.app Payload/
+          # Placeholder (ad-hoc) signature that declares the shared app group, so sideloading tools set it up
+          # for the widget / Top Shelf when they re-sign. Nested code first, then extensions, then the app.
+          APP=Payload/HuefinTV.app
+          find "$APP/Frameworks" -maxdepth 1 \( -name '*.framework' -o -name '*.dylib' \) -exec codesign --force --sign - {} \; 2>/dev/null || true
+          [ -d "$APP/PlugIns/HuefinTopShelf.appex" ] && codesign --force --sign - --entitlements HuefinTopShelf/HuefinTopShelf.entitlements "$APP/PlugIns/HuefinTopShelf.appex"
+          codesign --force --sign - --entitlements HuefinTV/HuefinTV.entitlements "$APP"
+          codesign -d --entitlements - "$APP" 2>/dev/null | grep -A3 application-groups || true
           zip -qry HuefinTV.ipa Payload
           # Make sure the Huefin Engine (mpv) really made it into the app.
           if strings Payload/HuefinTV.app/HuefinTV | grep -q "target-colorspace-hint"; then echo "Huefin Engine: included"; else echo "::error::Huefin Engine (mpv) is missing from the app"; exit 1; fi

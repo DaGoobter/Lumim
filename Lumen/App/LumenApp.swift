@@ -101,6 +101,8 @@ struct RootView: View {
         }
         // Siri or Watch Together started a video.
         .fullScreenCover(item: $router.playRequest) { PlayerScreen(request: $0) }
+        // The Continue Watching widget opens huefin://play/<id>.
+        .onOpenURL { url in if let a = AppRouter.action(for: url) { router.pending = a } }
         .task(id: router.pending) {
             guard let action = router.pending, app.client != nil else { return }
             router.pending = nil
