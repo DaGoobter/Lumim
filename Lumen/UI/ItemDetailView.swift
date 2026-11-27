@@ -304,6 +304,20 @@ struct ItemDetailView: View {
         }
     }
 
+    /// Highest resolution (then HDR, then an MP4 that Apple's player opens directly) whose bitrate fits.
+    static func bestVersion(_ sources: [MediaSource], maxBitrate: Int) -> MediaSource? {
+        func score(_ s: MediaSource) -> Double {
+            let v = s.videoStream
+            var x = Double(v?.height ?? 0)
+            if let b = s.bitrate, b > maxBitrate { x -= 10_000 }                       // too heavy for this connection
+            let range = (v?.videoRangeType ?? v?.videoRange ?? "").uppercased()
+            if range.contains("DOVI") || range.contains("HDR") { x += 50 }
+            if ["mp4", "m4v", "mov"].contains((s.container ?? "").lowercased()) { x += 10 }
+            return x
+        }
+        return sources.max { score($0) < score($1) }
+    }
+
     private func load() async {
         guard let client = app.client else {
             item = downloads.records[itemId]?.item
@@ -313,6 +327,11 @@ struct ItemDetailView: View {
             let full = try await client.item(itemId)
             item = full
             error = nil
+            // Several versions (e.g. a 1080p MKV and a 4K MP4): start with the best one this connection can carry,
+            // instead of whichever the server happens to list first.
+            if version == nil, let sources = full.mediaSources, sources.count > 1 {
+                version = Self.bestVersion(sources, maxBitrate: app.playbackBitrate)?.id
+            }
             if similar.isEmpty, full.type == "Movie" || full.isSeries { similar = await client.similar(full.id) }
             if full.type == "Movie" || full.isSeries || full.type == "Episode" {
                 async let x = client.specialFeatures(full.id)
