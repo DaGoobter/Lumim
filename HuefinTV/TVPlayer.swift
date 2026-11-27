@@ -41,6 +41,52 @@ final class PlayerModel {
     @ObservationIgnored private var closed = false
     @ObservationIgnored private var lastSkipLabel: String?
 
+    // MARK: Subtitles drawn by Huefin (in sync, original file keeps playing, adjustable timing)
+    private(set) var drawnSubtitle: EngineSubtitle?
+    private(set) var subtitleDelay: Double = 0
+    /// The text subtitle Huefin is drawing (-1 = off).
+    private(set) var drawnIndex: Int = -1
+    private(set) var textSubtitles: [MediaStream] = []
+    @ObservationIgnored private var appSubs: AppSubtitles?
+    @ObservationIgnored private var subtitleObserver: Any?
+    @ObservationIgnored private var source: MediaSource?
+
+    func chooseSubtitle(_ index: Int) {
+        drawnIndex = index
+        Task { await loadDrawnSubtitles() }
+        onActionsChanged?()
+    }
+    func setSubtitleDelay(_ seconds: Double) {
+        subtitleDelay = (seconds * 10).rounded() / 10
+        UserDefaults.standard.set(subtitleDelay, forKey: "huefin.subDelay.\(item.id)")
+        updateDrawnSubtitle()
+        onActionsChanged?()
+    }
+    private func loadDrawnSubtitles() async {
+        subtitleDelay = UserDefaults.standard.double(forKey: "huefin.subDelay.\(item.id)")
+        guard drawnIndex >= 0, let client, let src = source, let mid = mediaSourceId,
+              let s = src.subtitleStreams.first(where: { $0.index == drawnIndex }) else { appSubs = nil; drawnSubtitle = nil; return }
+        if appSubs?.streamIndex == drawnIndex { return }
+        appSubs = nil; drawnSubtitle = nil
+        let wanted = drawnIndex, itemId = item.id
+        let loaded = await AppSubtitles.load(client: client, itemId: itemId, mediaSourceId: mid, stream: s)
+        guard wanted == drawnIndex, itemId == item.id else { return }
+        appSubs = loaded
+        updateDrawnSubtitle()
+    }
+    private func updateDrawnSubtitle() {
+        guard let appSubs else { if drawnSubtitle != nil { drawnSubtitle = nil }; return }
+        let t = player.currentTime().seconds - subtitleDelay
+        guard t.isFinite else { return }
+        let size = player.currentItem?.presentationSize ?? .zero
+        let next = appSubs.subtitle(at: t, videoWidth: Int(size.width), videoHeight: Int(size.height))
+        if next != drawnSubtitle { drawnSubtitle = next }
+    }
+    var videoAspect: Double {
+        let size = player.currentItem?.presentationSize ?? .zero
+        return size.width > 0 && size.height > 0 ? Double(size.width / size.height) : 16.0 / 9.0
+    }
+
     var isPlaying: Bool { player.rate != 0 }
     var positionTicks: Int64 { Int64(max(0, currentTime) * 10_000_000) }
     var isLive: Bool { item.isLiveChannel }
@@ -52,6 +98,9 @@ final class PlayerModel {
         PlayerModel.active = self
         timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.5, preferredTimescale: 600), queue: .main) { [weak self] t in
             Task { @MainActor in self?.tick(t.seconds) }
+        }
+        subtitleObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.1, preferredTimescale: 600), queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.updateDrawnSubtitle() }
         }
         NotificationCenter.default.publisher(for: AVPlayerItem.didPlayToEndTimeNotification)
             .sink { [weak self] n in
@@ -82,6 +131,13 @@ final class PlayerModel {
             // The person's default audio and subtitle languages (Settings).
             let choice = app.trackPrefs.choose(for: src)
             audioIndex = choice.audio; subtitleIndex = choice.subtitle
+            // Text subtitles are drawn by Huefin (in sync, adjustable); only picture subtitles need the server's stream.
+            textSubtitles = target.isLiveChannel ? [] : src.subtitleStreams.filter(AppSubtitles.isText)
+            drawnIndex = -1
+            if !target.isLiveChannel, subtitleIndex >= 0,
+               let s = src.subtitleStreams.first(where: { $0.index == subtitleIndex }), AppSubtitles.isText(s) {
+                drawnIndex = subtitleIndex; subtitleIndex = -1
+            }
             var custom = (choice.audio != nil && choice.audio != src.defaultAudioStreamIndex) || subtitleIndex >= 0 || forceServerStream
             // MP4s whose video hides its setup data (hev1/avc3) show black in Apple's player: use the server's stream.
             if !custom, !target.isLiveChannel, src.supportsDirectPlay == true,
@@ -101,6 +157,9 @@ final class PlayerModel {
                 src = info.mediaSources.first ?? src
             }
             playSessionId = info.playSessionId; mediaSourceId = src.id; liveStreamId = src.liveStreamId
+            source = src
+            appSubs = nil; drawnSubtitle = nil
+            Task { await loadDrawnSubtitles() }
             let url: URL
             if target.isLiveChannel {
                 if let t = src.transcodingUrl, t.lowercased().contains(".m3u8"), let u = client.absoluteURL(serverRelative: t) {
@@ -141,6 +200,11 @@ final class PlayerModel {
                         if self.pendingSeek > 0 && !self.isLive {
                             await self.player.seek(to: CMTime(seconds: Double(self.pendingSeek) / 10_000_000, preferredTimescale: 600),
                                                    toleranceBefore: .zero, toleranceAfter: .positiveInfinity)
+                        }
+                        // Huefin draws the subtitles: keep the player's own subtitle display off so nothing shows twice.
+                        if self.drawnIndex >= 0 || !self.textSubtitles.isEmpty,
+                           let group = try? await playerItem.asset.loadMediaSelectionGroup(for: .legible), self.subtitleIndex < 0 {
+                            playerItem.select(nil, in: group)
                         }
                         if !SyncPlayManager.shared.controls(self) { self.player.play() }
                         await self.report("Sessions/Playing", force: true)
@@ -302,6 +366,9 @@ final class PlayerModel {
         player.pause()
         if let timeObserver { player.removeTimeObserver(timeObserver) }
         timeObserver = nil
+        if let subtitleObserver { player.removeTimeObserver(subtitleObserver) }
+        subtitleObserver = nil
+        appSubs = nil; drawnSubtitle = nil
         onClose?()
     }
 }
@@ -319,11 +386,27 @@ struct TVPlayerView: UIViewControllerRepresentable {
             guard let vc else { return }
             Task { @MainActor in update(vc) }
         }
+        // Huefin's own subtitles, drawn over the picture.
+        if let overlay = vc.contentOverlayView {
+            let host = UIHostingController(rootView: TVDrawnSubtitles(model: model))
+            host.view.backgroundColor = .clear
+            host.view.isUserInteractionEnabled = false
+            host.view.translatesAutoresizingMaskIntoConstraints = false
+            overlay.addSubview(host.view)
+            NSLayoutConstraint.activate([host.view.leadingAnchor.constraint(equalTo: overlay.leadingAnchor),
+                                         host.view.trailingAnchor.constraint(equalTo: overlay.trailingAnchor),
+                                         host.view.topAnchor.constraint(equalTo: overlay.topAnchor),
+                                         host.view.bottomAnchor.constraint(equalTo: overlay.bottomAnchor)])
+            context.coordinator.host = host
+        }
         update(vc)
         return vc
     }
 
     func updateUIViewController(_ vc: AVPlayerViewController, context: Context) {}
+
+    final class Coordinator { var host: UIViewController? }
+    func makeCoordinator() -> Coordinator { Coordinator() }
 
     @MainActor private func update(_ vc: AVPlayerViewController) {
         var actions: [UIAction] = []
@@ -336,6 +419,32 @@ struct TVPlayerView: UIViewControllerRepresentable {
             })
         }
         vc.contextualActions = actions
+        vc.transportBarCustomMenuItems = subtitleMenus()
+    }
+
+    /// "Subtitles" (drawn by Huefin) and "Subtitle timing" in the player's top bar.
+    @MainActor private func subtitleMenus() -> [UIMenuElement] {
+        guard !model.textSubtitles.isEmpty else { return [] }
+        var tracks: [UIMenuElement] = [UIAction(title: "Off", state: model.drawnIndex < 0 ? .on : .off) { _ in model.chooseSubtitle(-1) }]
+        for s in model.textSubtitles {
+            guard let i = s.index else { continue }
+            tracks.append(UIAction(title: s.displayTitle ?? s.language ?? "Subtitle \(i)", state: model.drawnIndex == i ? .on : .off) { _ in
+                model.chooseSubtitle(i)
+            })
+        }
+        let subs = UIMenu(title: "Subtitles", image: UIImage(systemName: "captions.bubble"), children: tracks)
+        guard model.drawnIndex >= 0 else { return [subs] }
+        let d = model.subtitleDelay
+        let now = d == 0 ? "in sync" : String(format: "%@%.1f s %@", d > 0 ? "+" : "−", abs(d), d > 0 ? "later" : "earlier")
+        func step(_ title: String, _ by: Double) -> UIAction {
+            let a = UIAction(title: title) { _ in model.setSubtitleDelay(by == 0 ? 0 : model.subtitleDelay + by) }
+            if #available(tvOS 16.0, *) { a.attributes = .keepsMenuPresented }
+            return a
+        }
+        let timing = UIMenu(title: "Subtitle timing · \(now)", image: UIImage(systemName: "timer"),
+                            children: [step("Later +0.5 s", 0.5), step("Later +0.1 s", 0.1), step("Reset", 0),
+                                       step("Earlier −0.1 s", -0.1), step("Earlier −0.5 s", -0.5)])
+        return [subs, timing]
     }
 }
 
@@ -373,3 +482,12 @@ struct TVApplePlayerScreen: View {
         .onDisappear { model?.close() }
     }
 }
+
+/// Huefin's subtitles over Apple TV's player, lined up with the picture.
+struct TVDrawnSubtitles: View {
+    let model: PlayerModel
+    var body: some View {
+        EngineSubtitleView(subtitle: model.drawnSubtitle, aspect: model.videoAspect)
+    }
+}
+
