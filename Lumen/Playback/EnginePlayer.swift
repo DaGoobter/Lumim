@@ -145,6 +145,14 @@ final class EnginePlayerModel {
         }
         currentURL = url
         externalSubs = []
+        thumbs = nil
+        if request.localDownload == nil, let client {
+            let itemId = item.id, sourceId = request.mediaSourceId
+            Task { [weak self] in
+                let t = await TrickplayThumbs.load(client: client, itemId: itemId, mediaSourceId: sourceId)
+                if self?.item.id == itemId { self?.thumbs = t }
+            }
+        }
         player.load(url, start: Double(request.startTicks) / 10_000_000)
         if speed != 1 { player.speed = Double(speed) }
         // Intro markers and outside subtitle files load alongside the video, never holding it up.
@@ -189,6 +197,9 @@ final class EnginePlayerModel {
         let sourceId = mediaSourceId ?? src?.id ?? item.id
         return client.directPlayURL(itemId: item.id, mediaSourceId: sourceId, container: src?.container)
     }
+
+    /// Scrubbing preview pictures (when the server has made them for this file).
+    private(set) var thumbs: TrickplayThumbs?
 
     /// Instant Play for the next episode: open it in the background during the last minute and a half.
     @ObservationIgnored private var nextWarmed = false
@@ -375,6 +386,7 @@ struct EnginePlayerScreen: View {
     @State private var hideTask: Task<Void, Never>?
     @State private var scrubbing = false
     @State private var scrubValue: Double = 0
+    @State private var scrubThumb: UIImage?
     @State private var fill = false
     // Picture in Picture: Apple's player warms up silently behind the engine, then takes over without a gap.
     @State private var standby: PlayerModel?
@@ -516,12 +528,14 @@ struct EnginePlayerScreen: View {
                                     onCommit: { m.seek(to: $0); scheduleHide() },
                                     track: { EmptyView() },
                                     bubble: {
-                                        Text(time(scrubValue)).font(.caption.monospacedDigit().weight(.bold))
-                                            .padding(.horizontal, 10).padding(.vertical, 5)
-                                            .background(.ultraThinMaterial, in: Capsule())
-                                            .fixedSize()
-                                            .offset(y: -44)
+                                        TrickplayBubble(duration: m.duration, time: scrubValue, hasPictures: m.thumbs != nil,
+                                                        image: scrubThumb, timeText: time(scrubValue))
+                                            .offset(y: -22)
                                     })
+                        .task(id: scrubbing ? (m.thumbs?.frameIndex(at: scrubValue) ?? -2) : -1) {
+                            guard scrubbing, let t = m.thumbs else { scrubThumb = nil; return }
+                            if let img = await t.thumbnail(at: scrubValue) { scrubThumb = img }
+                        }
                     PlayerSpeedMenu(speed: m.speed) { m.setSpeed($0); scheduleHide() }
                     Menu {
                         Section("Audio") {
