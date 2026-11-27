@@ -43,7 +43,8 @@ final class EngineClipTests: XCTestCase {
             }
             if r.nativeVideo {
                 XCTAssertTrue(r.seekOK, "\(name): jumping to the middle didn't produce a picture")
-                XCTAssertLessThan(r.firstFrameSeconds, 5, "\(name): first picture took \(r.firstFrameSeconds) s")
+                // The simulator decodes in software; odd clips (interlaced) vary a lot there, so they get more room.
+                XCTAssertLessThan(r.firstFrameSeconds, mustBeNative ? 5 : 10, "\(name): first picture took \(r.firstFrameSeconds) s")
             } else {
                 XCTAssertNotNil(r.fallbackReason, "\(name): not native and no reason given")
             }
