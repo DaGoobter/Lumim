@@ -182,6 +182,8 @@ struct TVNowPlaying: View {
 struct TVSettingsView: View {
     @Environment(AppState.self) private var app
     @State private var adding = false
+    @State private var pinTask: ProfilePINTask?
+    @State private var pinTick = 0
     @State private var groups: [SyncPlayManager.GroupInfo] = []
     @State private var sync = SyncPlayManager.shared
     @AppStorage(PlaybackPrefs.keys.autoIntro) private var autoIntro = false
@@ -198,17 +200,33 @@ struct TVSettingsView: View {
         List {
             Section("Who's watching") {
                 ForEach(app.accounts, id: \.key) { a in
-                    Button { app.switchTo(a) } label: {
+                    Button {
+                        if a.key != app.session?.key, ProfileLock.hasPIN(a.key) { pinTask = .init(kind: .open, account: a) }
+                        else { app.switchTo(a) }
+                    } label: {
                         HStack {
+                            if ProfileLock.hasPIN(a.key) { Image(systemName: "lock.fill").foregroundStyle(.secondary) }
                             Text(a.userName).bold()
                             Text(a.serverName ?? a.serverURL).foregroundStyle(.secondary)
                             Spacer()
                             if a.key == app.session?.key { Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.green) }
                         }
                     }
-                    .contextMenu { Button("Sign out \(a.userName)", role: .destructive) { Task { await app.remove(a) } } }
+                    .contextMenu { Button("Sign out \(a.userName)", role: .destructive) {
+                        if ProfileLock.hasPIN(a.key) { pinTask = .init(kind: .remove, account: a) } else { Task { await app.remove(a) } }
+                    } }
                 }
                 Button("Add someone") { adding = true }
+                if let me = app.session {
+                    let locked = ProfileLock.hasPIN(me.key)
+                    Button(locked ? "Remove PIN from \(me.userName)" : "Add a PIN to \(me.userName)") {
+                        pinTask = .init(kind: locked ? .clear : .set, account: me)
+                    }
+                    .id(pinTick)
+                    if let limit = ProfileLock.limitLabel(me.key) {
+                        Text("Kids' limit: up to \(limit) · set per user on your Jellyfin server").foregroundStyle(.secondary)
+                    }
+                }
                 Toggle("Ask who's watching when Huefin opens", isOn: $askWho)
             }
             Section("Watch Together") {
@@ -259,29 +277,59 @@ struct TVSettingsView: View {
         }
         .frame(maxWidth: 1300)
         .fullScreenCover(isPresented: $adding) { TVLoginView(adding: true) { adding = false } }
+        .fullScreenCover(item: $pinTask) { ProfilePINScreen(task: $0) { pinTask = nil; pinTick += 1 } }
     }
 }
 
 struct TVProfilePicker: View {
+    /// Opened because the last profile is locked: even that profile needs its PIN.
+    var atLaunch = false
     @Environment(AppState.self) private var app
     @Environment(\.dismiss) private var dismiss
+    @State private var unlocking: LockedProfile?
     private let hues = [Theme.red, Theme.blue, Theme.orange, Theme.green, Theme.violet]
     var body: some View {
         VStack(spacing: 70) {
             Text("Who's watching?").font(.system(size: 52, weight: .heavy))
             HStack(spacing: 70) {
                 ForEach(Array(app.accounts.enumerated()), id: \.element.key) { n, a in
-                    Button { app.switchTo(a); dismiss() } label: {
+                    Button {
+                        if (a.key != app.session?.key || atLaunch) && ProfileLock.hasPIN(a.key) { unlocking = LockedProfile(account: a) }
+                        else { app.switchTo(a); dismiss() }
+                    } label: {
                         VStack(spacing: 20) {
                             Text(String(a.userName.prefix(1)).uppercased()).font(.system(size: 72, weight: .black)).foregroundStyle(Theme.ink)
                                 .frame(width: 180, height: 180).background(hues[n % hues.count])
+                                .overlay(alignment: .bottomTrailing) {
+                                    if ProfileLock.hasPIN(a.key) {
+                                        Image(systemName: "lock.fill").font(.system(size: 22, weight: .bold)).foregroundStyle(.white)
+                                            .padding(12).background(.black.opacity(0.6), in: Circle()).padding(10)
+                                    }
+                                }
                         }
                     }.buttonStyle(.card)
-                    .overlay(alignment: .bottom) { Text(a.userName).font(.title3.bold()).offset(y: 60) }
+                    .overlay(alignment: .bottom) {
+                        VStack(spacing: 4) {
+                            Text(a.userName).font(.title3.bold())
+                            if let limit = ProfileLock.limitLabel(a.key) {
+                                Text("Kids · up to \(limit)").font(.caption.bold()).foregroundStyle(Theme.green)
+                            }
+                        }.offset(y: 75)
+                    }
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.background.ignoresSafeArea())
+        .interactiveDismissDisabled(atLaunch)
+        .fullScreenCover(item: $unlocking) { locked in
+            PINPad(title: "Enter \(locked.account.userName)'s PIN", submit: { pin in
+                guard ProfileLock.check(pin, for: locked.account.key) else { return false }
+                unlocking = nil
+                let a = locked.account
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { app.switchTo(a); dismiss() }
+                return true
+            }, cancel: { unlocking = nil })
+        }
     }
 }

@@ -71,17 +71,21 @@ fun SettingsScreen(nav: NavHostController) {
             }
         }
         item {
-            FormSection("Accounts", "Tap to switch. Quick Connect approves a code shown on a TV or another device so it signs in as you, no password typing.") {
+            FormSection("Accounts", "Tap to switch. A PIN (in a profile's ⋮ menu) keeps others, like kids, from opening it on this device; what each profile may watch is set per user on your Jellyfin server (Dashboard → Users → Parental control). Quick Connect approves a code shown on a TV or another device so it signs in as you, no password typing.") {
                 AppState.accounts.forEach { a ->
                     val current = a.key == AppState.session?.key
                     var menu by remember { mutableStateOf(false) }
                     Box {
-                        FormRow(a.userName, a.serverName ?: a.serverURL, onClick = { if (!current) AppState.switchTo(a) else menu = true },
+                        FormRow(a.userName, a.serverName ?: a.serverURL, onClick = { if (!current) com.huefin.desktop.core.ProfileLock.open(a) else menu = true },
                             trailing = {
                                 if (current) Icon(Icons.Filled.CheckCircle, "Current", tint = LocalHue.current)
                                 IconButton({ menu = true }) { Icon(Icons.Filled.MoreVert, "More") }
                             })
-                        DropdownMenu(menu, { menu = false }) { DropdownMenuItem({ Text("Sign out", color = Hue.coral) }, { menu = false; scope.launch { AppState.remove(a) } }) }
+                        DropdownMenu(menu, { menu = false }) { DropdownMenuItem({ Text("Sign out", color = Hue.coral) }, { menu = false; com.huefin.desktop.core.ProfileLock.ask(a) { com.huefin.desktop.core.ProfileLock.removePIN(a.key); scope.launch { AppState.remove(a) } } })
+                            if (current) DropdownMenuItem({ Text(if (com.huefin.desktop.core.ProfileLock.hasPIN(a.key)) "Remove PIN" else "Add a PIN") }, {
+                                menu = false
+                                if (com.huefin.desktop.core.ProfileLock.hasPIN(a.key)) com.huefin.desktop.core.ProfileLock.ask(a, "Enter your current PIN") { com.huefin.desktop.core.ProfileLock.removePIN(a.key) } else com.huefin.desktop.core.ProfileLock.setting = a
+                            }) }
                     }
                     FormDivider()
                 }
@@ -221,8 +225,9 @@ private fun DJVoiceSection() {
 
 /** Pick who's watching (accounts on this device). Shown on launch when more than one person uses the device. */
 @Composable
-fun ProfilePickerDialog(onDismiss: () -> Unit) {
+fun ProfilePickerDialog(atLaunch: Boolean = false, onDismiss: () -> Unit) {
     var adding by remember { mutableStateOf(false) }
+    DisposableEffect(Unit) { com.huefin.desktop.core.ProfileLock.pickerOpen = true; onDispose { com.huefin.desktop.core.ProfileLock.pickerOpen = false } }
     run {
         Surface(Modifier.fillMaxSize(), color = Hue.night) {
             if (adding) LoginScreen(adding = true) { adding = false; onDismiss() }
@@ -233,13 +238,13 @@ fun ProfilePickerDialog(onDismiss: () -> Unit) {
                     items(AppState.accounts, key = { it.key }) { a ->
                         val hues = listOf(Hue.coral, Hue.sky, Hue.amber, Hue.mint, Hue.violet)
                         val hue = hues[kotlin.math.abs(a.key.hashCode()) % hues.size]
-                        Column(Modifier.clip(RoundedCornerShape(18.dp)).clickable { AppState.switchTo(a); onDismiss() }.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Column(Modifier.clip(RoundedCornerShape(18.dp)).clickable { com.huefin.desktop.core.ProfileLock.open(a, force = atLaunch) { onDismiss() } }.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                             Box(Modifier.size(96.dp).clip(RoundedCornerShape(26.dp)).background(hue)
                                 .then(if (a.key == AppState.session?.key) Modifier.border(3.dp, Color.White, RoundedCornerShape(26.dp)) else Modifier), Alignment.Center) {
                                 Text(a.userName.take(1).uppercase(), fontSize = 40.sp, fontWeight = FontWeight.Black, color = Hue.ink)
                                 RemoteImage(JellyfinClient(a.serverURL, a.token, a.userId).userImageURL(a.userId), Modifier.fillMaxSize())
                             }
-                            Text(a.userName, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+                            Text((if (com.huefin.desktop.core.ProfileLock.hasPIN(a.key)) "🔒 " else "") + a.userName, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
                             Text(a.serverName ?: "", style = MaterialTheme.typography.labelSmall, color = Hue.secondaryText, maxLines = 1)
                         }
                     }
@@ -251,7 +256,8 @@ fun ProfilePickerDialog(onDismiss: () -> Unit) {
                     }
                 }
                 Spacer(Modifier.height(24.dp))
-                TextButton(onDismiss) { Text("Keep going as ${AppState.session?.userName ?: ""}") }
+                if (!atLaunch) TextButton(onDismiss) { Text("Keep going as ${AppState.session?.userName ?: ""}") }
+                PinGate(inPicker = true)
             }
         }
     }

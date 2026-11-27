@@ -142,10 +142,12 @@ private fun MainScaffold(key: String) {
     val navs = Tab.entries.associateWith { rememberNavController() }
     var askedProfiles by rememberSaveable { mutableStateOf(false) }
     var showProfiles by remember { mutableStateOf(false) }
+    var launchLocked by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         if (!askedProfiles) {
             askedProfiles = true
-            if (Prefs.bool(Prefs.Keys.askWho, true) && AppState.accounts.size > 1 && AppRouter.pending == null) showProfiles = true
+            if (AppState.session?.let { com.huefin.app.core.ProfileLock.hasPIN(it.key) } == true) { launchLocked = true; showProfiles = true }
+            else if (Prefs.bool(Prefs.Keys.askWho, true) && AppState.accounts.size > 1 && AppRouter.pending == null) showProfiles = true
         }
     }
     LaunchedEffect(AppRouter.showProfiles) { if (AppRouter.showProfiles) { AppRouter.showProfiles = false; showProfiles = true } }
@@ -190,7 +192,8 @@ private fun MainScaffold(key: String) {
             }
         }
     }
-    if (showProfiles) ProfilePickerDialog { showProfiles = false }
+    if (showProfiles) ProfilePickerDialog(atLaunch = launchLocked) { showProfiles = false; launchLocked = false }
+    PinGate(inPicker = false)
 }
 
 /** Screens reachable from any tab. */
@@ -232,7 +235,7 @@ fun AccountButton(nav: NavHostController) {
         DropdownMenu(menu, { menu = false }) {
             DropdownMenuItem({ Text("Who's watching?") }, { menu = false; AppRouter.showProfiles = true })
             AppState.accounts.forEach { a ->
-                DropdownMenuItem({ Text("${a.userName} · ${a.serverName ?: "Jellyfin"}") }, { menu = false; AppState.switchTo(a) })
+                DropdownMenuItem({ Text("${a.userName} · ${a.serverName ?: "Jellyfin"}") }, { menu = false; com.huefin.app.core.ProfileLock.open(a) })
             }
         }
     }

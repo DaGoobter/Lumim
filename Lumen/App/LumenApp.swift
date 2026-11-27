@@ -53,6 +53,8 @@ struct RootView: View {
     @State private var router = AppRouter.shared
     @State private var socket = SessionSocket.shared
     @State private var showProfiles = false
+    /// The last profile has a PIN: Huefin opens on "Who's watching?" and asks for it.
+    @State private var launchLocked = false
     @State private var askedThisLaunch = false
     @AppStorage("prism.askWhoIsWatching") private var askOnLaunch = true
 
@@ -92,12 +94,13 @@ struct RootView: View {
             }
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: socket.notice)
-        .fullScreenCover(isPresented: $showProfiles) { ProfilePickerView() }
+        .fullScreenCover(isPresented: $showProfiles, onDismiss: { launchLocked = false }) { ProfilePickerView(atLaunch: launchLocked) }
         .onChange(of: router.showProfiles) { _, v in if v { router.showProfiles = false; showProfiles = true } }
         .onAppear {
             guard !askedThisLaunch else { return }
             askedThisLaunch = true
-            if askOnLaunch, app.accounts.count > 1, app.client != nil, router.pending == nil { showProfiles = true }
+            if let s = app.session, app.client != nil, ProfileLock.hasPIN(s.key) { launchLocked = true; showProfiles = true }
+            else if askOnLaunch, app.accounts.count > 1, app.client != nil, router.pending == nil { showProfiles = true }
         }
         // Siri or Watch Together started a video.
         .fullScreenCover(item: $router.playRequest) { PlayerScreen(request: $0) }

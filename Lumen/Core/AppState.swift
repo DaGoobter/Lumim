@@ -212,6 +212,7 @@ final class AppState {
         }
         // How fast is it to the server from here? Decides the streaming quality when it's on Automatic.
         checkSpeed(force: routeChanged || measuredBitrate == nil)
+        if let c = client { let key = s.key; Task { await ProfileLock.refreshLimit(client: c, account: key) } }
         // Back online: resume queued downloads and push any offline watch progress.
         if let client { DownloadManager.shared.attach(client: client) }
 

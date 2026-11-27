@@ -46,6 +46,9 @@ struct SettingsView: View {
     @AppStorage(PlaybackPrefs.keys.back) private var skipBack = 10
     @AppStorage(PlaybackPrefs.keys.forward) private var skipForward = 10
 
+    @State private var pinTask: ProfilePINTask?
+    @State private var pinTick = 0
+
     var body: some View {
         @Bindable var app = app
         Form {
@@ -88,7 +91,10 @@ struct SettingsView: View {
 
             Section {
                 ForEach(app.accounts, id: \.key) { account in
-                    Button { app.switchTo(account) } label: {
+                    Button {
+                        if account.key != app.session?.key, ProfileLock.hasPIN(account.key) { pinTask = .init(kind: .open, account: account) }
+                        else { app.switchTo(account) }
+                    } label: {
                         HStack(spacing: 12) {
                             Text(String(account.userName.prefix(1)).uppercased())
                                 .font(.headline.weight(.heavy)).foregroundStyle(.white)
@@ -100,13 +106,31 @@ struct SettingsView: View {
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
+                            if ProfileLock.hasPIN(account.key) { Image(systemName: "lock.fill").font(.caption).foregroundStyle(.secondary) }
                             if account.key == app.session?.key {
                                 Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.accentColor)
                             }
                         }
                     }
                     .swipeActions {
-                        Button("Sign Out", role: .destructive) { Task { await app.remove(account) } }
+                        Button("Sign Out", role: .destructive) {
+                            if ProfileLock.hasPIN(account.key) { pinTask = .init(kind: .remove, account: account) }
+                            else { Task { await app.remove(account) } }
+                        }
+                    }
+                }
+                if let me = app.session {
+                    let locked = ProfileLock.hasPIN(me.key)
+                    Button {
+                        pinTask = .init(kind: locked ? .clear : .set, account: me)
+                    } label: {
+                        Label(locked ? "Remove PIN from \(me.userName)" : "Add a PIN to \(me.userName)",
+                              systemImage: locked ? "lock.open" : "lock")
+                    }
+                    .id(pinTick)
+                    if let limit = ProfileLock.limitLabel(me.key) {
+                        Label("Kids' limit: up to \(limit) (set on your Jellyfin server)", systemImage: "figure.and.child.holdinghands")
+                            .font(.footnote).foregroundStyle(.secondary)
                     }
                 }
                 Button { showAddAccount = true } label: {
@@ -128,7 +152,7 @@ struct SettingsView: View {
             } header: {
                 Text("Accounts")
             } footer: {
-                Text("Tap to switch. Quick Connect approves a code shown on a TV or another device so it signs in as you, no password typing.")
+                Text("Tap to switch. A PIN keeps others (like kids) from opening a profile on this device; what each profile may watch is set per user in your Jellyfin server's Dashboard → Users → Parental control. Quick Connect approves a code shown on a TV or another device so it signs in as you, no password typing.")
             }
 
             if let s = app.session {
@@ -356,6 +380,7 @@ struct SettingsView: View {
         .scrollContentBackground(.hidden)
         .background(TintedBackdrop(color: nil))
         .navigationTitle("Settings")
+        .fullScreenCover(item: $pinTask) { ProfilePINScreen(task: $0) { pinTask = nil; pinTick += 1 } }
         .task(id: app.session?.userName) {
             if let client = app.client {
                 isAdmin = await client.adminIsAdministrator()

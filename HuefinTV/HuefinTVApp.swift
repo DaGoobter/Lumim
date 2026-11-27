@@ -28,6 +28,7 @@ struct TVRoot: View {
     @State private var router = AppRouter.shared
     @State private var socket = SessionSocket.shared
     @State private var showProfiles = false
+    @State private var launchLocked = false
     @State private var asked = false
     @AppStorage("prism.askWhoIsWatching") private var askOnLaunch = true
     @State private var appleRequest: PlaybackRequest?
@@ -58,9 +59,10 @@ struct TVRoot: View {
         .onAppear {
             guard !asked else { return }
             asked = true
-            if askOnLaunch, app.accounts.count > 1, app.client != nil { showProfiles = true }
+            if let s = app.session, app.client != nil, ProfileLock.hasPIN(s.key) { launchLocked = true; showProfiles = true }
+            else if askOnLaunch, app.accounts.count > 1, app.client != nil { showProfiles = true }
         }
-        .fullScreenCover(isPresented: $showProfiles) { TVProfilePicker() }
+        .fullScreenCover(isPresented: $showProfiles, onDismiss: { launchLocked = false }) { TVProfilePicker(atLaunch: launchLocked) }
         .fullScreenCover(item: $appleRequest, onDismiss: { router.playerClosedAt = Date() }) { TVApplePlayerScreen(request: $0) }
         // Every play request lands here: Apple's player for files the Apple TV plays natively,
         // the Huefin Engine (a UIKit screen, so the Siri Remote always works) for everything else.

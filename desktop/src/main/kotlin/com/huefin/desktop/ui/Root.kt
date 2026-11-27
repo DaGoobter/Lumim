@@ -130,8 +130,10 @@ fun HuefinRoot() {
 @Composable
 private fun MainScaffold() {
     var profiles by remember { mutableStateOf(false) }
+    var launchLocked by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         Nav.reset()
+        if (!askedProfiles && AppState.session?.let { com.huefin.desktop.core.ProfileLock.hasPIN(it.key) } == true) { askedProfiles = true; launchLocked = true; profiles = true }
         if (com.huefin.desktop.core.Prefs.bool(com.huefin.desktop.core.Prefs.Keys.askWho, true) && AppState.accounts.size > 1 && !askedProfiles) { askedProfiles = true; profiles = true }
     }
     LaunchedEffect(AppState.client) {
@@ -139,7 +141,8 @@ private fun MainScaffold() {
         com.huefin.desktop.core.ServerDefaults.apply()
         com.huefin.desktop.core.SessionSocket.connect(c)
     }
-    if (profiles) { ProfilePickerDialog { profiles = false }; return }
+    if (profiles) { ProfilePickerDialog(atLaunch = launchLocked) { profiles = false; launchLocked = false }; return }
+    PinGate(inPicker = false)
     Row(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxHeight().width(96.dp).background(Hue.card).padding(vertical = 18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text("huefin", fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleLarge)

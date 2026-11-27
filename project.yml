@@ -120,6 +120,7 @@ targets:
       - path: Lumen/Playback/Trickplay.swift
       - path: Lumen/Playback/AppSubtitles.swift
       - path: Lumen/Playback/AssRenderer.swift
+      - path: Lumen/UI/PINPad.swift
       - path: Lumen/Playback/MPVCore.swift
       - path: Lumen/Playback/NativeCore.swift
       - path: Lumen/Playback/EngineCore.swift
