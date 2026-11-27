@@ -183,8 +183,21 @@ private fun PlayerControls(p: PlayerController) {
                     if (!p.isLive) {
                         var drag by remember { mutableStateOf<Float?>(null) }
                         val len = p.lengthMs.coerceAtLeast(1)
-                        Slider(drag ?: (p.positionMs.toFloat() / len), { drag = it }, onValueChangeFinished = { drag?.let { p.seekTo((it * len).toLong()) }; drag = null },
-                            colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Hue.coral, inactiveTrackColor = Color.White.copy(alpha = 0.25f)))
+                        // Scrubbing previews from the server's trickplay images.
+                        var thumbs by remember(p.item.id) { mutableStateOf<TrickplayThumbs?>(null) }
+                        LaunchedEffect(p.item.id) { thumbs = AppState.client?.let { TrickplayThumbs.load(it, p.item.id) } }
+                        var thumb by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+                        val dragMs = drag?.let { (it * len).toLong() }
+                        LaunchedEffect(dragMs?.div(2000), thumbs) { thumb = if (dragMs != null) thumbs?.thumbnail(dragMs) else null }
+                        BoxWithConstraints(Modifier.fillMaxWidth()) {
+                            if (drag != null && dragMs != null) {
+                                val bubbleW = 240.dp
+                                val x = (maxWidth * drag!! - bubbleW / 2).coerceIn(0.dp, (maxWidth - bubbleW).coerceAtLeast(0.dp))
+                                TrickplayBubble(thumb, clock(dragMs), Modifier.width(bubbleW).offset(x = x, y = if (thumb != null) (-170).dp else (-36).dp))
+                            }
+                            Slider(drag ?: (p.positionMs.toFloat() / len), { drag = it }, onValueChangeFinished = { drag?.let { p.seekTo((it * len).toLong()) }; drag = null },
+                                colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Hue.coral, inactiveTrackColor = Color.White.copy(alpha = 0.25f)))
+                        }
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (!p.isLive) IconButton({ p.seekBy(-10) }) { Icon(Icons.Filled.Replay10, "Back 10 seconds") }
