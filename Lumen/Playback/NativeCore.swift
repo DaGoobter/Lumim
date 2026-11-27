@@ -271,8 +271,11 @@ final class NativeCore: NSObject, EngineCore {
                 audioFeed.sync { audioRenderer.flush() }
                 seekTarget = target
             }
-            // Don't read too far ahead of what's playing.
-            if bufferedAhead() > 15 || queuedVideoBytes() > 200_000_000 { Thread.sleep(forTimeInterval: 0.02); continue }
+            // Read well ahead so Wi-Fi hiccups don't interrupt the picture: up to a minute, limited by how much
+            // memory this device can spare (about 1/16 of it, 150–500 MB: roughly 15 s to a minute of a 4K remux).
+            if bufferedAhead() > Self.readAheadSeconds || queuedVideoBytes() > Self.readAheadBytes {
+                Thread.sleep(forTimeInterval: 0.02); continue
+            }
 
             let r = stash.isEmpty ? av_read_frame(ctx, pkt) : stash.take(into: pkt)
             if r < 0 {
@@ -331,6 +334,14 @@ final class NativeCore: NSObject, EngineCore {
             self.onEnd?(fallback ? .fallback(time) : .failed(message))
         }
     }
+
+    // MARK: - Read-ahead
+
+    static let readAheadSeconds: Double = 60
+    static let readAheadBytes: Int = {
+        let share = Int(ProcessInfo.processInfo.physicalMemory / 16)
+        return min(500_000_000, max(150_000_000, share))
+    }()
 
     // MARK: - Opening a file (now, or ahead of time for Instant Play)
 
@@ -877,6 +888,7 @@ final class NativeCore: NSObject, EngineCore {
         case .playing:
             if !atEnd && ahead < 0.25 && !userPaused {
                 phase = .buffering
+                startWall = CACurrentMediaTime()
                 sync.rate = 0
             } else if atEnd && time >= lastMedia - 0.15 {
                 phase = .ended
@@ -884,7 +896,9 @@ final class NativeCore: NSObject, EngineCore {
                 onEnd?(.finished)
             }
         case .buffering:
-            if ahead >= 2.5 || atEnd {
+            // Resume after a stall once there's a safe cushion: 1 s when data is pouring in again, 2.5 s otherwise.
+            let waited = max(0.05, CACurrentMediaTime() - startWall)
+            if ahead >= 2.5 || atEnd || (ahead >= 1 && ahead / waited >= 2.5) {
                 phase = .playing
                 if !userPaused { sync.rate = rate }
             }
