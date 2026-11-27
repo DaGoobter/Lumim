@@ -83,6 +83,22 @@ class JellyfinClient(val baseUrl: String, var accessToken: String? = null, var u
     suspend inline fun <reified T> post(path: String, query: Map<String, String?> = emptyMap(), body: JsonElement): T =
         JellyfinJson.decodeFromString(send(path, query, "POST", body))
 
+    // MARK: Connection speed
+
+    /** Downloads [bytes] of throwaway data (Jellyfin's bitrate test) and returns bits per second. Includes the round trip. */
+    suspend fun measureSpeed(bytes: Int): Double = withContext(Dispatchers.IO) {
+        val req = Request.Builder().url(url("Playback/BitrateTest", mapOf("size" to bytes.toString())))
+            .header("Authorization", authHeader).header("Cache-Control", "no-cache").build()
+        val start = System.nanoTime()
+        http.newCall(req).execute().use { r ->
+            if (!r.isSuccessful) throw HttpError(r.code)
+            val n = r.body?.bytes()?.size ?: 0
+            if (n == 0) throw HttpError(r.code)
+            val secs = (System.nanoTime() - start) / 1e9
+            n * 8.0 / maxOf(secs, 0.001)
+        }
+    }
+
     // MARK: Server & auth
 
     suspend fun publicInfo(): PublicSystemInfo = get("System/Info/Public")

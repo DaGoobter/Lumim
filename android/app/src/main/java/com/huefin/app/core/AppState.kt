@@ -44,10 +44,61 @@ object AppState {
     var localStatus by mutableStateOf("Checking…"); private set
     var maxBitrate by mutableStateOf(200_000_000)
     var preferLocal by mutableStateOf(true)
+    /** Pick the streaming quality from a quick speed test to the server (on by default). */
+    var autoQuality by mutableStateOf(true)
+    /** Last measured speed to the server, bits per second. */
+    var measuredBitrate by mutableStateOf<Long?>(null); private set
+    var speedStatus by mutableStateOf("Not tested yet"); private set
+    private var lastSpeedTest = 0L
+    private var speedJob: kotlinx.coroutines.Job? = null
+
+    /** The quality limit playback actually uses: with Automatic on, what the connection carries with headroom. */
+    val playbackBitrate: Int
+        get() {
+            val m = measuredBitrate
+            if (!autoQuality || m == null) return maxBitrate
+            if (m >= 150_000_000L) return maxBitrate
+            return minOf(maxBitrate.toLong(), maxOf(1_500_000L, (m * 0.7).toLong())).toInt()
+        }
+
+    /** Speed test to the server: at app open, after network changes, at most every 10 minutes otherwise. */
+    fun checkSpeed(force: Boolean = false) {
+        val c = client ?: return
+        if (!force && System.currentTimeMillis() - lastSpeedTest < 600_000) return
+        speedJob?.cancel()
+        if (measuredBitrate == null) speedStatus = "Testing…"
+        speedJob = scope.launch {
+            var speed = 0.0
+            try {
+                speed = c.measureSpeed(1_000_000)
+                if (speed > 8_000_000) speed = c.measureSpeed(8_000_000)
+                if (speed > 80_000_000) speed = c.measureSpeed(30_000_000)
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                if (speed == 0.0) { if (measuredBitrate == null) speedStatus = "Couldn't test the connection"; return@launch }
+            }
+            measuredBitrate = speed.toLong()
+            lastSpeedTest = System.currentTimeMillis()
+            speedStatus = describe(speed.toLong())
+        }
+    }
+
+    fun describe(bps: Long): String {
+        val mbps = bps / 1_000_000.0
+        val speed = if (mbps >= 100) "%.0f Mbps".format(mbps) else "%.1f Mbps".format(mbps)
+        return speed + " · " + when {
+            mbps >= 150 -> "everything plays untouched, including 4K remuxes"
+            mbps >= 60 -> "4K plays untouched; the very largest files are lightened"
+            mbps >= 25 -> "4K web files and 1080p play untouched"
+            mbps >= 10 -> "1080p plays untouched; 4K is lightened"
+            else -> "the server sends a lighter stream so it doesn't stutter"
+        }
+    }
 
     fun init() {
         maxBitrate = Prefs.int(Prefs.Keys.maxBitrate, 200_000_000).takeIf { it > 0 } ?: 200_000_000
         preferLocal = Prefs.bool(Prefs.Keys.preferLocal, true)
+        autoQuality = Prefs.bool("huefin.autoQuality", true)
         accounts = Prefs.string("accounts")?.let { runCatching { json.decodeFromString(ListSerializer(StoredSession.serializer()), it) }.getOrNull() } ?: emptyList()
         val s = Prefs.string("session")?.let { runCatching { json.decodeFromString(StoredSession.serializer(), it) }.getOrNull() }
         if (s != null) {
@@ -61,6 +112,7 @@ object AppState {
     fun persistSettings() {
         Prefs.set(Prefs.Keys.maxBitrate, maxBitrate)
         Prefs.set(Prefs.Keys.preferLocal, preferLocal)
+        Prefs.set("huefin.autoQuality", autoQuality)
     }
 
     private fun save(s: StoredSession) {
@@ -199,8 +251,10 @@ object AppState {
             }
             localStatus = if (newRoute == Route.Local) "Connected" else problem
         } else localStatus = "No home address yet"
+        val changed = route != newRoute || client?.baseUrl != target
         route = newRoute
         if (client?.baseUrl != target) client = JellyfinClient(target, s.token, s.userId)
+        checkSpeed(force = changed || measuredBitrate == null)
         client?.let { com.huefin.app.downloads.DownloadManager.attach(it) }
     }
 }

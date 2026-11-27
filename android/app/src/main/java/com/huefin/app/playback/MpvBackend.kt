@@ -90,7 +90,7 @@ class MpvBackend(context: Context) : Backend {
             "hwdec" to "mediacodec-copy", "hwdec-codecs" to "h264,hevc,mpeg4,mpeg2video,vp8,vp9,av1",
             "ao" to "audiotrack,opensles", "audio-channels" to "auto-safe",
             "tone-mapping" to "auto", "hdr-compute-peak" to "auto", "target-colorspace-hint" to "no",
-            "cache" to "yes", "demuxer-max-bytes" to "150MiB", "demuxer-max-back-bytes" to "50MiB", "demuxer-readahead-secs" to "30",
+            "cache" to "yes", "demuxer-max-bytes" to readAheadMiB(app), "demuxer-max-back-bytes" to "50MiB", "demuxer-readahead-secs" to "60",
             "network-timeout" to "30", "user-agent" to "Huefin for Android",
             "volume-max" to "200", "keep-open" to "yes", "msg-level" to "all=warn", "idle" to "yes", "force-window" to "no",
             "input-default-bindings" to "no", "input-vo-keyboard" to "no", "osd-level" to "0",
@@ -232,6 +232,14 @@ class MpvBackend(context: Context) : Backend {
         private const val MPV_EVENT_PLAYBACK_RESTART = 21
 
         /** Surround formats the connected receiver or TV says it can decode itself (HDMI / ARC / eARC). */
+        /** How much video to hold ahead: about 1/16 of the device's memory, 150–500 MiB (~15 s to a minute of 4K). */
+        fun readAheadMiB(context: Context): String {
+            val am = context.getSystemService(android.app.ActivityManager::class.java)
+            val info = android.app.ActivityManager.MemoryInfo().also { am?.getMemoryInfo(it) }
+            val mib = (info.totalMem / 16 / (1024 * 1024)).coerceIn(150, 500)
+            return "${mib}MiB"
+        }
+
         fun passthroughCodecs(context: Context): List<String> {
             val am = context.getSystemService(AudioManager::class.java) ?: return emptyList()
             val hdmi = buildSet {

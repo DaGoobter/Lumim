@@ -114,7 +114,7 @@ fun DetailScreen(initial: BaseItem, nav: NavHostController) {
         if (!item.isPlayable || item.isLiveChannel || c == null) return@LaunchedEffect
         playability = if (DownloadManager.records[item.id]?.state == DownloadState.Completed)
             Playability(Playability.Kind.Original, "Downloaded to this device.")
-        else EngineDecider.playability(item, c, AppState.maxBitrate, version)
+        else EngineDecider.playability(item, c, AppState.playbackBitrate, version)
     }
 
     fun play() {

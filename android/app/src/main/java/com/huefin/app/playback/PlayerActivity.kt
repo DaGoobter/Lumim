@@ -111,7 +111,7 @@ class PlayerActivity : ComponentActivity() {
             }
         }
         lifecycleScope.launch {
-            val engine = EngineDecider.useEngine(request, AppState.client, AppState.maxBitrate) && SyncPlay.groupId == null
+            val engine = EngineDecider.useEngine(request, AppState.client, AppState.playbackBitrate) && SyncPlay.groupId == null
             val backend: Backend = if (engine) runCatching { MpvBackend(this@PlayerActivity) }.onFailure {
                 com.huefin.app.core.CrashReport.engineStarting(false)
                 com.huefin.app.core.CrashReport.note("The Huefin Engine couldn't load, so Android's player was used.", it)

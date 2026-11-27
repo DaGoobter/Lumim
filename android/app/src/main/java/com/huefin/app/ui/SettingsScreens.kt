@@ -106,8 +106,11 @@ fun SettingsScreen(nav: NavHostController) {
             }
         }
         item {
-            FormSection("Playback", "Keep this at Maximum for untouched Direct Play. Lower it only if remote playback stutters; the server will then re-encode, which loses Dolby Vision. Downloads always use full quality.") {
-                FormPicker("Max streaming quality", AppState.maxBitrate, listOf(200, 120, 80, 40, 20, 10, 8, 4, 2).map { it * 1_000_000 to if (it == 200) "Maximum" else "$it Mbps" }) {
+            FormSection("Playback", if (AppState.autoQuality) "Huefin tests the connection to your server when it opens and whenever your network changes. When it's fast enough, files play untouched (full quality, HDR); when it isn't, the server sends a lighter stream so playback doesn't stutter. Downloads always use full quality."
+                                    else "Keep this at Maximum for untouched Direct Play. Lower it only if remote playback stutters; the server will then re-encode, which loses Dolby Vision. Downloads always use full quality.") {
+                FormToggle("Automatic quality", AppState.autoQuality) { AppState.autoQuality = it; AppState.persistSettings(); tick++ }
+                FormDivider(); FormRow("Connection", subtitle = AppState.speedStatus, icon = Icons.Filled.NetworkCheck, iconTint = Hue.sky, value = "Test again", onClick = { AppState.checkSpeed(force = true) })
+                FormDivider(); FormPicker(if (AppState.autoQuality) "Never more than" else "Max streaming quality", AppState.maxBitrate, listOf(200, 120, 80, 40, 20, 10, 8, 4, 2).map { it * 1_000_000 to if (it == 200) "Maximum" else "$it Mbps" }) {
                     AppState.maxBitrate = it; AppState.persistSettings(); tick++ }
             }
         }

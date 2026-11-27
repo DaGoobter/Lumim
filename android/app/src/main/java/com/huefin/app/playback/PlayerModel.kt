@@ -99,7 +99,7 @@ class PlayerModel(var request: PlaybackRequest, val backend: Backend) {
             return
         }
         val c = client ?: run { error = "Not connected to your server."; return }
-        val max = AppState.maxBitrate
+        val max = AppState.playbackBitrate
         val info = try {
             c.playbackInfo(item.id, max, EngineDecider.profile(max), startTicks, mediaSourceId = request.mediaSourceId,
                 enableDirectPlay = true, subtitleStreamIndex = if (backend is MpvBackend) null else -1)
