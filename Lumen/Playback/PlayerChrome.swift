@@ -173,3 +173,46 @@ struct PlayerSpeedMenu: View {
         .accessibilityLabel("Playback speed")
     }
 }
+
+#if os(iOS)
+/// Subtitle timing: nudge subtitles earlier or later while the video keeps playing, until they match the voices.
+struct SubtitleSyncPanel: View {
+    let delay: Double
+    let set: (Double) -> Void
+    let close: () -> Void
+
+    static func label(_ d: Double) -> String {
+        d == 0 ? "in sync" : String(format: "%@%.1f s %@", d > 0 ? "+" : "−", abs(d), d > 0 ? "later" : "earlier")
+    }
+
+    var body: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Label("Subtitle timing", systemImage: "timer").font(.headline)
+                Spacer()
+                Button("Done", action: close).font(.headline)
+            }
+            Text(Self.label(delay)).font(.title3.monospacedDigit().weight(.semibold))
+            HStack(spacing: 10) {
+                step("−0.5", -0.5); step("−0.1", -0.1)
+                Button { set(0) } label: { Image(systemName: "arrow.counterclockwise") }
+                    .buttonStyle(.bordered).tint(.white).disabled(delay == 0)
+                step("+0.1", 0.1); step("+0.5", 0.5)
+            }
+            Text("Subtitles too early? Press +. Too late? Press −.").font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(18)
+        .frame(maxWidth: 420)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .padding(.horizontal, 16)
+        .environment(\.colorScheme, .dark)
+    }
+
+    private func step(_ title: String, _ by: Double) -> some View {
+        Button(title) { set(delay + by) }
+            .font(.body.monospacedDigit().weight(.semibold))
+            .buttonStyle(.bordered).tint(.white)
+    }
+}
+#endif
+

@@ -77,6 +77,15 @@ final class NativeCore: NSObject, EngineCore {
     private var audioStreamIndex: Int32 = -1
     private var subStreamIndex: Int32 = -1
     private var cues: [Int32: [Cue]] = [:]
+    /// Styled (ASS/SSA) subtitles, drawn by libass.
+    #if canImport(Libass)
+    private var ass: AssRenderer?
+    #endif
+    private var videoPixels = (w: 0, h: 0)
+    /// Shifts subtitles later (positive) or earlier (negative), in seconds.
+    var subtitleDelay: Double = 0
+    /// The video's shape (width ÷ height), so subtitles line up with the picture on any aspect ratio.
+    private(set) var videoAspect: Double = 16.0 / 9.0
     private var trackList: (audio: [EngineTrack], subs: [EngineTrack]) = ([], [])
     private var externalSubs: [(id: Int32, name: String)] = []
     private var reopenAudio = false
@@ -214,7 +223,33 @@ final class NativeCore: NSObject, EngineCore {
             else if type == AVMEDIA_TYPE_SUBTITLE { subTracks.append(EngineTrack(id: Int32(i), name: Self.trackName(st, audio: false), selected: false)) }
             if Int32(i) != videoIndex && Int32(i) != bestAudio && type != AVMEDIA_TYPE_SUBTITLE { st.pointee.discard = AVDISCARD_ALL }
         }
+        // Styled subtitles: the fonts that ship inside the file, and each ASS/SSA track's style header.
+        #if canImport(Libass)
+        let assStreams = (0..<Int(ctx.pointee.nb_streams)).filter { i in
+            guard let id = ctx.pointee.streams[i]?.pointee.codecpar?.pointee.codec_id else { return false }
+            return id == AV_CODEC_ID_ASS || id == AV_CODEC_ID_SSA
+        }
+        if !assStreams.isEmpty, let r = AssRenderer() {
+            for i in 0..<Int(ctx.pointee.nb_streams) {
+                guard let st = ctx.pointee.streams[i], let par = st.pointee.codecpar,
+                      par.pointee.codec_type == AVMEDIA_TYPE_ATTACHMENT, par.pointee.extradata_size > 0, let x = par.pointee.extradata else { continue }
+                let name = av_dict_get(st.pointee.metadata, "filename", nil, 0).map { String(cString: $0.pointee.value) } ?? "font\(i)"
+                r.addFont(name: name, data: Data(bytes: x, count: Int(par.pointee.extradata_size)))
+            }
+            for i in assStreams {
+                guard let par = ctx.pointee.streams[i]?.pointee.codecpar?.pointee else { continue }
+                let header = par.extradata_size > 0 && par.extradata != nil ? Data(bytes: par.extradata, count: Int(par.extradata_size)) : nil
+                r.addTrack(Int32(i), header: header)
+            }
+            lock.lock(); ass = r; lock.unlock()
+        }
+        #endif
+        let vpar = vStream.pointee.codecpar.pointee
+        let sar = vpar.sample_aspect_ratio
+        let pixelAspect = sar.num > 0 && sar.den > 0 ? Double(sar.num) / Double(sar.den) : 1
         lock.lock()
+        videoPixels = (Int(vpar.width), Int(vpar.height))
+        if vpar.width > 0 && vpar.height > 0 { videoAspect = Double(vpar.width) * pixelAspect / Double(vpar.height) }
         trackList = (audioTracks, subTracks)
         if audioStreamIndex < 0 || !audioTracks.contains(where: { $0.id == audioStreamIndex }) { audioStreamIndex = bestAudio }
         lock.unlock()
@@ -312,6 +347,13 @@ final class NativeCore: NSObject, EngineCore {
                 lock.unlock()
                 if wake { requestAudio() }
             } else if st.pointee.codecpar.pointee.codec_type == AVMEDIA_TYPE_SUBTITLE, si == wantSub {
+                #if canImport(Libass)
+                if let a = ass, a.has(si), let data = p.pointee.data, p.pointee.size > 0, p.pointee.pts != AV_NOPTS {
+                    let startMs = Int64(Self.cmTime(p.pointee.pts, tb).seconds * 1000)
+                    let durMs = p.pointee.duration > 0 ? Int64(Self.cmTime(p.pointee.duration, tb).seconds * 1000) : 5000
+                    a.add(si, data: data, size: Int(p.pointee.size), startMs: startMs, durationMs: durMs)
+                }
+                #endif
                 if subDecoders[si] == nil, let c = Self.openDecoder(st) { subDecoders[si] = c }
                 if let c = subDecoders[si] { decodeSubtitle(c, packet: p, tb: tb, track: si, videoSize: (Int(vStream.pointee.codecpar.pointee.width), Int(vStream.pointee.codecpar.pointee.height))) }
             }
@@ -965,10 +1007,24 @@ final class NativeCore: NSObject, EngineCore {
     }
 
     var overlaySubtitle: EngineSubtitle? {
-        let t = time
-        lock.lock(); defer { lock.unlock() }
-        guard subStreamIndex >= 0, let list = cues[subStreamIndex] else { return nil }
-        return list.last(where: { $0.start <= t && t < $0.end })?.content
+        let t = time - subtitleDelay
+        lock.lock()
+        let track = subStreamIndex, size = videoPixels
+        #if canImport(Libass)
+        let a = ass
+        #endif
+        let list = cues[track]
+        lock.unlock()
+        guard track >= 0 else { return nil }
+        #if canImport(Libass)
+        // Styled subtitles, drawn exactly as the release intended.
+        if let a, a.has(track) {
+            guard let (img, rect) = a.render(track, atMs: Int64(t * 1000), videoWidth: size.w > 0 ? size.w : 1920,
+                                             videoHeight: size.h > 0 ? size.h : 1080) else { return nil }
+            return .image(img, rect)
+        }
+        #endif
+        return list?.last(where: { $0.start <= t && t < $0.end })?.content
     }
 
     var pictureDescription: String {
@@ -1011,6 +1067,17 @@ final class NativeCore: NSObject, EngineCore {
             defer { var c: UnsafeMutablePointer<AVFormatContext>? = ctx; avformat_close_input(&c) }
             avformat_find_stream_info(ctx, nil)
             guard ctx.pointee.nb_streams > 0, let st = ctx.pointee.streams[0], let dec = Self.openDecoder(st) else { return }
+            #if canImport(Libass)
+            // A styled .ass/.ssa file: hand the whole file to libass as well (plain text stays as a fallback).
+            let codec = st.pointee.codecpar.pointee.codec_id
+            if codec == AV_CODEC_ID_ASS || codec == AV_CODEC_ID_SSA, let data = try? Data(contentsOf: url), let self {
+                self.lock.lock()
+                if self.ass == nil { self.ass = AssRenderer() }
+                let a = self.ass
+                self.lock.unlock()
+                a?.addFile(id, data: data)
+            }
+            #endif
             defer { var p: UnsafeMutablePointer<AVCodecContext>? = dec; avcodec_free_context(&p) }
             let pkt = av_packet_alloc()
             defer { var p = pkt; av_packet_free(&p) }

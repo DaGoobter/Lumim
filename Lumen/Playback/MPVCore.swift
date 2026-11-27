@@ -210,6 +210,11 @@ final class MPVCore: EngineCore {
     var isIdle: Bool { flag("idle-active") }
     var isPlaying: Bool { !isPaused && !isIdle && !flag("core-idle") }
     var speed: Double { get { double("speed") ?? 1 } set { setDouble("speed", newValue) } }
+    var subtitleDelay: Double { get { double("sub-delay") ?? 0 } set { setDouble("sub-delay", newValue) } }
+    var videoAspect: Double {
+        guard let w = double("video-params/dw"), let h = double("video-params/dh"), w > 0, h > 0 else { return 16.0 / 9.0 }
+        return w / h
+    }
     var volume: Double { get { double("volume") ?? 100 } set { setDouble("volume", newValue) } }
 
     /// Audio ("audio") or subtitle ("sub") tracks, with readable names.

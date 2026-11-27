@@ -53,6 +53,10 @@ protocol EngineCore: AnyObject {
     var pictureDescription: String { get }
     /// Subtitles the app must draw (nil when the engine draws them itself).
     var overlaySubtitle: EngineSubtitle? { get }
+    /// Subtitle timing: positive shows them later, negative earlier (seconds).
+    var subtitleDelay: Double { get set }
+    /// The video's shape (width ÷ height).
+    var videoAspect: Double { get }
 
     #if os(tvOS)
     /// Asks the TV for the video's dynamic range and frame rate (Match Content). True if a switch was requested.

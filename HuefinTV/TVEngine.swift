@@ -251,7 +251,7 @@ private struct EngineOverlay: View {
     var body: some View {
         let m = model
         ZStack {
-        EngineSubtitleView(subtitle: m.subtitle)
+        EngineSubtitleView(subtitle: m.subtitle, aspect: m.player.videoAspect)
         if m.isLoading && m.errorMessage == nil { ProgressView().scaleEffect(1.5) }
         if let e = m.errorMessage {
             VStack(spacing: 16) {

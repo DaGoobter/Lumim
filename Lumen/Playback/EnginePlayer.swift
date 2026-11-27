@@ -154,6 +154,7 @@ final class EnginePlayerModel {
             }
         }
         player.load(url, start: Double(request.startTicks) / 10_000_000)
+        restoreSubtitleDelay()
         if speed != 1 { player.speed = Double(speed) }
         // Intro markers and outside subtitle files load alongside the video, never holding it up.
         if let client {
@@ -274,6 +275,20 @@ final class EnginePlayerModel {
 
     func setAudio(_ index: Int32) { player.selectAudio(index); audioTrack = index }
     func setSubtitle(_ index: Int32) { player.selectSubtitle(index); subtitleTrack = index }
+
+    /// Subtitle timing (seconds; positive = later). Remembered per title, like Infuse.
+    private(set) var subtitleDelay: Double = 0
+    func setSubtitleDelay(_ seconds: Double) {
+        let v = (seconds * 10).rounded() / 10
+        subtitleDelay = v
+        player.subtitleDelay = v
+        UserDefaults.standard.set(v, forKey: "huefin.subDelay.\(item.id)")
+    }
+    private func restoreSubtitleDelay() {
+        let v = UserDefaults.standard.double(forKey: "huefin.subDelay.\(item.id)")
+        subtitleDelay = v
+        player.subtitleDelay = v
+    }
     func setSpeed(_ s: Float) { speed = s; player.speed = Double(s) }
     func setVolume(_ v: Int32) { volume = v; player.volume = Double(v) }
 
@@ -337,6 +352,7 @@ struct EngineVideoSurface: UIViewRepresentable {
 /// Subtitles drawn by the app above the picture (the native core hands them over instead of drawing them).
 struct EngineSubtitleView: View {
     let subtitle: EngineSubtitle?
+    var aspect: Double = 16.0 / 9.0
     var body: some View {
         GeometryReader { g in
             switch subtitle {
@@ -355,7 +371,7 @@ struct EngineSubtitleView: View {
                 .frame(maxWidth: .infinity)
             case .image(let img, let rect)?:
                 // Place the picture inside the video frame (16:9-ish letterboxing is handled by fitting the frame).
-                let frame = Self.videoFrame(in: g.size)
+                let frame = Self.videoFrame(in: g.size, aspect: aspect)
                 Image(decorative: img, scale: 1)
                     .resizable()
                     .frame(width: rect.width * frame.width, height: rect.height * frame.height)
@@ -367,8 +383,8 @@ struct EngineSubtitleView: View {
         .allowsHitTesting(false)
         .ignoresSafeArea()
     }
-    static func videoFrame(in size: CGSize) -> CGRect {
-        let aspect: CGFloat = 16.0 / 9.0
+    static func videoFrame(in size: CGSize, aspect: Double = 16.0 / 9.0) -> CGRect {
+        let aspect = CGFloat(aspect > 0.2 ? aspect : 16.0 / 9.0)
         var w = size.width, h = w / aspect
         if h > size.height { h = size.height; w = h * aspect }
         return CGRect(x: (size.width - w) / 2, y: (size.height - h) / 2, width: w, height: h)
@@ -387,6 +403,7 @@ struct EnginePlayerScreen: View {
     @State private var scrubbing = false
     @State private var scrubValue: Double = 0
     @State private var scrubThumb: UIImage?
+    @State private var showSubSync = false
     @State private var fill = false
     // Picture in Picture: Apple's player warms up silently behind the engine, then takes over without a gap.
     @State private var standby: PlayerModel?
@@ -408,7 +425,7 @@ struct EnginePlayerScreen: View {
                     .scaleEffect(fill ? 1.33 : 1)
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
-                EngineSubtitleView(subtitle: model.subtitle)
+                EngineSubtitleView(subtitle: model.subtitle, aspect: model.player.videoAspect)
                 // Taps land on this clear layer above the video.
                 Color.clear
                     .contentShape(Rectangle())
@@ -425,6 +442,12 @@ struct EnginePlayerScreen: View {
                         Button("Close") { close() }.buttonStyle(SecondaryButtonStyle())
                     }
                     .padding(24).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
+                }
+                if showSubSync {
+                    VStack { Spacer()
+                        SubtitleSyncPanel(delay: model.subtitleDelay, set: { model.setSubtitleDelay($0) }, close: { showSubSync = false })
+                    }
+                    .padding(.bottom, 28)
                 }
                 if let seg = model.activeSkip {
                     VStack { Spacer(); HStack { Spacer()
@@ -546,6 +569,12 @@ struct EnginePlayerScreen: View {
                         Section("Subtitles") {
                             ForEach(m.subtitleTracks, id: \.index) { t in
                                 Button { m.setSubtitle(t.index) } label: { check(t.name, t.index == m.subtitleTrack) }
+                            }
+                        }
+                        Section {
+                            Button { showSubSync = true; controlsVisible = false } label: {
+                                Label(m.subtitleDelay == 0 ? "Subtitle timing" : "Subtitle timing (\(SubtitleSyncPanel.label(m.subtitleDelay)))",
+                                      systemImage: "timer")
                             }
                         }
                     } label: {
