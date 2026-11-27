@@ -1,6 +1,7 @@
 package com.huefin.app.playback
 
 import com.huefin.app.HuefinApp
+import com.huefin.app.core.AppState
 import com.huefin.app.core.BaseItem
 import com.huefin.app.core.DeviceProfile
 import com.huefin.app.core.JellyfinClient
@@ -60,8 +61,17 @@ object EngineDecider {
 
     fun profile(maxBitrate: Int) = DeviceProfile.build(HuefinApp.instance, maxBitrate)
 
+    /** The server's playback answer from the item page, kept 2 minutes so pressing Play doesn't ask again. */
+    private val recent = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, com.huefin.app.core.PlaybackInfoResponse>>()
+    private fun key(itemId: String, source: String?, max: Int) = "$itemId|${source ?: ""}|$max|${AppState.client?.baseUrl}"
+    /** Instant Play: the engine reuses the item page's answer instead of a second round trip to the server. */
+    fun recentInfo(itemId: String, source: String?, max: Int): com.huefin.app.core.PlaybackInfoResponse? =
+        recent[key(itemId, source, max)]?.takeIf { System.currentTimeMillis() - it.first < 120_000 }?.second
+
     suspend fun playability(item: BaseItem, c: JellyfinClient, maxBitrate: Int, mediaSourceId: String? = null): Playability {
-        val info = runCatching { c.playbackInfo(item.id, maxBitrate, profile(maxBitrate), subtitleStreamIndex = null, mediaSourceId = mediaSourceId) }.getOrNull()
+        val info = recentInfo(item.id, mediaSourceId, maxBitrate)
+            ?: runCatching { c.playbackInfo(item.id, maxBitrate, profile(maxBitrate), subtitleStreamIndex = null, mediaSourceId = mediaSourceId) }.getOrNull()
+                ?.also { recent[key(item.id, mediaSourceId, maxBitrate)] = System.currentTimeMillis() to it }
             ?: return Playability(Playability.Kind.Unknown, "")
         val src = info.mediaSources.firstOrNull { it.id == mediaSourceId } ?: info.mediaSources.firstOrNull() ?: return Playability(Playability.Kind.Unknown, "")
         info.playSessionId?.let { c.stopEncoding(it) }

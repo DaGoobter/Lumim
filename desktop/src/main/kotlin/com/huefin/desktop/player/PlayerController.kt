@@ -17,6 +17,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
@@ -37,7 +38,51 @@ data class Track(val id: String, val label: String, val selected: Boolean, val l
  * properly. Dolby Vision is reshaped from its own metadata (true colours for Profile 5, the DV grade for 7 and 8).
  */
 class PlayerController(start: BaseItem, private val startTicks: Long, val onClose: () -> Unit) {
-    companion object { var active: PlayerController? = null }
+    companion object {
+        var active: PlayerController? = null
+
+        /** Instant Play: the server's playback answer, fetched while the item page is open, kept for 2 minutes. */
+        private val prefetched = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, kotlinx.coroutines.Deferred<com.huefin.desktop.core.PlaybackInfoResponse?>>>()
+        private val prefetchScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
+        private fun key(id: String) = "$id|${AppState.playbackBitrate}|${AppState.client?.baseUrl}"
+        fun prefetch(item: BaseItem) {
+            val c = AppState.client ?: return
+            if (item.isLiveChannel || !(item.type == "Movie" || item.type == "Episode" || item.type == "Video")) return
+            val k = key(item.id)
+            if (prefetched[k]?.let { System.currentTimeMillis() - it.first < 60_000 } == true) return
+            prefetched[k] = System.currentTimeMillis() to prefetchScope.async {
+                runCatching { c.playbackInfo(item.id, AppState.playbackBitrate, profile(), item.userData?.playbackPositionTicks ?: 0) }.getOrNull()
+            }
+        }
+        suspend fun takePrefetched(id: String): com.huefin.desktop.core.PlaybackInfoResponse? {
+            val (at, d) = prefetched.remove(key(id)) ?: return null
+            return if (System.currentTimeMillis() - at < 120_000) d.await() else null
+        }
+
+        fun profile(): JsonObject = buildJsonObject {
+            put("Name", "Huefin for Windows")
+            put("MaxStreamingBitrate", AppState.playbackBitrate)
+            put("MaxStaticBitrate", 400_000_000)
+            // VLC plays every container and codec, so the server always sends the original file.
+            putJsonArray("DirectPlayProfiles") {
+                add(buildJsonObject { put("Type", "Video") })
+                add(buildJsonObject { put("Type", "Audio") })
+            }
+            putJsonArray("TranscodingProfiles") {
+                add(buildJsonObject { put("Container", "ts"); put("Type", "Video"); put("VideoCodec", "h264,hevc"); put("AudioCodec", "aac,ac3,eac3,mp3")
+                    put("Protocol", "hls"); put("Context", "Streaming"); put("MaxAudioChannels", "6"); put("BreakOnNonKeyFrames", false) })
+                add(buildJsonObject { put("Container", "mp3"); put("Type", "Audio"); put("AudioCodec", "mp3"); put("Protocol", "http"); put("Context", "Streaming") })
+            }
+            putJsonArray("SubtitleProfiles") {
+                listOf("srt", "subrip", "ass", "ssa", "vtt", "webvtt", "pgssub", "dvdsub", "dvbsub", "mov_text", "ttml").forEach {
+                    add(buildJsonObject { put("Format", it); put("Method", "Embed") })
+                }
+            }
+            putJsonArray("CodecProfiles") {}
+            putJsonArray("ContainerProfiles") {}
+            putJsonObject("DirectPlayOptions") {}
+        }
+    }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val client: JellyfinClient? = AppState.client
     private var mp: Mpv? = null
@@ -146,29 +191,6 @@ class PlayerController(start: BaseItem, private val startTicks: Long, val onClos
         return "$src → $dst${if (src != "SDR" && dst == "SDR") " (tone mapped)" else ""} · $hw"
     }
 
-    private fun profile(): JsonObject = buildJsonObject {
-        put("Name", "Huefin for Windows")
-        put("MaxStreamingBitrate", AppState.playbackBitrate)
-        put("MaxStaticBitrate", 400_000_000)
-        // VLC plays every container and codec, so the server always sends the original file.
-        putJsonArray("DirectPlayProfiles") {
-            add(buildJsonObject { put("Type", "Video") })
-            add(buildJsonObject { put("Type", "Audio") })
-        }
-        putJsonArray("TranscodingProfiles") {
-            add(buildJsonObject { put("Container", "ts"); put("Type", "Video"); put("VideoCodec", "h264,hevc"); put("AudioCodec", "aac,ac3,eac3,mp3")
-                put("Protocol", "hls"); put("Context", "Streaming"); put("MaxAudioChannels", "6"); put("BreakOnNonKeyFrames", false) })
-            add(buildJsonObject { put("Container", "mp3"); put("Type", "Audio"); put("AudioCodec", "mp3"); put("Protocol", "http"); put("Context", "Streaming") })
-        }
-        putJsonArray("SubtitleProfiles") {
-            listOf("srt", "subrip", "ass", "ssa", "vtt", "webvtt", "pgssub", "dvdsub", "dvbsub", "mov_text", "ttml").forEach {
-                add(buildJsonObject { put("Format", it); put("Method", "Embed") })
-            }
-        }
-        putJsonArray("CodecProfiles") {}
-        putJsonArray("ContainerProfiles") {}
-        putJsonObject("DirectPlayOptions") {}
-    }
 
     private fun open(url: String, ticks: Long) {
         val p = mp ?: return
@@ -194,7 +216,8 @@ class PlayerController(start: BaseItem, private val startTicks: Long, val onClos
         }
         val c = client ?: run { error = "Not connected to your server."; return }
         val info = try {
-            c.playbackInfo(target.id, if (target.isLiveChannel) AppState.playbackBitrate.coerceAtMost(40_000_000) else AppState.playbackBitrate, profile(), ticks)
+            (if (target.isLiveChannel) null else takePrefetched(target.id))
+                ?: c.playbackInfo(target.id, if (target.isLiveChannel) AppState.playbackBitrate.coerceAtMost(40_000_000) else AppState.playbackBitrate, profile(), ticks)
         } catch (e: Exception) { error = e.message ?: "Couldn't start playback."; loading = false; return }
         val src = info.mediaSources.firstOrNull() ?: run { error = "Nothing playable in this item."; loading = false; return }
         playSessionId = info.playSessionId; mediaSourceId = src.id; liveStreamId = src.liveStreamId

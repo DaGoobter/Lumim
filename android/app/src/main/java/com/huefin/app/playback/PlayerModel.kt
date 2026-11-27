@@ -101,8 +101,10 @@ class PlayerModel(var request: PlaybackRequest, val backend: Backend) {
         val c = client ?: run { error = "Not connected to your server."; return }
         val max = AppState.playbackBitrate
         val info = try {
-            c.playbackInfo(item.id, max, EngineDecider.profile(max), startTicks, mediaSourceId = request.mediaSourceId,
-                enableDirectPlay = true, subtitleStreamIndex = if (backend is MpvBackend) null else -1)
+            // The engine plays the original file, so the item page's answer is all it needs (Instant Play).
+            (if (backend is MpvBackend) EngineDecider.recentInfo(item.id, request.mediaSourceId, max) else null)
+                ?: c.playbackInfo(item.id, max, EngineDecider.profile(max), startTicks, mediaSourceId = request.mediaSourceId,
+                    enableDirectPlay = true, subtitleStreamIndex = if (backend is MpvBackend) null else -1)
         } catch (e: Exception) { error = e.message ?: "Couldn't start playback."; loading = false; return }
         val src = info.mediaSources.firstOrNull { it.id == request.mediaSourceId } ?: info.mediaSources.firstOrNull()
             ?: run { error = "Nothing playable in this item."; loading = false; return }

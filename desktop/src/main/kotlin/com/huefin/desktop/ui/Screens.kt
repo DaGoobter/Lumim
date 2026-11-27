@@ -274,6 +274,7 @@ private fun DetailScreen(start: BaseItem) {
     val showId = if (item.type == "Season") item.seriesId else if (item.isSeries) item.id else null
     LaunchedEffect(item.id) {
         val cl = c ?: return@LaunchedEffect
+        com.huefin.desktop.player.PlayerController.prefetch(item)   // Instant Play: Play won't wait for the server
         similar = cl.similar(if (item.type == "Season" || item.type == "Episode") item.seriesId ?: item.id else item.id)
         if (showId != null) {
             seasons = runCatching { cl.seasons(showId) }.getOrDefault(emptyList())
