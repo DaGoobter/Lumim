@@ -1261,7 +1261,8 @@ extension NativeCore {
         let vi = av_find_best_stream(ctx, AVMEDIA_TYPE_VIDEO, -1, -1, nil, 0)
         guard vi >= 0, let vs = ctx.pointee.streams[Int(vi)] else { r.fallbackReason = "no video"; return r }
         guard let prepared = prepareVideo(ctx, vs, vi) else { r.fallbackReason = "mpv: no usable decoder setup"; return r }
-        let core = NativeCore()
+        // The core owns a view, so it's made on the main thread (making views elsewhere can stall for seconds).
+        let core: NativeCore = Thread.isMainThread ? NativeCore() : DispatchQueue.main.sync { NativeCore() }
         guard let format = core.makeVideoFormat(vs, config: prepared.config) else { r.fallbackReason = "mpv: codec or profile"; return r }
         guard decodesFirstFrame(format, keyframe: prepared.keyframe) else { r.fallbackReason = "mpv: Apple's decoder refused the first frame"; return r }
         r.nativeVideo = true
