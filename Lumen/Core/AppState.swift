@@ -46,6 +46,9 @@ final class AppState {
     @ObservationIgnored private var lastSpeedTest: Date?
     @ObservationIgnored private var speedTask: Task<Void, Never>?
 
+    /// On cellular or another metered connection (Instant Play doesn't pre-load there).
+    var onCellular: Bool { monitor.currentPath.isExpensive }
+
     /// The quality limit playback actually uses. With Automatic on, it's what the connection can carry with
     /// headroom (so big files play untouched when it can, and the server sends a lighter stream when it can't).
     var playbackBitrate: Int {

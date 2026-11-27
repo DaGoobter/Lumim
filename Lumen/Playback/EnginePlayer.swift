@@ -135,8 +135,7 @@ final class EnginePlayerModel {
             // Usually already known from the page you pressed Play on; only ask the server when it isn't.
             let full = item.mediaSources?.isEmpty == false ? item : ((try? await client.item(item.id)) ?? item)
             let src = full.mediaSources?.first(where: { $0.id == request.mediaSourceId }) ?? full.mediaSources?.first
-            let sourceId = request.mediaSourceId ?? src?.id ?? item.id
-            url = client.directPlayURL(itemId: item.id, mediaSourceId: sourceId, container: src?.container)
+            url = Self.sourceURL(for: full, mediaSourceId: request.mediaSourceId, client: client)
             #if canImport(Libavformat) && canImport(Libavcodec) && canImport(Libswresample)
             if usesNativeCore && !NativeCore.canPlay(src) { useMPVCore() }
             #endif
@@ -184,8 +183,33 @@ final class EnginePlayerModel {
     @ObservationIgnored private var serverAudioNames: [String] = []
     @ObservationIgnored private var serverSubNames: [String] = []
 
+    /// The address of the original file the engine plays (the same one Instant Play opens ahead of time).
+    static func sourceURL(for item: BaseItem, mediaSourceId: String?, client: JellyfinClient) -> URL {
+        let src = item.mediaSources?.first(where: { $0.id == mediaSourceId }) ?? item.mediaSources?.first
+        let sourceId = mediaSourceId ?? src?.id ?? item.id
+        return client.directPlayURL(itemId: item.id, mediaSourceId: sourceId, container: src?.container)
+    }
+
+    /// Instant Play for the next episode: open it in the background during the last minute and a half.
+    @ObservationIgnored private var nextWarmed = false
+    private func warmNextEpisode() {
+        #if canImport(Libavformat) && canImport(Libavcodec) && canImport(Libswresample)
+        guard !nextWarmed, usesNativeCore, duration > 120, duration - currentTime < 90, currentTime > 30,
+              item.type == "Episode", request.localDownload == nil, let client else { return }
+        nextWarmed = true
+        Task {
+            guard let next = await client.episodeAfter(item), let full = try? await client.item(next.id) else { return }
+            let src = full.mediaSources?.first
+            guard NativeCore.canPlay(src) else { return }
+            NativeCore.prewarm(url: Self.sourceURL(for: full, mediaSourceId: nil, client: client),
+                               start: Double(full.resumeTicks) / 10_000_000)
+        }
+        #endif
+    }
+
     private func tick() {
         guard !stopped else { return }
+        warmNextEpisode()
         let t = player.time
         if t >= 0, !isLoading { currentTime = t }
         let len = player.duration

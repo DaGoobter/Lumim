@@ -116,6 +116,15 @@ struct ItemDetailView: View {
             }
             playability = await EngineDecider.playability(for: it, client: client, maxBitrate: app.playbackBitrate,
                                                           mediaSourceId: version)
+            // Instant Play: when the Huefin Engine will play this, open the file now so Play starts right away.
+            // (Not on cellular data, which would spend a few MB on a movie you might not play.)
+            #if canImport(Libavformat) && canImport(Libavcodec) && canImport(Libswresample)
+            if let p = playability, p.kind == .prismEngine, p.nativeOK, !app.onCellular,
+               it.type == "Movie" || it.type == "Episode" {
+                NativeCore.prewarm(url: EnginePlayerModel.sourceURL(for: it, mediaSourceId: version, client: client),
+                                   start: Double(it.resumeTicks) / 10_000_000)
+            }
+            #endif
         }
         .artColor(from: shown.flatMap { app.client?.backdropURL(for: $0, width: 400) }, into: $artColor)
         .fullScreenCover(item: $playRequest, onDismiss: { Task { await load() } }) { PlayerScreen(request: $0) }

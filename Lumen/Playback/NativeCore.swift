@@ -182,47 +182,18 @@ final class NativeCore: NSObject, EngineCore {
 
     private func demuxMain(url: URL, start: Double) {
         defer { demuxDone.signal() }
-        var fmt: UnsafeMutablePointer<AVFormatContext>? = nil
-        var opts: OpaquePointer? = nil
-        // Keep one connection to the server open across seeks (no new handshake each time) and skip radio metadata.
-        for (k, v) in [("reconnect", "1"), ("reconnect_streamed", "1"), ("reconnect_on_network_error", "1"),
-                       ("reconnect_delay_max", "4"), ("rw_timeout", "30000000"), ("user_agent", "Huefin"),
-                       ("multiple_requests", "1"), ("icy", "0")] {
-            av_dict_set(&opts, k, v, 0)
+        // Opened ahead of time (Instant Play) when possible; otherwise open it now.
+        let warmed = Self.takeWarm(url: url, start: start)
+        guard let w = warmed ?? Self.openFile(url: url, start: start), w.decodesOK else {
+            fail("", fallback: true, at: start); return
         }
-        let path = url.isFileURL ? url.path : url.absoluteString
-        let t0 = CACurrentMediaTime()
-        fmt = avformat_alloc_context()
-        // MKV and MP4 describe their tracks in the header, so a short look is enough (FFmpeg's default reads up to
-        // 5 MB, which on a big 4K file is a noticeable wait before anything happens).
-        fmt?.pointee.probesize = 2_000_000
-        fmt?.pointee.max_analyze_duration = 1_500_000
-        let openResult = avformat_open_input(&fmt, path, nil, &opts)
-        av_dict_free(&opts)
-        guard openResult >= 0, let ctx = fmt else { fail("Couldn't open the file (\(openResult)).", fallback: true, at: start); return }
-        defer { var c: UnsafeMutablePointer<AVFormatContext>? = ctx; avformat_close_input(&c) }
-        guard avformat_find_stream_info(ctx, nil) >= 0 else { fail("Couldn't read the file.", fallback: true, at: start); return }
-        let tOpen = CACurrentMediaTime()
-
-        let videoIndex = av_find_best_stream(ctx, AVMEDIA_TYPE_VIDEO, -1, -1, nil, 0)
-        // Resuming: go straight to the spot once and test-decode the keyframe there, instead of peeking at the
-        // start of the file, jumping back, then jumping again (three trips to the server before a picture).
-        if start > 0.5 { av_seek_frame(ctx, -1, Int64(start * 1_000_000), AVSEEK_FLAG_BACKWARD) }
-        // Everything read while peeking is kept and played, so nothing has to be downloaded twice.
-        let stash = PacketStash()
-        defer { stash.clear() }
-        guard videoIndex >= 0, let vStream = ctx.pointee.streams[Int(videoIndex)],
-              let prepared = Self.prepareVideo(ctx, vStream, videoIndex, stash: stash),
-              let format = makeVideoFormat(vStream, config: prepared.config),
-              // Pre-flight: Apple's decoder must turn the first keyframe into a picture before we commit to it.
-              // Anything it can't show (odd tags, missing setup data, unusual profiles) goes to mpv instead of
-              // playing sound over a black screen.
-              Self.decodesFirstFrame(format, keyframe: prepared.keyframe)
-        else { fail("", fallback: true, at: start); return }
-        let tReady = CACurrentMediaTime()
-        DispatchQueue.main.async { [weak self] in
-            self?.startTimings = String(format: "open %.2fs · first frame ready %.2fs", tOpen - t0, tReady - t0)
-        }
+        defer { w.close() }
+        let ctx = w.ctx, videoIndex = w.videoIndex, stash = w.stash
+        guard let vStream = ctx.pointee.streams[Int(videoIndex)],
+              let format = makeVideoFormat(vStream, config: w.config) else { fail("", fallback: true, at: start); return }
+        let timings = warmed != nil ? "opened ahead of time (Instant Play)"
+                                    : String(format: "open %.2fs · first frame ready %.2fs", w.openSeconds, w.readySeconds)
+        DispatchQueue.main.async { [weak self] in self?.startTimings = timings }
         let durUs = ctx.pointee.duration
         let fps = vStream.pointee.avg_frame_rate
         DispatchQueue.main.async { [weak self] in
@@ -361,10 +332,131 @@ final class NativeCore: NSObject, EngineCore {
         }
     }
 
+    // MARK: - Opening a file (now, or ahead of time for Instant Play)
+
+    /// A file that's open, with its header read and the first picture checked, ready to play.
+    final class WarmOpen: @unchecked Sendable {
+        let url: URL, start: Double
+        let ctx: UnsafeMutablePointer<AVFormatContext>
+        let videoIndex: Int32
+        let config: Data
+        let stash: PacketStash
+        let decodesOK: Bool
+        let openSeconds: Double, readySeconds: Double
+        private var closed = false
+        init(url: URL, start: Double, ctx: UnsafeMutablePointer<AVFormatContext>, videoIndex: Int32, config: Data,
+             stash: PacketStash, decodesOK: Bool, openSeconds: Double, readySeconds: Double) {
+            self.url = url; self.start = start; self.ctx = ctx; self.videoIndex = videoIndex; self.config = config
+            self.stash = stash; self.decodesOK = decodesOK; self.openSeconds = openSeconds; self.readySeconds = readySeconds
+        }
+        func close() {
+            guard !closed else { return }
+            closed = true
+            stash.clear()
+            var c: UnsafeMutablePointer<AVFormatContext>? = ctx
+            avformat_close_input(&c)
+        }
+    }
+
+    /// Opens the file, reads its header and the first keyframe (at `start`), and test-decodes it.
+    fileprivate static func openFile(url: URL, start: Double) -> WarmOpen? {
+        var fmt: UnsafeMutablePointer<AVFormatContext>? = nil
+        var opts: OpaquePointer? = nil
+        // Keep one connection to the server open across seeks (no new handshake each time) and skip radio metadata.
+        for (k, v) in [("reconnect", "1"), ("reconnect_streamed", "1"), ("reconnect_on_network_error", "1"),
+                       ("reconnect_delay_max", "4"), ("rw_timeout", "30000000"), ("user_agent", "Huefin"),
+                       ("multiple_requests", "1"), ("icy", "0")] {
+            av_dict_set(&opts, k, v, 0)
+        }
+        let path = url.isFileURL ? url.path : url.absoluteString
+        let t0 = CACurrentMediaTime()
+        fmt = avformat_alloc_context()
+        // MKV and MP4 describe their tracks in the header, so a short look is enough (FFmpeg's default reads up to
+        // 5 MB, which on a big 4K file is a noticeable wait before anything happens).
+        fmt?.pointee.probesize = 2_000_000
+        fmt?.pointee.max_analyze_duration = 1_500_000
+        let openResult = avformat_open_input(&fmt, path, nil, &opts)
+        av_dict_free(&opts)
+        guard openResult >= 0, let ctx = fmt else { return nil }
+        guard avformat_find_stream_info(ctx, nil) >= 0 else { var c: UnsafeMutablePointer<AVFormatContext>? = ctx; avformat_close_input(&c); return nil }
+        let tOpen = CACurrentMediaTime()
+        let videoIndex = av_find_best_stream(ctx, AVMEDIA_TYPE_VIDEO, -1, -1, nil, 0)
+        // Resuming: go straight to the spot once and test-decode the keyframe there, instead of peeking at the
+        // start of the file, jumping back, then jumping again (three trips to the server before a picture).
+        if start > 0.5 { av_seek_frame(ctx, -1, Int64(start * 1_000_000), AVSEEK_FLAG_BACKWARD) }
+        // Everything read while peeking is kept and played, so nothing has to be downloaded twice.
+        let stash = PacketStash()
+        guard videoIndex >= 0, let vStream = ctx.pointee.streams[Int(videoIndex)],
+              let prepared = prepareVideo(ctx, vStream, videoIndex, stash: stash) else {
+            stash.clear(); var c: UnsafeMutablePointer<AVFormatContext>? = ctx; avformat_close_input(&c); return nil
+        }
+        // Pre-flight: Apple's decoder must turn the first keyframe into a picture before we commit to it. Anything
+        // it can't show (odd tags, missing setup data, unusual profiles) goes to mpv instead of a black screen.
+        let ok = videoFormat(vStream, config: prepared.config).map { decodesFirstFrame($0.format, keyframe: prepared.keyframe) } ?? false
+        return WarmOpen(url: url, start: start, ctx: ctx, videoIndex: videoIndex, config: prepared.config, stash: stash,
+                        decodesOK: ok, openSeconds: tOpen - t0, readySeconds: CACurrentMediaTime() - t0)
+    }
+
+    private static let warmLock = NSLock()
+    nonisolated(unsafe) private static var warm: WarmOpen?
+    nonisolated(unsafe) private static var warming: (url: URL, start: Double, done: DispatchSemaphore)?
+
+    /// Instant Play: open a file in the background before Play is pressed (on a movie's page, near the end of an
+    /// episode). If Play comes within 90 seconds, playback picks up from here instead of starting from scratch.
+    static func prewarm(url: URL, start: Double) {
+        warmLock.lock()
+        if let w = warm, w.url == url, abs(w.start - start) < 1 { warmLock.unlock(); return }
+        if let f = warming, f.url == url, abs(f.start - start) < 1 { warmLock.unlock(); return }
+        let old = warm; warm = nil
+        let done = DispatchSemaphore(value: 0)
+        warming = (url, start, done)
+        warmLock.unlock()
+        old?.close()
+        DispatchQueue.global(qos: .utility).async {
+            let w = openFile(url: url, start: start)
+            warmLock.lock()
+            let stillWanted = warming?.url == url
+            if stillWanted { warming = nil; warm = w }
+            warmLock.unlock()
+            done.signal()
+            guard stillWanted, let w else { if !stillWanted { w?.close() }; return }
+            DispatchQueue.global().asyncAfter(deadline: .now() + 90) {
+                warmLock.lock()
+                let expired = warm === w
+                if expired { warm = nil }
+                warmLock.unlock()
+                if expired { w.close() }
+            }
+        }
+    }
+
+    /// The pre-opened file for this URL and start time, if there is one (waits for one still opening).
+    fileprivate static func takeWarm(url: URL, start: Double) -> WarmOpen? {
+        warmLock.lock()
+        let pending = warming.flatMap { $0.url == url && abs($0.start - start) < 1 ? $0.done : nil }
+        warmLock.unlock()
+        if let pending { _ = pending.wait(timeout: .now() + 10) }
+        warmLock.lock(); defer { warmLock.unlock() }
+        guard let w = warm, w.url == url, abs(w.start - start) < 1 else { return nil }
+        warm = nil
+        return w
+    }
+
     // MARK: - Video
 
     /// Describes the video to Apple's decoder: HEVC / H.264 configuration, Dolby Vision record, HDR colour.
     private func makeVideoFormat(_ st: UnsafeMutablePointer<AVStream>, config: Data) -> CMVideoFormatDescription? {
+        guard let r = Self.videoFormat(st, config: config) else { return nil }
+        hdrLabel = r.label
+        if let dv = r.dvProfile { dvProfile = dv }
+        return r.format
+    }
+
+    /// The same, without needing a player (used when opening a file ahead of time).
+    fileprivate static func videoFormat(_ st: UnsafeMutablePointer<AVStream>, config: Data)
+        -> (format: CMVideoFormatDescription, label: String, dvProfile: Int?)? {
+        var hdrLabel = "SDR"
+        var dvProfile: Int? = nil
         guard let par = st.pointee.codecpar?.pointee else { return nil }
         let isHEVC = par.codec_id == AV_CODEC_ID_HEVC
         let isAV1 = par.codec_id == AV_CODEC_ID_AV1
@@ -424,7 +516,8 @@ final class NativeCore: NSObject, EngineCore {
         let status = CMVideoFormatDescriptionCreate(allocator: kCFAllocatorDefault, codecType: codec,
                                                     width: par.width, height: par.height,
                                                     extensions: ext as CFDictionary, formatDescriptionOut: &desc)
-        return status == noErr ? desc : nil
+        guard status == noErr, let desc else { return nil }
+        return (desc, hdrLabel, dvProfile)
     }
 
     // MARK: - Making odd files playable
