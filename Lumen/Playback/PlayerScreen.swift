@@ -718,6 +718,13 @@ final class SystemVolume {
         view.clipsToBounds = true
         view.alpha = 0.0001
         view.isUserInteractionEnabled = false
+        // Blank knob and track: with custom images iOS draws no glass at all.
+        let blank = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1)).image { _ in }
+        view.setVolumeThumbImage(blank, for: .normal)
+        view.setVolumeThumbImage(blank, for: .highlighted)
+        view.setMinimumVolumeSliderImage(blank, for: .normal)
+        view.setMaximumVolumeSliderImage(blank, for: .normal)
+        view.showsRouteButton = false
         observation = AVAudioSession.sharedInstance().observe(\.outputVolume, options: [.new]) { [weak self] session, _ in
             let v = session.outputVolume
             DispatchQueue.main.async { self?.level = v }
