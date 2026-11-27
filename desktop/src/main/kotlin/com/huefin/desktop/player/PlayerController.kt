@@ -175,6 +175,8 @@ class PlayerController(start: BaseItem, private val startTicks: Long, val onClos
         restarted = false
         p.set("start", if (ticks > 0) "%.3f".format(java.util.Locale.US, ticks / 10_000_000.0) else "none")
         p.command("loadfile", url, "replace")
+        subtitleDelay = com.huefin.desktop.core.Prefs.string("huefin.subDelay.${item.id}")?.toDoubleOrNull() ?: 0.0
+        p.set("sub-delay", "%.1f".format(java.util.Locale.US, subtitleDelay))
         p.set("pause", "no")
     }
 
@@ -328,6 +330,15 @@ class PlayerController(start: BaseItem, private val startTicks: Long, val onClos
     fun toggleMute() { muted = !muted; mp?.set("mute", if (muted) "yes" else "no") }
     fun selectAudio(id: Int) { mp?.set("aid", id.toString()); audioTrack = id }
     fun selectSubtitle(id: Int) { mp?.set("sid", if (id < 0) "no" else id.toString()); subtitleTrack = id }
+
+    /** Subtitle timing (seconds; positive = later), remembered per title. */
+    var subtitleDelay by mutableStateOf(0.0); private set
+    fun changeSubtitleDelay(seconds: Double) {
+        val v = Math.round(seconds * 10) / 10.0
+        subtitleDelay = v
+        mp?.set("sub-delay", "%.1f".format(java.util.Locale.US, v))
+        com.huefin.desktop.core.Prefs.set("huefin.subDelay.${item.id}", v.toString())
+    }
 
     fun close() {
         if (closed) return

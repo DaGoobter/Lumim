@@ -233,6 +233,20 @@ private fun TrackMenu(p: PlayerController, onOpen: (Boolean) -> Unit) {
             Text("Subtitles", Modifier.padding(horizontal = 14.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium, color = Hue.secondaryText)
             DropdownMenuItem({ Text((if (p.subtitleTrack < 0) "✓  " else "     ") + "Off") }, { p.selectSubtitle(-1); open = false; onOpen(false) })
             p.subtitleTracks.forEach { t -> DropdownMenuItem({ Text((if (t.id == p.subtitleTrack) "✓  " else "     ") + t.label) }, { p.selectSubtitle(t.id); open = false; onOpen(false) }) }
+            HorizontalDivider()
+            // Subtitle timing: the menu stays open so you can keep nudging while the video plays.
+            Text("Subtitle timing · " + syncLabel(p.subtitleDelay) + "   (G / H keys)", Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                style = MaterialTheme.typography.labelMedium, color = Hue.secondaryText)
+            Row(Modifier.padding(horizontal = 10.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf(-0.5, -0.1).forEach { d -> OutlinedButton({ p.changeSubtitleDelay(p.subtitleDelay + d) }) { Text("%.1f".format(d).replace("-", "−")) } }
+                OutlinedButton({ p.changeSubtitleDelay(0.0) }, enabled = p.subtitleDelay != 0.0) { Text("Reset") }
+                listOf(0.1, 0.5).forEach { d -> OutlinedButton({ p.changeSubtitleDelay(p.subtitleDelay + d) }) { Text("+%.1f".format(d)) } }
+            }
+            Text("Too early? Press +. Too late? Press −.", Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
+                style = MaterialTheme.typography.labelSmall, color = Hue.secondaryText)
         }
     }
 }
+
+private fun syncLabel(d: Double): String =
+    if (d == 0.0) "in sync" else "%s%.1f s %s".format(if (d > 0) "+" else "−", kotlin.math.abs(d), if (d > 0) "later" else "earlier")

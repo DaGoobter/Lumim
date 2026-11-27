@@ -100,6 +100,8 @@ object Nav {
             Key.DirectionDown -> p.changeVolume(p.volume - 5)
             Key.F -> toggleFullscreen()
             Key.M -> p.toggleMute()
+            Key.G -> p.changeSubtitleDelay(p.subtitleDelay - 0.1)   // subtitles earlier (same keys as VLC)
+            Key.H -> p.changeSubtitleDelay(p.subtitleDelay + 0.1)   // subtitles later
             Key.S -> if (p.activeSkip != null) p.skipSegment() else if (p.upNextIn != null) p.playNext()
             Key.Escape -> if (window?.placement == WindowPlacement.Fullscreen) toggleFullscreen() else p.close()
             else -> return false
