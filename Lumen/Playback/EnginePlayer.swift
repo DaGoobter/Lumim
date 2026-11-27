@@ -288,6 +288,27 @@ final class EnginePlayerModel {
         let v = UserDefaults.standard.double(forKey: "huefin.subDelay.\(item.id)")
         subtitleDelay = v
         player.subtitleDelay = v
+        let a = UserDefaults.standard.double(forKey: "huefin.audioDelay.\(item.id)")
+        audioDelay = a
+        player.audioDelay = a
+        nightMode = UserDefaults.standard.bool(forKey: "huefin.nightMode")
+        player.nightMode = nightMode
+    }
+
+    /// Audio sync (seconds; positive = sound later), remembered per title.
+    private(set) var audioDelay: Double = 0
+    func setAudioDelay(_ seconds: Double) {
+        let v = (seconds * 20).rounded() / 20
+        audioDelay = v
+        player.audioDelay = v
+        UserDefaults.standard.set(v, forKey: "huefin.audioDelay.\(item.id)")
+    }
+    /// Night mode (remembered for everything until turned off).
+    private(set) var nightMode = false
+    func setNightMode(_ on: Bool) {
+        nightMode = on
+        player.nightMode = on
+        UserDefaults.standard.set(on, forKey: "huefin.nightMode")
     }
     func setSpeed(_ s: Float) { speed = s; player.speed = Double(s) }
     func setVolume(_ v: Int32) { volume = v; player.volume = Double(v) }
@@ -404,6 +425,7 @@ struct EnginePlayerScreen: View {
     @State private var scrubValue: Double = 0
     @State private var scrubThumb: UIImage?
     @State private var showSubSync = false
+    @State private var showAudioSync = false
     @State private var fill = false
     // Picture in Picture: Apple's player warms up silently behind the engine, then takes over without a gap.
     @State private var standby: PlayerModel?
@@ -446,6 +468,14 @@ struct EnginePlayerScreen: View {
                 if showSubSync {
                     VStack { Spacer()
                         SubtitleSyncPanel(delay: model.subtitleDelay, set: { model.setSubtitleDelay($0) }, close: { showSubSync = false })
+                    }
+                    .padding(.bottom, 28)
+                }
+                if showAudioSync {
+                    VStack { Spacer()
+                        SubtitleSyncPanel(delay: model.audioDelay, set: { model.setAudioDelay($0) }, close: { showAudioSync = false },
+                                          title: "Audio sync", symbol: "waveform",
+                                          hint: "Voices before lips move? Press +. After? Press −.", steps: [0.25, 0.05])
                     }
                     .padding(.bottom, 28)
                 }
@@ -564,6 +594,15 @@ struct EnginePlayerScreen: View {
                         Section("Audio") {
                             ForEach(m.audioTracks, id: \.index) { t in
                                 Button { m.setAudio(t.index) } label: { check(t.name, t.index == m.audioTrack) }
+                            }
+                        }
+                        Section {
+                            Toggle(isOn: Binding(get: { m.nightMode }, set: { m.setNightMode($0) })) {
+                                Label("Night mode", systemImage: "moon.stars")
+                            }
+                            Button { showAudioSync = true; controlsVisible = false } label: {
+                                Label(m.audioDelay == 0 ? "Audio sync" : "Audio sync (\(SubtitleSyncPanel.label(m.audioDelay)))",
+                                      systemImage: "waveform.badge.magnifyingglass")
                             }
                         }
                         Section("Subtitles") {

@@ -90,6 +90,30 @@ final class NativeCore: NSObject, EngineCore {
     private var externalSubs: [(id: Int32, name: String)] = []
     private var reopenAudio = false
     private var noPassthrough = false
+    /// Sound later (positive) or earlier (negative) than the picture, in seconds.
+    private var audioDelayValue: Double = 0
+    /// Night mode: voices lifted, loud bangs tamed (decodes Dolby itself while on, so no spatial Atmos then).
+    private var nightModeValue = false
+    private var audioReapply: DispatchWorkItem?
+    var audioDelay: Double {
+        get { lock.lock(); defer { lock.unlock() }; return audioDelayValue }
+        set { lock.lock(); let changed = audioDelayValue != newValue; audioDelayValue = newValue; lock.unlock(); if changed { reapplyAudioSoon() } }
+    }
+    var nightMode: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return nightModeValue }
+        set { lock.lock(); let changed = nightModeValue != newValue; nightModeValue = newValue; lock.unlock(); if changed { reapplyAudioSoon() } }
+    }
+    /// Rebuilds the sound at the current moment (after a short pause in tapping, so nudges don't stutter).
+    private func reapplyAudioSoon() {
+        audioReapply?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.currentURL != nil else { return }
+            self.lock.lock(); self.reopenAudio = true; self.lock.unlock()
+            self.seek(to: self.time)
+        }
+        audioReapply = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
+    }
 
     // Main-thread state.
     private enum Phase { case idle, starting(Double), playing, buffering, ended }
@@ -264,8 +288,8 @@ final class NativeCore: NSObject, EngineCore {
             for i in 0..<Int(ctx.pointee.nb_streams) where ctx.pointee.streams[i]?.pointee.codecpar.pointee.codec_type == AVMEDIA_TYPE_AUDIO {
                 ctx.pointee.streams[i]?.pointee.discard = Int32(i) == index ? AVDISCARD_DEFAULT : AVDISCARD_ALL
             }
-            lock.lock(); let allow = !noPassthrough; lock.unlock()
-            audio = AudioPipe(stream: st, allowPassthrough: allow)
+            lock.lock(); let allow = !noPassthrough && !nightModeValue, delay = audioDelayValue, night = nightModeValue; lock.unlock()
+            audio = AudioPipe(stream: st, allowPassthrough: allow, delay: delay, night: night)
             let label = audio?.label ?? ""
             DispatchQueue.main.async { [weak self] in self?.audioLabel = label }
         }
@@ -1241,9 +1265,18 @@ private final class AudioPipe {
     private var pcmFormat: CMAudioFormatDescription?
     private var pcmChannels: Int32 = 0
     private var pcmRate: Int32 = 0
+    private var lastInChannels: Int32 = 0
     private let frame = av_frame_alloc()
 
-    init?(stream st: UnsafeMutablePointer<AVStream>, allowPassthrough: Bool) {
+    /// Added to every sound timestamp (audio sync).
+    private let delay: Double
+    /// Night mode: stereo mix with dialogue up front, plus a compressor.
+    private let night: Bool
+    private var compressor = NightCompressor()
+
+    init?(stream st: UnsafeMutablePointer<AVStream>, allowPassthrough: Bool, delay: Double = 0, night: Bool = false) {
+        self.delay = delay
+        self.night = night
         guard let par = st.pointee.codecpar?.pointee else { return nil }
         let id = par.codec_id
         let ch = par.ch_layout.nb_channels
@@ -1263,7 +1296,9 @@ private final class AudioPipe {
             if dec == nil { return nil }
         }
         let name = String(cString: avcodec_get_name(id)).uppercased().replacingOccurrences(of: "DCA", with: "DTS")
-        label = passthrough != nil ? "\(name) untouched" : "\(name) → PCM \(ch == 8 ? "7.1" : ch == 6 ? "5.1" : "\(ch)ch")"
+        label = passthrough != nil ? "\(name) untouched"
+            : night ? "\(name) → night mode (stereo, dialogue boosted)"
+            : "\(name) → PCM \(ch == 8 ? "7.1" : ch == 6 ? "5.1" : "\(ch)ch")"
     }
 
     func flush() { if let dec { avcodec_flush_buffers(dec) } }
@@ -1276,7 +1311,9 @@ private final class AudioPipe {
 
     func samples(for p: UnsafeMutablePointer<AVPacket>, tb: AVRational, dropBefore: Double) -> [CMSampleBuffer] {
         if let fd = passthrough {
-            let pts = p.pointee.pts != AV_NOPTS ? CMTimeMake(value: p.pointee.pts * Int64(tb.num), timescale: tb.den) : .invalid
+            let pts = p.pointee.pts != AV_NOPTS
+                ? CMTimeAdd(CMTimeMake(value: p.pointee.pts * Int64(tb.num), timescale: tb.den), CMTime(seconds: delay, preferredTimescale: 90_000))
+                : .invalid
             let dur = Double(p.pointee.duration) * Double(tb.num) / Double(tb.den)
             if pts.isValid && pts.seconds + dur < dropBefore { return [] }
             guard let data = p.pointee.data, let bb = NativeCore.block(data, Int(p.pointee.size)) else { return [] }
@@ -1305,8 +1342,12 @@ private final class AudioPipe {
             var outPtrs: [UnsafeMutablePointer<UInt8>?] = [buf]
             let inPtrs = UnsafeRawPointer(frame.pointee.extended_data).assumingMemoryBound(to: UnsafePointer<UInt8>?.self)
             let got = outPtrs.withUnsafeMutableBufferPointer { o in swr_convert(swr, o.baseAddress, n, inPtrs, n) }
-            guard got > 0, let bb = NativeCore.block(buf, Int(got) * ch * 4) else { continue }
-            let pts = start.isFinite ? CMTime(seconds: start, preferredTimescale: rate) : .invalid
+            guard got > 0 else { continue }
+            if night {
+                buf.withMemoryRebound(to: Float.self, capacity: Int(got) * ch) { compressor.process($0, frames: Int(got), channels: ch, rate: Double(rate)) }
+            }
+            guard let bb = NativeCore.block(buf, Int(got) * ch * 4) else { continue }
+            let pts = start.isFinite ? CMTime(seconds: start + delay, preferredTimescale: rate) : .invalid
             var sb: CMSampleBuffer?
             CMAudioSampleBufferCreateReadyWithPacketDescriptions(allocator: kCFAllocatorDefault, dataBuffer: bb, formatDescription: fd,
                                                                  sampleCount: CMItemCount(got), presentationTimeStamp: pts,
@@ -1318,16 +1359,28 @@ private final class AudioPipe {
 
     /// Sets up the converter and the PCM description (with the right speaker positions) for this frame's layout.
     private func prepare(_ f: AVFrame) -> Bool {
-        let ch = f.ch_layout.nb_channels
-        if swr != nil && ch == pcmChannels && f.sample_rate == pcmRate { return true }
+        let inCh = f.ch_layout.nb_channels
+        let outCh: Int32 = night && inCh > 2 ? 2 : inCh
+        if swr != nil && outCh == pcmChannels && f.sample_rate == pcmRate && inCh == lastInChannels { return true }
+        lastInChannels = inCh
         if swr != nil { swr_free(&swr) }
         var inLayout = f.ch_layout
         var outLayout = AVChannelLayout()
-        av_channel_layout_copy(&outLayout, &inLayout)
+        // Night mode mixes surround down to stereo with the centre (dialogue) channel at full level.
+        let downmix = night && f.ch_layout.nb_channels > 2
+        if downmix { av_channel_layout_default(&outLayout, 2) } else { av_channel_layout_copy(&outLayout, &inLayout) }
         defer { av_channel_layout_uninit(&outLayout) }
         let inFormat = AVSampleFormat(rawValue: f.format)
-        guard swr_alloc_set_opts2(&swr, &outLayout, AV_SAMPLE_FMT_FLT, f.sample_rate, &inLayout, inFormat, f.sample_rate, 0, nil) >= 0,
-              swr_init(swr) >= 0 else { return false }
+        guard swr_alloc_set_opts2(&swr, &outLayout, AV_SAMPLE_FMT_FLT, f.sample_rate, &inLayout, inFormat, f.sample_rate, 0, nil) >= 0
+        else { return false }
+        if downmix, let sw = swr {
+            let o = UnsafeMutableRawPointer(sw)
+            av_opt_set_double(o, "center_mix_level", 1.0, 0)      // voices: full level (default −3 dB)
+            av_opt_set_double(o, "surround_mix_level", 0.5, 0)    // effects and music around: −6 dB
+            av_opt_set_double(o, "lfe_mix_level", 0, 0)           // no rumble from the sub channel
+        }
+        guard swr_init(swr) >= 0 else { return false }
+        let ch = outLayout.nb_channels
         pcmChannels = ch; pcmRate = f.sample_rate
 
         var asbd = AudioStreamBasicDescription(mSampleRate: Float64(f.sample_rate), mFormatID: kAudioFormatLinearPCM,
@@ -1374,6 +1427,35 @@ private final class AudioPipe {
         else { return false }
         pcmFormat = fd
         return true
+    }
+}
+
+/// Night mode's compressor: quiet speech up, sudden loud moments down, never clipping.
+/// A smooth feed-forward compressor (−26 dB threshold, 3:1, 10 ms attack, 250 ms release, +8 dB make-up)
+/// followed by a soft ceiling at −1 dBFS. Linked across channels so the stereo image doesn't wander.
+private struct NightCompressor {
+    private var envelope: Float = 0
+    private var gain: Float = 1
+
+    mutating func process(_ x: UnsafeMutablePointer<Float>, frames: Int, channels: Int, rate: Double) {
+        guard frames > 0, channels > 0 else { return }
+        let attack = Float(exp(-1.0 / (0.010 * rate))), release = Float(exp(-1.0 / (0.250 * rate)))
+        let threshold: Float = -26, ratio: Float = 3, makeup: Float = 8, ceiling: Float = 0.89
+        for i in 0..<frames {
+            var peak: Float = 0
+            for c in 0..<channels { peak = max(peak, abs(x[i * channels + c])) }
+            envelope = peak > envelope ? attack * envelope + (1 - attack) * peak : release * envelope + (1 - release) * peak
+            let level = 20 * log10(max(envelope, 1e-6))
+            let over = level - threshold
+            let reduce = over > 0 ? over * (1 - 1 / ratio) : 0
+            let target = powf(10, (makeup - reduce) / 20)
+            gain += (target - gain) * 0.002          // glide, no zipper noise
+            for c in 0..<channels {
+                var v = x[i * channels + c] * gain
+                if abs(v) > ceiling { v = (v > 0 ? 1 : -1) * (ceiling + (1 - ceiling) * tanhf((abs(v) - ceiling) / (1 - ceiling))) }
+                x[i * channels + c] = v
+            }
+        }
     }
 }
 

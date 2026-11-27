@@ -211,6 +211,18 @@ final class MPVCore: EngineCore {
     var isPlaying: Bool { !isPaused && !isIdle && !flag("core-idle") }
     var speed: Double { get { double("speed") ?? 1 } set { setDouble("speed", newValue) } }
     var subtitleDelay: Double { get { double("sub-delay") ?? 0 } set { setDouble("sub-delay", newValue) } }
+    var audioDelay: Double { get { double("audio-delay") ?? 0 } set { setDouble("audio-delay", newValue) } }
+    private var night = false
+    var nightMode: Bool {
+        get { night }
+        set {
+            night = newValue
+            // Same idea as the native engine: stereo with full-level dialogue, then a gentle compressor and a ceiling.
+            // (mpv's own downmix handles any layout; a fixed channel map would break on stereo files.)
+            setString("audio-channels", newValue ? "stereo" : "auto")
+            setString("af", newValue ? "lavfi=[acompressor=threshold=-26dB:ratio=3:attack=10:release=250:makeup=8],lavfi=[alimiter=limit=0.89]" : "")
+        }
+    }
     var videoAspect: Double {
         guard let w = double("video-params/dw"), let h = double("video-params/dh"), w > 0, h > 0 else { return 16.0 / 9.0 }
         return w / h

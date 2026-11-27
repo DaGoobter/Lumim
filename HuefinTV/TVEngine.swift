@@ -17,19 +17,30 @@ enum EngineMenus {
     static let buttons: [(title: String, symbol: String)] = [("Subtitles", "captions.bubble"), ("Audio", "speaker.wave.2"),
                                                              ("Speed", "gauge.with.dots.needle.67percent"), ("Subtitle timing", "timer")]
     static let timingSteps: [Double] = [-0.5, -0.1, 0, 0.1, 0.5]
+    static let audioSteps: [Double] = [-0.25, -0.05, 0, 0.05, 0.25]
+    @MainActor static func audioExtras(_ m: EnginePlayerModel) -> [(name: String, on: Bool)] {
+        [("Night mode (dialogue boost)", m.nightMode)] + audioSteps.map {
+            ($0 == 0 ? "Audio sync: reset" : String(format: "Audio sync %@%.2f s", $0 > 0 ? "+" : "−", abs($0)), false)
+        }
+    }
+    /// Rows that change a setting rather than pick a track keep the pop-up open.
+    @MainActor static func keepsOpen(_ menu: Int, _ row: Int, _ m: EnginePlayerModel) -> Bool {
+        menu == 3 || (menu == 1 && row >= m.audioTracks.count)
+    }
     static func timingLabel(_ d: Double) -> String {
         d == 0 ? "in sync" : String(format: "%@%.1f s %@", d > 0 ? "+" : "−", abs(d), d > 0 ? "later" : "earlier")
     }
     /// The heading of a pop-up (the timing one shows the current setting).
     @MainActor static func title(_ menu: Int, _ m: EnginePlayerModel) -> String {
-        menu == 3 ? "Subtitle timing · \(timingLabel(m.subtitleDelay))" : buttons[menu].title
+        menu == 3 ? "Subtitle timing · \(timingLabel(m.subtitleDelay))"
+            : menu == 1 ? "Audio · sync \(timingLabel(m.audioDelay))" : buttons[menu].title
     }
     static let speeds: [Float] = [0.5, 0.75, 1, 1.25, 1.5, 2]
 
     @MainActor static func options(_ menu: Int, _ m: EnginePlayerModel) -> [(name: String, on: Bool)] {
         switch menu {
         case 0: return m.subtitleTracks.map { ($0.name, $0.index == m.subtitleTrack) }
-        case 1: return m.audioTracks.map { ($0.name, $0.index == m.audioTrack) }
+        case 1: return m.audioTracks.map { ($0.name, $0.index == m.audioTrack) } + audioExtras(m)
         case 2: return speeds.map { ($0 == 1 ? "Normal" : String(format: "%gx", $0), $0 == m.speed) }
         default: return timingSteps.map { ($0 == 0 ? "Reset" : String(format: "%@%.1f s", $0 > 0 ? "+" : "−", abs($0)), false) }
         }
@@ -37,7 +48,14 @@ enum EngineMenus {
     @MainActor static func choose(_ menu: Int, _ row: Int, _ m: EnginePlayerModel) {
         switch menu {
         case 0: if m.subtitleTracks.indices.contains(row) { m.setSubtitle(m.subtitleTracks[row].index) }
-        case 1: if m.audioTracks.indices.contains(row) { m.setAudio(m.audioTracks[row].index) }
+        case 1:
+            if m.audioTracks.indices.contains(row) { m.setAudio(m.audioTracks[row].index); return }
+            let extra = row - m.audioTracks.count
+            if extra == 0 { m.setNightMode(!m.nightMode) }
+            else if audioSteps.indices.contains(extra - 1) {
+                let step = audioSteps[extra - 1]
+                m.setAudioDelay(step == 0 ? 0 : m.audioDelay + step)   // voices before lips: +
+            }
         case 2: if speeds.indices.contains(row) { m.setSpeed(speeds[row]) }
         default:
             // Subtitles too early: +. Too late: −.
@@ -171,8 +189,9 @@ final class TVEngineViewController: UIViewController {
 
     private func onSelect() {
         if let menu = ui.menu {
+            let keep = EngineMenus.keepsOpen(menu, ui.row, model)
             EngineMenus.choose(menu, ui.row, model)
-            if menu != 3 { ui.menu = nil }   // timing stays open so you can keep nudging
+            if !keep { ui.menu = nil }   // timing and sync stay open so you can keep nudging
             reveal(); return
         }
         if let b = ui.button, ui.showControls {

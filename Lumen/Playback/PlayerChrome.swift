@@ -180,26 +180,35 @@ struct SubtitleSyncPanel: View {
     let delay: Double
     let set: (Double) -> Void
     let close: () -> Void
+    var title = "Subtitle timing"
+    var symbol = "timer"
+    var hint = "Subtitles too early? Press +. Too late? Press −."
+    /// Big and small step sizes.
+    var steps: [Double] = [0.5, 0.1]
 
     static func label(_ d: Double) -> String {
-        d == 0 ? "in sync" : String(format: "%@%.1f s %@", d > 0 ? "+" : "−", abs(d), d > 0 ? "later" : "earlier")
+        d == 0 ? "in sync" : String(format: "%@%@ s %@", d > 0 ? "+" : "−", fmt(abs(d)), d > 0 ? "later" : "earlier")
+    }
+    static func fmt(_ v: Double) -> String {
+        let r = (v * 100).rounded() / 100
+        return r == (r * 10).rounded() / 10 ? String(format: "%.1f", r) : String(format: "%.2f", r)
     }
 
     var body: some View {
         VStack(spacing: 12) {
             HStack {
-                Label("Subtitle timing", systemImage: "timer").font(.headline)
+                Label(title, systemImage: symbol).font(.headline)
                 Spacer()
                 Button("Done", action: close).font(.headline)
             }
             Text(Self.label(delay)).font(.title3.monospacedDigit().weight(.semibold))
             HStack(spacing: 10) {
-                step("−0.5", -0.5); step("−0.1", -0.1)
+                step("−" + Self.fmt(steps[0]), -steps[0]); step("−" + Self.fmt(steps[1]), -steps[1])
                 Button { set(0) } label: { Image(systemName: "arrow.counterclockwise") }
                     .buttonStyle(.bordered).tint(.white).disabled(delay == 0)
-                step("+0.1", 0.1); step("+0.5", 0.5)
+                step("+" + Self.fmt(steps[1]), steps[1]); step("+" + Self.fmt(steps[0]), steps[0])
             }
-            Text("Subtitles too early? Press +. Too late? Press −.").font(.caption).foregroundStyle(.secondary)
+            Text(hint).font(.caption).foregroundStyle(.secondary)
         }
         .padding(18)
         .frame(maxWidth: 420)

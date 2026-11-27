@@ -57,6 +57,10 @@ protocol EngineCore: AnyObject {
     var subtitleDelay: Double { get set }
     /// The video's shape (width ÷ height).
     var videoAspect: Double { get }
+    /// Audio sync: sound later (positive) or earlier (negative), seconds.
+    var audioDelay: Double { get set }
+    /// Night mode: dialogue lifted, loud moments tamed.
+    var nightMode: Bool { get set }
 
     #if os(tvOS)
     /// Asks the TV for the video's dynamic range and frame rate (Match Content). True if a switch was requested.
