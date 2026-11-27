@@ -60,6 +60,7 @@ struct AppleVideoPlayerScreen: View {
     @State private var model: PlayerModel?
     @State private var showInfo = false
     @State private var showSubtitleSearch = false
+    @State private var showSubSync = false
     @State private var showSyncPlay = false
     @State private var controlsVisible = true
     @State private var hideTask: Task<Void, Never>?
@@ -100,6 +101,16 @@ struct AppleVideoPlayerScreen: View {
                         .gesture(pinch(fillScale: fillScale(model: model, size: geo.size)))
                         .onTapGesture(count: 2) { toggleFill(model: model, size: geo.size) }
                         .onTapGesture { toggleControls() }
+                    // Text subtitles drawn by Huefin, timed to the picture.
+                    EngineSubtitleView(subtitle: model.drawnSubtitle, aspect: videoAspect(model))
+                        .scaleEffect(zoom)
+                    if showSubSync {
+                        VStack { Spacer()
+                            SubtitleSyncPanel(delay: model.subtitleDelay, set: { model.setSubtitleDelay($0) },
+                                              close: { showSubSync = false })
+                        }
+                        .padding(.bottom, 28)
+                    }
 
                     if model.isLoading && model.errorMessage == nil {
                         VStack(spacing: 14) {
@@ -302,7 +313,8 @@ struct AppleVideoPlayerScreen: View {
                     if !model.isOffline, let source = model.source {
                         TrackMenu(model: model, source: source,
                                   onSearch: { showSubtitleSearch = true },
-                                  onPick: { scheduleHide() })
+                                  onPick: { scheduleHide() },
+                                  onSync: { showSubSync = true; controlsVisible = false })
                     }
                     PlayerMoreMenu(model: model, compact: !wide, timeString: timeString,
                                    onSyncPlay: { showSyncPlay = true }, onInfo: { showInfo = true },
@@ -456,6 +468,7 @@ struct TrackMenu: View {
     let source: MediaSource
     let onSearch: () -> Void
     let onPick: () -> Void
+    var onSync: () -> Void = {}
 
     var body: some View {
         Menu {
@@ -488,6 +501,14 @@ struct TrackMenu: View {
                 }
                 Button(action: onSearch) {
                     Label("Search online…", systemImage: "magnifyingglass")
+                }
+            }
+            if model.subtitlesDrawnByApp {
+                Section {
+                    Button(action: onSync) {
+                        Label(model.subtitleDelay == 0 ? "Subtitle timing" : "Subtitle timing (\(SubtitleSyncPanel.label(model.subtitleDelay)))",
+                              systemImage: "timer")
+                    }
                 }
             }
         } label: {
@@ -1103,5 +1124,13 @@ struct PlayerMoreMenu: View {
 
     private func label(_ s: Float) -> String {
         s == 1 ? "Normal" : (s.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(s))×" : String(format: "%g×", s))
+    }
+}
+
+extension AppleVideoPlayerScreen {
+    /// The picture's shape, so drawn subtitles line up with the video on any aspect ratio.
+    func videoAspect(_ model: PlayerModel) -> Double {
+        let size = model.player.currentItem?.presentationSize ?? .zero
+        return size.width > 0 && size.height > 0 ? Double(size.width / size.height) : 16.0 / 9.0
     }
 }

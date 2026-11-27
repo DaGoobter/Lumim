@@ -105,6 +105,58 @@ final class PlayerModel {
     /// -1 = subtitles off.
     private(set) var subtitleIndex: Int = -1
 
+    // MARK: Subtitles drawn by Huefin (text subtitles stay in sync and keep the original file playing)
+    /// The subtitle on screen right now (drawn over the video by the player screen).
+    private(set) var drawnSubtitle: EngineSubtitle?
+    /// Subtitle timing (seconds; positive = later), remembered per title.
+    private(set) var subtitleDelay: Double = 0
+    @ObservationIgnored private var appSubs: AppSubtitles?
+    @ObservationIgnored private var subtitleObserver: Any?
+    /// Huefin draws text subtitles itself, except offline, on AirPlay (the TV draws them) and on live TV.
+    private var drawsSubtitles: Bool { request.localDownload == nil && !airPlayMode && !isLive }
+    private func stream(_ index: Int, in src: MediaSource?) -> MediaStream? {
+        guard index >= 0 else { return nil }
+        return src?.subtitleStreams.first { $0.index == index }
+    }
+    /// The subtitle the server has to put into its stream: only picture subtitles (or when Huefin can't draw).
+    private func serverSubtitle(in src: MediaSource?) -> Int {
+        guard drawsSubtitles, let s = stream(subtitleIndex, in: src) else { return subtitleIndex }
+        return AppSubtitles.isText(s) ? -1 : subtitleIndex
+    }
+    var subtitlesDrawnByApp: Bool { drawsSubtitles && stream(subtitleIndex, in: source).map(AppSubtitles.isText) == true }
+
+    func setSubtitleDelay(_ seconds: Double) {
+        let v = (seconds * 10).rounded() / 10
+        subtitleDelay = v
+        UserDefaults.standard.set(v, forKey: "huefin.subDelay.\(request.item.id)")
+        updateDrawnSubtitle()
+    }
+
+    /// Downloads the chosen text subtitle (once) or clears it.
+    private func refreshAppSubtitles() async {
+        subtitleDelay = UserDefaults.standard.double(forKey: "huefin.subDelay.\(request.item.id)")
+        guard drawsSubtitles, let client, let src = source, let mid = mediaSourceId,
+              let s = stream(subtitleIndex, in: src), AppSubtitles.isText(s) else {
+            appSubs = nil; drawnSubtitle = nil; return
+        }
+        if appSubs?.streamIndex == subtitleIndex { return }
+        appSubs = nil; drawnSubtitle = nil
+        let itemId = request.item.id, wanted = subtitleIndex
+        let loaded = await AppSubtitles.load(client: client, itemId: itemId, mediaSourceId: mid, stream: s)
+        guard wanted == subtitleIndex, itemId == request.item.id else { return }
+        appSubs = loaded
+        updateDrawnSubtitle()
+    }
+
+    private func updateDrawnSubtitle() {
+        guard let appSubs else { if drawnSubtitle != nil { drawnSubtitle = nil }; return }
+        let t = player.currentTime().seconds - subtitleDelay
+        guard t.isFinite else { return }
+        let size = player.currentItem?.presentationSize ?? .zero
+        let next = appSubs.subtitle(at: t, videoWidth: Int(size.width), videoHeight: Int(size.height))
+        if next != drawnSubtitle { drawnSubtitle = next }
+    }
+
     var isOffline: Bool { request.localDownload != nil }
     var isLive: Bool { request.item.isLiveChannel }
     /// What's on now (live channels).
@@ -211,6 +263,10 @@ final class PlayerModel {
         uiTimeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.5, preferredTimescale: 600),
                                                         queue: .main) { [weak self] _ in
             Task { @MainActor [weak self] in self?.refreshClock() }
+        }
+        subtitleObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.1, preferredTimescale: 600),
+                                                          queue: .main) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.updateDrawnSubtitle() }
         }
         setupRemoteCommands()
         player.allowsExternalPlayback = true
@@ -591,8 +647,15 @@ final class PlayerModel {
     /// Switch audio and/or subtitle track. Reloads the stream at the current position.
     func selectTracks(audio: Int?, subtitle: Int) async {
         guard audio != audioIndex || subtitle != subtitleIndex else { return }
-        audioIndex = audio
+        // Only switching between text subtitles (or off) that Huefin draws: instant, no reload.
+        let before = serverSubtitle(in: source)
+        let oldSub = subtitleIndex
         subtitleIndex = subtitle
+        if audio == audioIndex && before == serverSubtitle(in: source) && drawsSubtitles && oldSub != subtitle {
+            await refreshAppSubtitles()
+            return
+        }
+        audioIndex = audio
         let seconds = player.currentTime().seconds
         let ticks = seconds.isFinite ? Int64(seconds * 10_000_000) : request.startTicks
         if let old = playSessionId, let client { await client.stopEncoding(playSessionId: old) }
@@ -644,10 +707,12 @@ final class PlayerModel {
                 guard let client else { throw JellyfinError.noMediaSource }
                 // A non-default track needs the server's stream, which carries exactly the chosen tracks.
                 // The video is still copied, so Dolby Vision/HDR is kept.
-                let customTracks = subtitleIndex >= 0 || audioIndex != nil || forceServerStream
+                // Text subtitles are drawn by Huefin, so only picture subtitles need the server's stream.
+                let serverSub = serverSubtitle(in: source ?? request.item.mediaSources?.first)
+                let customTracks = serverSub >= 0 || audioIndex != nil || forceServerStream
                 let info = try await client.playbackInfo(itemId: request.item.id, maxBitrate: maxBitrate,
                                                          startTicks: startTicks, audioStreamIndex: audioIndex,
-                                                         subtitleStreamIndex: subtitleIndex,
+                                                         subtitleStreamIndex: serverSub,
                                                          enableDirectPlay: !customTracks,
                                                          forAirPlay: airPlayMode,
                                                          mediaSourceId: request.mediaSourceId)
@@ -660,10 +725,15 @@ final class PlayerModel {
                     appliedPreferences = true
                     let choice = prefs.choose(for: src)
                     if choice.audio != audioIndex || choice.subtitle != subtitleIndex {
+                        source = src
+                        let before = serverSub, audioBefore = audioIndex
                         audioIndex = choice.audio
                         subtitleIndex = choice.subtitle
-                        await load(startTicks: startTicks)
-                        return
+                        // A text subtitle alone doesn't change what the server sends: carry on without asking again.
+                        if choice.audio != audioBefore || serverSubtitle(in: src) != before {
+                            await load(startTicks: startTicks)
+                            return
+                        }
                     }
                 }
 
@@ -699,7 +769,7 @@ final class PlayerModel {
                     await load(startTicks: startTicks)
                     return
                 } else if let t = src.transcodingUrl,
-                          let u = client.absoluteURL(serverRelative: t, allowSubtitleBurnIn: subtitleIndex >= 0) {
+                          let u = client.absoluteURL(serverRelative: t, allowSubtitleBurnIn: serverSub >= 0) {
                     url = u
                     reportedMethod = "Transcode"
                     diagnostics = StreamDiagnostics.from(source: src, usingHLS: true,
@@ -784,7 +854,10 @@ final class PlayerModel {
 
     /// The server's stream carries only the chosen subtitle; make sure the player shows (or hides) it.
     private func applySubtitleSelection(_ item: AVPlayerItem) async {
+        await refreshAppSubtitles()
         guard let group = try? await item.asset.loadMediaSelectionGroup(for: .legible) else { return }
+        // Huefin draws it: keep the player's own subtitle display off so nothing shows twice.
+        if subtitlesDrawnByApp { item.select(nil, in: group); return }
         if subtitleIndex >= 0 {
             let option = group.options.first { !$0.hasMediaCharacteristic(.containsOnlyForcedSubtitles) } ?? group.options.first
             item.select(option, in: group)
@@ -939,6 +1012,9 @@ final class PlayerModel {
         timeObserver = nil
         if let uiTimeObserver { player.removeTimeObserver(uiTimeObserver) }
         uiTimeObserver = nil
+        if let subtitleObserver { player.removeTimeObserver(subtitleObserver) }
+        subtitleObserver = nil
+        appSubs = nil; drawnSubtitle = nil
         clearRemoteCommands()
         statusCancellable = nil
         player.pause()
