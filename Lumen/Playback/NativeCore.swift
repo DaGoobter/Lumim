@@ -448,6 +448,9 @@ final class NativeCore: NSObject, EngineCore {
         guard config.first == 1 else { return nil }
         let isHEVC = par.codec_id == AV_CODEC_ID_HEVC
         guard isHEVC || par.codec_id == AV_CODEC_ID_H264 else { return nil }
+        // H.264 above 8-bit 4:2:0 (High 10 "Hi10P" anime, 4:2:2/4:4:4 profiles): Apple has no decoder for these and
+        // can jam instead of refusing, so they go straight to mpv without asking it.
+        if !isHEVC, [110, 122, 244, 44].contains(Int(par.profile)) || par.bits_per_raw_sample > 8 { return nil }
         let nalLength = isHEVC ? (config.count > 21 ? Int(config[21] & 3) + 1 : 4) : (config.count > 4 ? Int(config[4] & 3) + 1 : 4)
         let needed: [UInt8] = isHEVC ? [32, 33, 34] : [7, 8]
         let present = Set(Self.parameterSets(in: config, hevc: isHEVC).map(\.type))
