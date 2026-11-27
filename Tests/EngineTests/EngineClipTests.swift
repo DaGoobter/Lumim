@@ -44,6 +44,7 @@ final class EngineClipTests: XCTestCase {
             if r.nativeVideo {
                 XCTAssertTrue(r.seekOK, "\(name): jumping to the middle didn't produce a picture")
                 // The simulator decodes in software; odd clips (interlaced) vary a lot there, so they get more room.
+                XCTAssertNotEqual(r.nightAudioOK, false, "\(name): night mode / audio sync produced no usable sound")
                 XCTAssertLessThan(r.firstFrameSeconds, mustBeNative ? 5 : 10, "\(name): first picture took \(r.firstFrameSeconds) s")
             } else {
                 XCTAssertNotNil(r.fallbackReason, "\(name): not native and no reason given")

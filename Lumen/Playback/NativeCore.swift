@@ -1473,10 +1473,12 @@ struct EngineSelfTest: CustomStringConvertible {
     var subtitleTracks = 0, subtitleDecodable = 0
     /// Gap between where the first audio and the first video start, in seconds (big gaps drift out of sync).
     var startGap: Double?
+    /// Night mode + audio sync on the first audio track (nil = no audio).
+    var nightAudioOK: Bool?
     var description: String {
         "native=\(nativeVideo) fallback=\(fallbackReason ?? "-") open=\(String(format: "%.2f", openSeconds))s " +
         "firstFrame=\(String(format: "%.2f", firstFrameSeconds))s seek=\(seekOK) audio=\(audioDecodable)/\(audioTracks) " +
-        "subs=\(subtitleDecodable)/\(subtitleTracks) startGap=\(startGap.map { String(format: "%.3f", $0) } ?? "-")"
+        "subs=\(subtitleDecodable)/\(subtitleTracks) startGap=\(startGap.map { String(format: "%.3f", $0) } ?? "-") night=\(nightAudioOK.map(String.init) ?? "-")"
     }
 }
 
@@ -1513,6 +1515,29 @@ extension NativeCore {
             }
         }
         if let v = videoStart, let a = audioStart { r.startGap = abs(v - a) }
+
+        // Night mode and audio sync: the first audio track must still come out as stereo sound, shifted by the delay.
+        let ai = av_find_best_stream(ctx, AVMEDIA_TYPE_AUDIO, -1, -1, nil, 0)
+        if ai >= 0, let ast = ctx.pointee.streams[Int(ai)], let pipe = AudioPipe(stream: ast, allowPassthrough: false, delay: 0.5, night: true) {
+            r.nightAudioOK = false
+            let pkt = av_packet_alloc()
+            var budget = 600
+            while budget > 0, let p = pkt, av_read_frame(ctx, p) >= 0 {
+                defer { av_packet_unref(p) }
+                budget -= 1
+                guard p.pointee.stream_index == ai, p.pointee.pts != AV_NOPTS else { continue }
+                let raw = Double(p.pointee.pts) * Double(ast.pointee.time_base.num) / Double(max(1, ast.pointee.time_base.den))
+                let out = pipe.samples(for: p, tb: ast.pointee.time_base, dropBefore: -1)
+                guard let first = out.first, let fd = CMSampleBufferGetFormatDescription(first),
+                      let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(fd)?.pointee else { continue }
+                let shifted = CMSampleBufferGetPresentationTimeStamp(first).seconds - raw
+                r.nightAudioOK = asbd.mChannelsPerFrame <= 2 && shifted > 0.3 && shifted < 0.8
+                break
+            }
+            var pk = pkt; av_packet_free(&pk)
+            pipe.close()
+            av_seek_frame(ctx, -1, 0, AVSEEK_FLAG_BACKWARD)
+        }
 
         let vi = av_find_best_stream(ctx, AVMEDIA_TYPE_VIDEO, -1, -1, nil, 0)
         guard vi >= 0, let vs = ctx.pointee.streams[Int(vi)] else { r.fallbackReason = "no video"; return r }
