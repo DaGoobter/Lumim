@@ -81,8 +81,20 @@ enum EngineDecider {
     }
 
     /// The server's view of how this phone would play the item, plus whether the Huefin Engine helps.
+    @MainActor private static var recent: [String: (Playability, Date)] = [:]
+
     static func playability(for item: BaseItem, client: JellyfinClient, maxBitrate: Int,
                             mediaSourceId: String? = nil) async -> Playability {
+        // The item page already asked; pressing Play reuses that answer for two minutes instead of asking again.
+        let key = "\(item.id)|\(mediaSourceId ?? "")|\(maxBitrate)|\(client.baseURL.absoluteString)"
+        if let (p, at) = await MainActor.run(body: { recent[key] }), Date().timeIntervalSince(at) < 120 { return p }
+        let p = await askServer(item: item, client: client, maxBitrate: maxBitrate, mediaSourceId: mediaSourceId)
+        if p.kind != .unknown { await MainActor.run { recent[key] = (p, Date()) } }
+        return p
+    }
+
+    private static func askServer(item: BaseItem, client: JellyfinClient, maxBitrate: Int,
+                                  mediaSourceId: String?) async -> Playability {
         guard let info = try? await client.playbackInfo(itemId: item.id, maxBitrate: maxBitrate,
                                                         subtitleStreamIndex: nil, mediaSourceId: mediaSourceId),
               let src = info.mediaSources.first(where: { $0.id == mediaSourceId }) ?? info.mediaSources.first
