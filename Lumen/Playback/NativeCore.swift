@@ -595,7 +595,9 @@ final class NativeCore: NSObject, EngineCore {
         guard VTDecompressionSessionCreate(allocator: kCFAllocatorDefault, formatDescription: format, decoderSpecification: nil,
                                            imageBufferAttributes: nil, outputCallback: nil,
                                            decompressionSessionOut: &session) == noErr, let session else { return false }
-        defer { VTDecompressionSessionInvalidate(session) }
+        // Shut the test decoder down off this thread: if Apple's decoder is stuck, shutting it down waits for it.
+        nonisolated(unsafe) let toClose = session
+        defer { DispatchQueue.global(qos: .utility).async { VTDecompressionSessionInvalidate(toClose) } }
         var block: CMBlockBuffer?
         guard CMBlockBufferCreateWithMemoryBlock(allocator: kCFAllocatorDefault, memoryBlock: nil, blockLength: keyframe.count,
                                                  blockAllocator: kCFAllocatorDefault, customBlockSource: nil, offsetToData: 0,
