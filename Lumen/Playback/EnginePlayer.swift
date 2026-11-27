@@ -34,6 +34,12 @@ final class EnginePlayerModel {
     /// 100 = normal, up to 200 = boosted.
     private(set) var volume: Int32 = 100
     private(set) var segments: [MediaSegment] = []
+    /// Up Next: the following episode and the seconds left before it starts by itself.
+    private(set) var nextEpisode: BaseItem?
+    private(set) var upNextCountdown: Int?
+    @ObservationIgnored private var upNextShownAt: Date?
+    @ObservationIgnored private var upNextDismissed = false
+    @ObservationIgnored private var switching = false
     /// How the picture is being drawn ("Dolby Vision P5 → HDR (PQ) · hardware decode").
     private(set) var pictureInfo = ""
     @ObservationIgnored private var started = false
@@ -163,6 +169,7 @@ final class EnginePlayerModel {
                 guard let self else { return }
                 await self.addExternalSubtitles(client)
                 self.segments = await client.mediaSegments(itemId: self.item.id)
+                if self.item.type == "Episode" { self.nextEpisode = await client.episodeAfter(self.item) }
             }
         }
     }
@@ -228,6 +235,7 @@ final class EnginePlayerModel {
         let len = player.duration
         if len > 0 { duration = len } else if let r = item.runTimeTicks { duration = Double(r) / 10_000_000 }
         isPlaying = player.isPlaying
+        updateUpNext()
         if !isLoading {
             let subs = player.tracks("sub").count
             if !tracksLoaded || subs != subtitleTracks.filter({ $0.index >= 0 }).count { loadTracks() }
@@ -314,10 +322,55 @@ final class EnginePlayerModel {
     func setSpeed(_ s: Float) { speed = s; player.speed = Double(s) }
     func setVolume(_ v: Int32) { volume = v; player.volume = Double(v) }
 
+    /// When the credits start: the server's Outro marker, otherwise 30 seconds before the end.
+    private var creditsStart: Double? {
+        if let outro = segments.first(where: { $0.type == "Outro" }), outro.start > 0 { return outro.start }
+        guard duration > 120 else { return nil }
+        return duration - 30
+    }
+
+    private func updateUpNext() {
+        guard nextEpisode != nil, !upNextDismissed, !isLoading, !switching,
+              let start = creditsStart, currentTime >= start else {
+            if upNextCountdown != nil, currentTime < (creditsStart ?? .infinity) { upNextCountdown = nil; upNextShownAt = nil }
+            return
+        }
+        if PlaybackPrefs.autoSkipCredits, isPlaying { Task { await playNextEpisode() }; return }
+        if upNextShownAt == nil { upNextShownAt = Date() }
+        guard isPlaying else { return }   // the countdown waits while paused
+        let left = 10 - Int(Date().timeIntervalSince(upNextShownAt ?? Date()))
+        upNextCountdown = max(0, left)
+        if left <= 0 { Task { await playNextEpisode() } }
+    }
+
+    /// "Watch Credits": hide the card and let this episode finish.
+    func dismissUpNext() { upNextDismissed = true; upNextCountdown = nil }
+
+    /// Ends this episode (saving progress) and starts the next one in the same player.
+    func playNextEpisode() async {
+        guard let next = nextEpisode, !stopped, !switching else { return }
+        await advance(to: next)
+    }
+
     private func finished() async {
-        guard !stopped, let client, item.type == "Episode" else { return }
+        guard !stopped, !switching, let client, item.type == "Episode" else { return }
+        var upcoming = nextEpisode
+        if upcoming == nil { upcoming = await client.episodeAfter(item) }
+        guard let next = upcoming else {
+            await report("Sessions/Playing/Stopped"); return
+        }
+        await advance(to: next)
+    }
+
+    private func advance(to next: BaseItem) async {
+        switching = true
+        defer { switching = false }
         await report("Sessions/Playing/Stopped")
-        guard let next = await client.episodeAfter(item) else { return }
+        nextEpisode = nil
+        upNextCountdown = nil
+        upNextShownAt = nil
+        upNextDismissed = false
+        nextWarmed = false
         item = next
         request = PlaybackRequest(item: next, startTicks: 0)
         startedReport = false
@@ -506,6 +559,11 @@ struct EnginePlayerScreen: View {
                     }}
                     .padding(.trailing, 24).padding(.bottom, controlsVisible ? 120 : 40)
                 }
+                if let countdown = model.upNextCountdown, let next = model.nextEpisode {
+                    VStack { Spacer(); HStack { Spacer(); upNextCard(model, next: next, countdown: countdown) } }
+                        .padding(.trailing, 24).padding(.bottom, controlsVisible ? 120 : 40)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
                 if poppingOut {
                     VStack {
                         HStack(spacing: 10) {
@@ -656,6 +714,45 @@ struct EnginePlayerScreen: View {
     private func time(_ s: Double) -> String {
         let t = Int(max(0, s))
         return t >= 3600 ? String(format: "%d:%02d:%02d", t / 3600, t / 60 % 60, t % 60) : String(format: "%d:%02d", t / 60, t % 60)
+    }
+
+    /// Up Next card: the next episode's picture, a countdown, Play Now and Watch Credits.
+    private func upNextCard(_ model: EnginePlayerModel, next: BaseItem, countdown: Int) -> some View {
+        HStack(spacing: 14) {
+            ZStack {
+                Color.clear
+                    .aspectRatio(16 / 9, contentMode: .fit)
+                    .overlay { if let client = app.client { RemoteImage(url: client.imageURL(next.id, type: "Primary", maxWidth: 480)) } }
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                Circle().fill(.black.opacity(0.45)).frame(width: 44, height: 44)
+                Image(systemName: "play.fill").font(.title3).foregroundStyle(.white)
+            }
+            .frame(width: 150)
+            .onTapGesture { Task { await model.playNextEpisode() } }
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Up Next in \(countdown)").font(.caption.weight(.bold)).foregroundStyle(Theme.blue)
+                    .contentTransition(.numericText(countsDown: true))
+                Text(next.episodeLabel ?? next.displayTitle).font(.subheadline.weight(.semibold)).lineLimit(2)
+                HStack(spacing: 8) {
+                    Button { Task { await model.playNextEpisode() } } label: {
+                        Text("Play Now").font(.caption.weight(.bold))
+                            .padding(.horizontal, 12).padding(.vertical, 7)
+                            .foregroundStyle(.black).background(.white, in: Capsule())
+                    }
+                    Button { model.dismissUpNext() } label: {
+                        Text("Watch Credits").font(.caption.weight(.semibold))
+                            .padding(.horizontal, 12).padding(.vertical, 7)
+                            .background(.white.opacity(0.18), in: Capsule())
+                    }
+                }
+                .padding(.top, 2)
+            }
+            .frame(maxWidth: 230, alignment: .leading)
+        }
+        .padding(12)
+        .foregroundStyle(.white)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .environment(\.colorScheme, .dark)
     }
 
     private func scheduleHide() {

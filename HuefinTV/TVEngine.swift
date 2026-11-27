@@ -76,9 +76,11 @@ final class TVEngineViewController: UIViewController {
     private let videoView = UIView()
     private var hideTask: Task<Void, Never>?
     private var closing = false
+    private let client: JellyfinClient?
 
     init(request: PlaybackRequest, client: JellyfinClient?) {
         model = EnginePlayerModel(request: request, client: client)
+        self.client = client
         super.init(nibName: nil, bundle: nil)
         modalPresentationStyle = .fullScreen
     }
@@ -102,7 +104,7 @@ final class TVEngineViewController: UIViewController {
         root.addSubview(wrapper)
         view = root
 
-        let overlay = UIHostingController(rootView: EngineOverlay(model: model, ui: ui))
+        let overlay = UIHostingController(rootView: EngineOverlay(model: model, ui: ui, client: client))
         overlay.view.backgroundColor = .clear
         overlay.view.isUserInteractionEnabled = false
         addChild(overlay)
@@ -199,13 +201,15 @@ final class TVEngineViewController: UIViewController {
             ui.row = b == 3 ? 3 : (EngineMenus.options(b, model).firstIndex(where: \.on) ?? 0)
             hideTask?.cancel(); return
         }
-        if let seg = model.activeSkip { model.seek(to: seg.end) }
+        if model.upNextCountdown != nil { Task { await model.playNextEpisode() } }
+        else if let seg = model.activeSkip { model.seek(to: seg.end) }
         else if ui.showControls || !model.isPlaying { model.togglePlay() }
         reveal()
     }
     private func onMenu() {
         if ui.menu != nil { ui.menu = nil; reveal() }
         else if ui.button != nil { ui.button = nil; reveal() }
+        else if model.upNextCountdown != nil { model.dismissUpNext() }
         else if ui.showControls && model.isPlaying { hideTask?.cancel(); ui.showControls = false }
         else { close() }
     }
@@ -276,6 +280,7 @@ final class TVEngineViewController: UIViewController {
 private struct EngineOverlay: View {
     let model: EnginePlayerModel
     let ui: EngineUIState
+    let client: JellyfinClient?
 
     private func clock(_ s: Double) -> String {
         let t = Int(max(0, s))
@@ -299,6 +304,23 @@ private struct EngineOverlay: View {
                 Label(seg.type == "Recap" ? "Click to Skip Recap" : "Click to Skip Intro", systemImage: "forward.end.fill")
                     .font(.headline).foregroundStyle(Theme.ink).padding(.horizontal, 26).padding(.vertical, 14)
                     .background(Theme.paper, in: Capsule())
+            }}.padding(.trailing, 80).padding(.bottom, ui.showControls ? 190 : 80)
+        }
+        if let countdown = m.upNextCountdown, let next = m.nextEpisode {
+            VStack { Spacer(); HStack { Spacer()
+                HStack(spacing: 22) {
+                    Color.clear.aspectRatio(16 / 9, contentMode: .fit).frame(width: 260)
+                        .overlay { TVImage(url: client?.imageURL(next.id, type: "Primary", maxWidth: 560)) }
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Up Next in \(countdown)").font(.callout.weight(.bold)).foregroundStyle(Theme.blue)
+                        Text(next.episodeLabel ?? next.displayTitle).font(.headline).lineLimit(2)
+                        Text("Click to play now · Menu to watch the credits").font(.caption).foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: 420, alignment: .leading)
+                }
+                .padding(20)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
             }}.padding(.trailing, 80).padding(.bottom, ui.showControls ? 190 : 80)
         }
         if ui.showControls || !m.isPlaying {
