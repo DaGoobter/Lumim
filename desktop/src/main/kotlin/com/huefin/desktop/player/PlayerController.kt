@@ -93,6 +93,7 @@ class PlayerController(start: BaseItem, private val startTicks: Long, val onClos
                 put("input-default-bindings", "no"); put("input-vo-keyboard", "no"); put("input-cursor", "no"); put("input-cursor-passthrough", "yes")
                 put("cursor-autohide", "no"); put("osc", "no"); put("osd-level", "0"); put("terminal", "no"); put("msg-level", "all=warn")
                 put("cache", "yes"); put("demuxer-max-bytes", "500MiB"); put("demuxer-max-back-bytes", "100MiB"); put("demuxer-readahead-secs", "60")
+                put("demuxer-lavf-probesize", "2000000"); put("demuxer-lavf-analyzeduration", "1.5"); put("cache-pause-wait", "1")
                 put("network-timeout", "30"); put("user-agent", "Huefin for Windows"); put("ytdl", "no")
                 put("volume-max", "200"); put("audio-channels", "auto")
                 if (passthrough) { put("audio-spdif", "ac3,eac3,dts,dts-hd,truehd"); put("audio-exclusive", "yes") }
