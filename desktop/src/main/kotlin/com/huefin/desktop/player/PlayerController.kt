@@ -92,7 +92,7 @@ class PlayerController(start: BaseItem, private val startTicks: Long, val onClos
                 put("keep-open", "no"); put("idle", "yes"); put("force-window", "yes")
                 put("input-default-bindings", "no"); put("input-vo-keyboard", "no"); put("input-cursor", "no"); put("input-cursor-passthrough", "yes")
                 put("cursor-autohide", "no"); put("osc", "no"); put("osd-level", "0"); put("terminal", "no"); put("msg-level", "all=warn")
-                put("cache", "yes"); put("demuxer-max-bytes", "300MiB"); put("demuxer-max-back-bytes", "100MiB"); put("demuxer-readahead-secs", "30")
+                put("cache", "yes"); put("demuxer-max-bytes", "500MiB"); put("demuxer-max-back-bytes", "100MiB"); put("demuxer-readahead-secs", "60")
                 put("network-timeout", "30"); put("user-agent", "Huefin for Windows"); put("ytdl", "no")
                 put("volume-max", "200"); put("audio-channels", "auto")
                 if (passthrough) { put("audio-spdif", "ac3,eac3,dts,dts-hd,truehd"); put("audio-exclusive", "yes") }
@@ -147,7 +147,7 @@ class PlayerController(start: BaseItem, private val startTicks: Long, val onClos
 
     private fun profile(): JsonObject = buildJsonObject {
         put("Name", "Huefin for Windows")
-        put("MaxStreamingBitrate", AppState.maxBitrate)
+        put("MaxStreamingBitrate", AppState.playbackBitrate)
         put("MaxStaticBitrate", 400_000_000)
         // VLC plays every container and codec, so the server always sends the original file.
         putJsonArray("DirectPlayProfiles") {
@@ -191,7 +191,7 @@ class PlayerController(start: BaseItem, private val startTicks: Long, val onClos
         }
         val c = client ?: run { error = "Not connected to your server."; return }
         val info = try {
-            c.playbackInfo(target.id, if (target.isLiveChannel) AppState.maxBitrate.coerceAtMost(40_000_000) else AppState.maxBitrate, profile(), ticks)
+            c.playbackInfo(target.id, if (target.isLiveChannel) AppState.playbackBitrate.coerceAtMost(40_000_000) else AppState.playbackBitrate, profile(), ticks)
         } catch (e: Exception) { error = e.message ?: "Couldn't start playback."; loading = false; return }
         val src = info.mediaSources.firstOrNull() ?: run { error = "Nothing playable in this item."; loading = false; return }
         playSessionId = info.playSessionId; mediaSourceId = src.id; liveStreamId = src.liveStreamId
