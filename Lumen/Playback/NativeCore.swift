@@ -598,9 +598,14 @@ final class NativeCore: NSObject, EngineCore {
         guard VTDecompressionSessionCreate(allocator: kCFAllocatorDefault, formatDescription: format, decoderSpecification: nil,
                                            imageBufferAttributes: nil, outputCallback: nil,
                                            decompressionSessionOut: &session) == noErr, let session else { return false }
-        // Shut the test decoder down off this thread: if Apple's decoder is stuck, shutting it down waits for it.
+        // Shut the test decoder down right away when it answered (so the decoder is free for playback); only a stuck
+        // one is shut down off this thread, since shutting it down waits for it.
         nonisolated(unsafe) let toClose = session
-        defer { DispatchQueue.global(qos: .utility).async { VTDecompressionSessionInvalidate(toClose) } }
+        var stuck = false
+        defer {
+            if stuck { DispatchQueue.global(qos: .utility).async { VTDecompressionSessionInvalidate(toClose) } }
+            else { VTDecompressionSessionInvalidate(toClose) }
+        }
         var block: CMBlockBuffer?
         guard CMBlockBufferCreateWithMemoryBlock(allocator: kCFAllocatorDefault, memoryBlock: nil, blockLength: keyframe.count,
                                                  blockAllocator: kCFAllocatorDefault, customBlockSource: nil, offsetToData: 0,
@@ -627,7 +632,7 @@ final class NativeCore: NSObject, EngineCore {
             VTDecompressionSessionWaitForAsynchronousFrames(s)
             done.signal()
         }
-        guard done.wait(timeout: .now() + 3) == .success else { return false }
+        guard done.wait(timeout: .now() + 3) == .success else { stuck = true; return false }
         // kVTInvalidSessionErr happens when the app is in the background; don't blame the file for that.
         if result.status == kVTInvalidSessionErr { return true }
         return result.status == noErr && result.ok
