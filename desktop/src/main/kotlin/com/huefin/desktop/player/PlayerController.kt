@@ -199,6 +199,10 @@ class PlayerController(start: BaseItem, private val startTicks: Long, val onClos
         p.command("loadfile", url, "replace")
         subtitleDelay = com.huefin.desktop.core.Prefs.string("huefin.subDelay.${item.id}")?.toDoubleOrNull() ?: 0.0
         p.set("sub-delay", "%.1f".format(java.util.Locale.US, subtitleDelay))
+        audioDelay = com.huefin.desktop.core.Prefs.string("huefin.audioDelay.${item.id}")?.toDoubleOrNull() ?: 0.0
+        p.set("audio-delay", "%.2f".format(java.util.Locale.US, audioDelay))
+        nightMode = com.huefin.desktop.core.Prefs.string("huefin.nightMode") == "true"
+        applyNightMode()
         p.set("pause", "no")
     }
 
@@ -353,6 +357,26 @@ class PlayerController(start: BaseItem, private val startTicks: Long, val onClos
     fun toggleMute() { muted = !muted; mp?.set("mute", if (muted) "yes" else "no") }
     fun selectAudio(id: Int) { mp?.set("aid", id.toString()); audioTrack = id }
     fun selectSubtitle(id: Int) { mp?.set("sid", if (id < 0) "no" else id.toString()); subtitleTrack = id }
+
+    /** Audio sync (seconds; positive = sound later), remembered per title. */
+    var audioDelay by mutableStateOf(0.0); private set
+    fun changeAudioDelay(seconds: Double) {
+        val v = Math.round(seconds * 20) / 20.0
+        audioDelay = v
+        mp?.set("audio-delay", "%.2f".format(java.util.Locale.US, v))
+        com.huefin.desktop.core.Prefs.set("huefin.audioDelay.${item.id}", v.toString())
+    }
+    /** Night mode: stereo mix, quiet speech lifted, loud moments tamed (remembered until turned off). */
+    var nightMode by mutableStateOf(false); private set
+    fun toggleNightMode() {
+        nightMode = !nightMode
+        com.huefin.desktop.core.Prefs.set("huefin.nightMode", nightMode.toString())
+        applyNightMode()
+    }
+    private fun applyNightMode() {
+        mp?.set("audio-channels", if (nightMode) "stereo" else "auto")
+        mp?.set("af", if (nightMode) "lavfi=[acompressor=threshold=-26dB:ratio=3:attack=10:release=250:makeup=8],lavfi=[alimiter=limit=0.89]" else "")
+    }
 
     /** Subtitle timing (seconds; positive = later), remembered per title. */
     var subtitleDelay by mutableStateOf(0.0); private set

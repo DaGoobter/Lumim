@@ -238,8 +238,12 @@ private fun PlayerScreen(m: PlayerModel, inPip: Boolean, tabletopHinge: Int?, on
     if (showSync) WatchTogetherDialog(m) { showSync = false }
 }
 
-private fun syncLabel(d: Double): String =
-    if (d == 0.0) "in sync" else "%s%.1f s %s".format(if (d > 0) "+" else "−", kotlin.math.abs(d), if (d > 0) "later" else "earlier")
+private fun syncLabel(d: Double): String {
+    if (d == 0.0) return "in sync"
+    val v = kotlin.math.abs(d)
+    val n = if (Math.round(v * 100) % 10 == 0L) "%.1f".format(v) else "%.2f".format(v)
+    return "${if (d > 0) "+" else "−"}$n s ${if (d > 0) "later" else "earlier"}"
+}
 
 /** Subtitle timing: nudge subtitles earlier or later while the video keeps playing. */
 @Composable
@@ -265,6 +269,25 @@ private fun SubtitleSyncPanel(m: PlayerModel, onClose: () -> Unit) {
     }
 }
 
+/** Audio sync: shift the sound against the picture while it plays. */
+@Composable
+private fun AudioSyncPanel(m: PlayerModel, onClose: () -> Unit) {
+    Column(Modifier.padding(12.dp).widthIn(max = 380.dp).background(Color(0xEE1C1C22), RoundedCornerShape(20.dp)).padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Audio sync", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            TextButton(onClose) { Text("Done") }
+        }
+        Text(syncLabel(m.audioDelay), color = Color.White, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf(-0.25, -0.05).forEach { d -> OutlinedButton({ m.changeAudioDelay(m.audioDelay + d) }, contentPadding = PaddingValues(horizontal = 8.dp)) { Text("%.2f".format(d).replace("-", "−"), color = Color.White) } }
+            OutlinedButton({ m.changeAudioDelay(0.0) }, enabled = m.audioDelay != 0.0, contentPadding = PaddingValues(horizontal = 8.dp)) { Text("Reset", color = Color.White) }
+            listOf(0.05, 0.25).forEach { d -> OutlinedButton({ m.changeAudioDelay(m.audioDelay + d) }, contentPadding = PaddingValues(horizontal = 8.dp)) { Text("+%.2f".format(d), color = Color.White) } }
+        }
+        Text("Voices before lips move? Press +. After? Press −.", color = Color.White.copy(alpha = 0.6f), style = MaterialTheme.typography.labelSmall)
+    }
+}
+
 @Composable
 private fun RoundIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
     IconButton(onClick, Modifier.size(42.dp).background(Color.White.copy(alpha = 0.14f), CircleShape)) { Icon(icon, label, tint = Color.White) }
@@ -274,6 +297,7 @@ private fun RoundIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, lab
 private fun TopBar(m: PlayerModel, onClose: () -> Unit, onPip: () -> Unit, onSync: () -> Unit, onTouch: () -> Unit, modifier: Modifier) {
     var tracks by remember { mutableStateOf(false) }
     var sync by remember { mutableStateOf(false) }
+    var audioSync by remember { mutableStateOf(false) }
     var more by remember { mutableStateOf(false) }
     var info by remember { mutableStateOf(false) }
     val ctx = androidx.compose.ui.platform.LocalContext.current
@@ -299,6 +323,8 @@ private fun TopBar(m: PlayerModel, onClose: () -> Unit, onPip: () -> Unit, onSyn
             }
             if (sync) androidx.compose.ui.window.Popup(alignment = Alignment.TopEnd, offset = androidx.compose.ui.unit.IntOffset(0, 140),
                 onDismissRequest = { sync = false }) { SubtitleSyncPanel(m) { sync = false } }
+            if (audioSync) androidx.compose.ui.window.Popup(alignment = Alignment.TopEnd, offset = androidx.compose.ui.unit.IntOffset(0, 140),
+                onDismissRequest = { audioSync = false }) { AudioSyncPanel(m) { audioSync = false } }
         }
         if (!m.isLive) {
             RoundIcon(Icons.Filled.PictureInPictureAlt, "Picture in picture", onPip)
@@ -317,6 +343,12 @@ private fun TopBar(m: PlayerModel, onClose: () -> Unit, onPip: () -> Unit, onSyn
                 DropdownMenuItem({ Text((if (m.sleepAt == null && !m.sleepAtEnd) "✓ " else "") + "Off") }, { m.setSleepTimer(null); more = false })
                 listOf(15, 30, 45, 60, 90).forEach { n -> DropdownMenuItem({ Text("$n minutes") }, { m.setSleepTimer(n); more = false }) }
                 if (!m.isLive) DropdownMenuItem({ Text((if (m.sleepAtEnd) "✓ " else "") + "End of this ${if (m.item.type == "Episode") "episode" else "video"}") }, { m.setSleepAtEnd(); more = false })
+                if (m.backend.supportsSubtitleDelay) {
+                    HorizontalDivider()
+                    Text("Sound", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), color = Hue.secondaryText)
+                    DropdownMenuItem({ Text((if (m.nightMode) "✓ " else "") + "Night mode (dialogue boost)") }, { m.toggleNightMode(); more = false })
+                    DropdownMenuItem({ Text("Audio sync" + if (m.audioDelay != 0.0) " (${syncLabel(m.audioDelay)})" else "") }, { more = false; audioSync = true })
+                }
                 if (m.backend.supportsBoost) {
                     HorizontalDivider()
                     Text("Volume boost", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), color = Hue.secondaryText)

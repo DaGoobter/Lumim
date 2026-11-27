@@ -230,6 +230,15 @@ private fun TrackMenu(p: PlayerController, onOpen: (Boolean) -> Unit) {
             Text("Audio", Modifier.padding(horizontal = 14.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium, color = Hue.secondaryText)
             p.audioTracks.forEach { t -> DropdownMenuItem({ Text((if (t.id == p.audioTrack) "✓  " else "     ") + t.label) }, { p.selectAudio(t.id); open = false; onOpen(false) }) }
             HorizontalDivider()
+            DropdownMenuItem({ Text((if (p.nightMode) "✓  " else "     ") + "Night mode (dialogue boost)") }, { p.toggleNightMode() })
+            Text("Audio sync · " + syncLabel(p.audioDelay), Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                style = MaterialTheme.typography.labelMedium, color = Hue.secondaryText)
+            Row(Modifier.padding(horizontal = 10.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf(-0.25, -0.05).forEach { d -> OutlinedButton({ p.changeAudioDelay(p.audioDelay + d) }) { Text("%.2f".format(d).replace("-", "−")) } }
+                OutlinedButton({ p.changeAudioDelay(0.0) }, enabled = p.audioDelay != 0.0) { Text("Reset") }
+                listOf(0.05, 0.25).forEach { d -> OutlinedButton({ p.changeAudioDelay(p.audioDelay + d) }) { Text("+%.2f".format(d)) } }
+            }
+            HorizontalDivider()
             Text("Subtitles", Modifier.padding(horizontal = 14.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium, color = Hue.secondaryText)
             DropdownMenuItem({ Text((if (p.subtitleTrack < 0) "✓  " else "     ") + "Off") }, { p.selectSubtitle(-1); open = false; onOpen(false) })
             p.subtitleTracks.forEach { t -> DropdownMenuItem({ Text((if (t.id == p.subtitleTrack) "✓  " else "     ") + t.label) }, { p.selectSubtitle(t.id); open = false; onOpen(false) }) }
@@ -248,5 +257,9 @@ private fun TrackMenu(p: PlayerController, onOpen: (Boolean) -> Unit) {
     }
 }
 
-private fun syncLabel(d: Double): String =
-    if (d == 0.0) "in sync" else "%s%.1f s %s".format(if (d > 0) "+" else "−", kotlin.math.abs(d), if (d > 0) "later" else "earlier")
+private fun syncLabel(d: Double): String {
+    if (d == 0.0) return "in sync"
+    val v = kotlin.math.abs(d)
+    val n = if (Math.round(v * 100) % 10 == 0L) "%.1f".format(v) else "%.2f".format(v)
+    return "${if (d > 0) "+" else "−"}$n s ${if (d > 0) "later" else "earlier"}"
+}

@@ -35,6 +35,9 @@ interface Backend {
     /** Subtitle timing in seconds (positive = later). Only the Huefin Engine can shift subtitles. */
     val supportsSubtitleDelay: Boolean get() = false
     fun setSubtitleDelay(seconds: Double) {}
+    /** Audio sync (seconds, positive = sound later) and night mode — Huefin Engine only. */
+    fun setAudioDelay(seconds: Double) {}
+    fun setNightMode(on: Boolean) {}
     val supportsBoost: Boolean get() = false
     fun release()
     var onEnded: () -> Unit

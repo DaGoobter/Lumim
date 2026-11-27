@@ -292,6 +292,26 @@ class PlayerModel(var request: PlaybackRequest, val backend: Backend) {
         val v = com.huefin.app.core.Prefs.string("huefin.subDelay.${item.id}")?.toDoubleOrNull() ?: 0.0
         subtitleDelay = v
         backend.setSubtitleDelay(v)
+        audioDelay = com.huefin.app.core.Prefs.string("huefin.audioDelay.${item.id}")?.toDoubleOrNull() ?: 0.0
+        backend.setAudioDelay(audioDelay)
+        nightMode = com.huefin.app.core.Prefs.bool("huefin.nightMode", false)
+        if (nightMode) backend.setNightMode(true)
+    }
+
+    /** Audio sync (seconds; positive = sound later), remembered per title. */
+    var audioDelay by mutableStateOf(0.0); private set
+    fun changeAudioDelay(seconds: Double) {
+        val v = Math.round(seconds * 20) / 20.0
+        audioDelay = v
+        backend.setAudioDelay(v)
+        com.huefin.app.core.Prefs.set("huefin.audioDelay.${item.id}", v.toString())
+    }
+    /** Night mode: dialogue lifted, loud moments tamed (remembered until turned off). */
+    var nightMode by mutableStateOf(false); private set
+    fun toggleNightMode() {
+        nightMode = !nightMode
+        backend.setNightMode(nightMode)
+        com.huefin.app.core.Prefs.set("huefin.nightMode", nightMode)
     }
     fun setBoost(p: Int) { volumeBoost = p; backend.setVolumeBoost(p) }
     fun toggleFill() { fill = !fill; backend.setFill(fill) }
