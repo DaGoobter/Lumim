@@ -1,0 +1,69 @@
+name: Huefin Engine tests
+
+# Plays a pack of synthetic clips (one per kind of file in the library) through the native engine on an
+# iPhone simulator. A change that breaks any of them fails this check.
+on:
+  push:
+    branches: [main]
+    paths: ['Lumen/Playback/**', 'Lumen/Core/**', 'Tests/**', 'scripts/make-test-clips.sh', 'project.yml', '.github/workflows/engine-tests.yml']
+  workflow_dispatch:
+
+jobs:
+  engine:
+    runs-on: macos-15-intel
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use newest Xcode
+        run: |
+          X=$(ls -d /Applications/Xcode_*.app | grep -v -i beta | sort -V | tail -1)
+          echo "Using $X"; sudo xcode-select -s "$X"
+
+      - name: Install tools
+        run: brew install xcodegen ffmpeg
+
+      - name: Make the test clips
+        run: scripts/make-test-clips.sh "$RUNNER_TEMP/clips"
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Pick a simulator
+        id: sim
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)['devices']
+          ios=[(k,v) for k,v in d.items() if 'iOS' in k]
+          ios.sort(key=lambda kv: [int(x) for x in kv[0].split('iOS-')[-1].split('-') if x.isdigit()])
+          for k,v in reversed(ios):
+              for dev in v:
+                  if dev['name'].startswith('iPhone'): print(dev['udid']); sys.exit()
+          ")
+          echo "Using simulator $UDID"; echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+
+      - name: Run engine tests
+        env:
+          TEST_RUNNER_CLIPS_DIR: ${{ runner.temp }}/clips
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project Lumen.xcodeproj \
+            -scheme Lumen \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath build \
+            -resultBundlePath "$RUNNER_TEMP/EngineTests.xcresult" \
+            CODE_SIGNING_ALLOWED=NO \
+            -only-testing:HuefinEngineTests 2>&1 | tee "$RUNNER_TEMP/test.log" | grep -E "ENGINE REPORT|native_|any_|error:|Test Case|Executed" || true
+          grep -q "\*\* TEST SUCCEEDED \*\*" "$RUNNER_TEMP/test.log"
+
+      - name: Keep the results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: engine-test-results
+          path: |
+            ${{ runner.temp }}/test.log
+            ${{ runner.temp }}/EngineTests.xcresult
+          if-no-files-found: ignore

@@ -1088,4 +1088,88 @@ private final class AudioPipe {
         return true
     }
 }
+
+// MARK: - Self test (used by the engine test suite in CI)
+
+/// What the native engine makes of one file, without playing it: can Apple's decoder show the picture,
+/// how long that took, does jumping to the middle work, and can every audio and subtitle track be read.
+struct EngineSelfTest: CustomStringConvertible {
+    var nativeVideo = false
+    var fallbackReason: String?
+    var openSeconds = 0.0
+    var firstFrameSeconds = 0.0
+    var seekOK = false
+    var audioTracks = 0, audioDecodable = 0
+    var subtitleTracks = 0, subtitleDecodable = 0
+    /// Gap between where the first audio and the first video start, in seconds (big gaps drift out of sync).
+    var startGap: Double?
+    var description: String {
+        "native=\(nativeVideo) fallback=\(fallbackReason ?? "-") open=\(String(format: "%.2f", openSeconds))s " +
+        "firstFrame=\(String(format: "%.2f", firstFrameSeconds))s seek=\(seekOK) audio=\(audioDecodable)/\(audioTracks) " +
+        "subs=\(subtitleDecodable)/\(subtitleTracks) startGap=\(startGap.map { String(format: "%.3f", $0) } ?? "-")"
+    }
+}
+
+extension NativeCore {
+    static func selfTest(path: String) -> EngineSelfTest {
+        var r = EngineSelfTest()
+        let t0 = CACurrentMediaTime()
+        var fmt: UnsafeMutablePointer<AVFormatContext>?
+        guard avformat_open_input(&fmt, path, nil, nil) >= 0, let ctx = fmt else { r.fallbackReason = "couldn't open"; return r }
+        defer { var f: UnsafeMutablePointer<AVFormatContext>? = ctx; avformat_close_input(&f) }
+        guard avformat_find_stream_info(ctx, nil) >= 0 else { r.fallbackReason = "couldn't read streams"; return r }
+        r.openSeconds = CACurrentMediaTime() - t0
+
+        var videoStart: Double?, audioStart: Double?
+        for i in 0..<Int(ctx.pointee.nb_streams) {
+            guard let st = ctx.pointee.streams[i], let par = st.pointee.codecpar else { continue }
+            let tb = st.pointee.time_base
+            let start = st.pointee.start_time == Int64.min ? nil : Double(st.pointee.start_time) * Double(tb.num) / Double(max(1, tb.den))
+            switch par.pointee.codec_type {
+            case AVMEDIA_TYPE_AUDIO:
+                r.audioTracks += 1
+                if audioStart == nil { audioStart = start }
+                if let dec = avcodec_find_decoder(par.pointee.codec_id) {
+                    var cc = avcodec_alloc_context3(dec)
+                    if let c = cc, avcodec_parameters_to_context(c, par) >= 0, avcodec_open2(c, dec, nil) >= 0 { r.audioDecodable += 1 }
+                    avcodec_free_context(&cc)
+                }
+            case AVMEDIA_TYPE_SUBTITLE:
+                r.subtitleTracks += 1
+                if avcodec_find_decoder(par.pointee.codec_id) != nil { r.subtitleDecodable += 1 }
+            case AVMEDIA_TYPE_VIDEO:
+                if videoStart == nil, st.pointee.disposition & AV_DISPOSITION_ATTACHED_PIC == 0 { videoStart = start }
+            default: break
+            }
+        }
+        if let v = videoStart, let a = audioStart { r.startGap = abs(v - a) }
+
+        let vi = av_find_best_stream(ctx, AVMEDIA_TYPE_VIDEO, -1, -1, nil, 0)
+        guard vi >= 0, let vs = ctx.pointee.streams[Int(vi)] else { r.fallbackReason = "no video"; return r }
+        guard let prepared = prepareVideo(ctx, vs, vi) else { r.fallbackReason = "mpv: no usable decoder setup"; return r }
+        let core = NativeCore()
+        guard let format = core.makeVideoFormat(vs, config: prepared.config) else { r.fallbackReason = "mpv: codec or profile"; return r }
+        guard decodesFirstFrame(format, keyframe: prepared.keyframe) else { r.fallbackReason = "mpv: Apple's decoder refused the first frame"; return r }
+        r.nativeVideo = true
+        r.firstFrameSeconds = CACurrentMediaTime() - t0
+
+        // Jump to the middle and decode the keyframe found there.
+        let duration = ctx.pointee.duration
+        if duration > 0, av_seek_frame(ctx, -1, duration / 2, AVSEEK_FLAG_BACKWARD) >= 0 {
+            let pkt = av_packet_alloc()
+            defer { var p = pkt; av_packet_free(&p) }
+            var budget = 2000
+            while budget > 0, let p = pkt, av_read_frame(ctx, p) >= 0 {
+                defer { av_packet_unref(p) }
+                budget -= 1
+                guard p.pointee.stream_index == vi, p.pointee.flags & AV_PKT_FLAG_KEY != 0, let d = p.pointee.data else { continue }
+                r.seekOK = decodesFirstFrame(format, keyframe: Data(bytes: d, count: Int(p.pointee.size)))
+                break
+            }
+        } else {
+            r.seekOK = duration <= 0
+        }
+        return r
+    }
+}
 #endif
