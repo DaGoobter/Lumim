@@ -331,11 +331,13 @@ final class NativeCore: NSObject, EngineCore {
 
     /// Describes the video to Apple's decoder: HEVC / H.264 configuration, Dolby Vision record, HDR colour.
     private func makeVideoFormat(_ st: UnsafeMutablePointer<AVStream>, config: Data) -> CMVideoFormatDescription? {
-        guard let par = st.pointee.codecpar?.pointee, config.first == 1 else { return nil }
+        guard let par = st.pointee.codecpar?.pointee else { return nil }
         let isHEVC = par.codec_id == AV_CODEC_ID_HEVC
-        guard isHEVC || par.codec_id == AV_CODEC_ID_H264 else { return nil }
-        var atoms: [String: Any] = [isHEVC ? "hvcC" : "avcC": config]
-        var codec = isHEVC ? kCMVideoCodecType_HEVC : kCMVideoCodecType_H264
+        let isAV1 = par.codec_id == AV_CODEC_ID_AV1
+        guard isAV1 ? config.first == 0x81 : config.first == 1 else { return nil }
+        guard isHEVC || isAV1 || par.codec_id == AV_CODEC_ID_H264 else { return nil }
+        var atoms: [String: Any] = [isAV1 ? "av1C" : isHEVC ? "hvcC" : "avcC": config]
+        var codec = isAV1 ? CMVideoCodecType(0x6176_3031) : isHEVC ? kCMVideoCodecType_HEVC : kCMVideoCodecType_H264
 
         if isHEVC, let sd = av_packet_side_data_get(par.coded_side_data, par.nb_coded_side_data, AV_PKT_DATA_DOVI_CONF),
            let raw = sd.pointee.data {
@@ -402,6 +404,12 @@ final class NativeCore: NSObject, EngineCore {
                                          _ index: Int32) -> (config: Data, keyframe: Data?)? {
         guard let par = st.pointee.codecpar?.pointee, par.extradata_size > 0, let extra = par.extradata else { return nil }
         var config = Data(bytes: extra, count: Int(par.extradata_size))
+        // AV1 (many anime and web files): Apple decodes it in hardware on newer chips (A17 Pro / M3 and later).
+        // The file's 'av1C' record goes to the decoder as-is; older devices keep using mpv.
+        if par.codec_id == AV_CODEC_ID_AV1 {
+            guard config.first == 0x81, VTIsHardwareDecodeSupported(CMVideoCodecType(0x6176_3031)) else { return nil }
+            return (config, firstKeyframe(ctx, index))
+        }
         // MKV/MP4 carry a configuration record (first byte 1) and length-prefixed NAL units, which Apple takes as-is.
         guard config.first == 1 else { return nil }
         let isHEVC = par.codec_id == AV_CODEC_ID_HEVC
@@ -435,6 +443,21 @@ final class NativeCore: NSObject, EngineCore {
                             : Self.rebuildAVCC(header: config, sps: found[7]!, pps: found[8]!)
         }
         return (config, keyframe)
+    }
+
+    /// Reads ahead to the first keyframe of the video stream (for the decoder pre-flight test).
+    fileprivate static func firstKeyframe(_ ctx: UnsafeMutablePointer<AVFormatContext>, _ index: Int32) -> Data? {
+        let pkt = av_packet_alloc()
+        defer { var p = pkt; av_packet_free(&p) }
+        var budget = 400
+        while budget > 0, let p = pkt, av_read_frame(ctx, p) >= 0 {
+            defer { av_packet_unref(p) }
+            budget -= 1
+            guard p.pointee.stream_index == index, let data = p.pointee.data, p.pointee.size > 0,
+                  p.pointee.flags & AV_PKT_FLAG_KEY != 0 else { continue }
+            return Data(bytes: data, count: Int(p.pointee.size))
+        }
+        return nil
     }
 
     /// Splits length-prefixed video data into its NAL units.

@@ -619,6 +619,24 @@ final class VideoSurfaceHandle {
     var onPiPCreated: ((AVPictureInPictureController) -> Void)?
     /// Keeps the video view alive while it plays in Picture in Picture after the player screen closes.
     var container: UIView?
+    /// Old PiP controllers are kept a few seconds after their screen goes away. iOS's Picture in Picture service
+    /// can still be mid-update (e.g. you swiped home while the player closed) and would otherwise call into a
+    /// freed controller and crash the app (seen in crash reports from build 73).
+    private static var retired: [(AVPictureInPictureController, UIView?)] = []
+
+    /// Shut PiP for this surface down cleanly, unless the video is floating right now.
+    func retire() {
+        guard let old = pip, !old.isPictureInPictureActive else { return }
+        old.canStartPictureInPictureAutomaticallyFromInline = false
+        old.delegate = nil
+        Self.retired.append((old, container))
+        pip = nil
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(5))
+            if !Self.retired.isEmpty { Self.retired.removeFirst() }
+        }
+    }
+
     func startPiP() {
         guard let pip else { return }
         if pip.isPictureInPictureActive { pip.stopPictureInPicture() }
@@ -648,12 +666,19 @@ struct VideoSurface: UIViewRepresentable {
         video.frame = container.bounds
         container.addSubview(video)
         if AVPictureInPictureController.isPictureInPictureSupported() {
+            handle.retire()   // a surface being rebuilt: let go of the old controller safely first
             let pip = AVPictureInPictureController(playerLayer: video.playerLayer)
             pip?.canStartPictureInPictureAutomaticallyFromInline = true
             handle.pip = pip
         }
         handle.container = container
         return container
+    }
+
+    func makeCoordinator() -> VideoSurfaceHandle { handle }
+
+    static func dismantleUIView(_ container: UIView, coordinator: VideoSurfaceHandle) {
+        coordinator.retire()
     }
 
     func updateUIView(_ container: UIView, context: Context) {
