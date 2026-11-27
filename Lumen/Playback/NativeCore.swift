@@ -451,6 +451,9 @@ final class NativeCore: NSObject, EngineCore {
         // H.264 above 8-bit 4:2:0 (High 10 "Hi10P" anime, 4:2:2/4:4:4 profiles): Apple has no decoder for these and
         // can jam instead of refusing, so they go straight to mpv without asking it.
         if !isHEVC, [110, 122, 244, 44].contains(Int(par.profile)) || par.bits_per_raw_sample > 8 { return nil }
+        // Interlaced video (old TV and DVD rips): the native path can't deinterlace and would show comb lines, and
+        // Apple's decoder is slow with it. mpv deinterlaces it properly.
+        if par.field_order != AV_FIELD_PROGRESSIVE && par.field_order != AV_FIELD_UNKNOWN { return nil }
         let nalLength = isHEVC ? (config.count > 21 ? Int(config[21] & 3) + 1 : 4) : (config.count > 4 ? Int(config[4] & 3) + 1 : 4)
         let needed: [UInt8] = isHEVC ? [32, 33, 34] : [7, 8]
         let present = Set(Self.parameterSets(in: config, hevc: isHEVC).map(\.type))
