@@ -553,15 +553,23 @@ final class NativeCore: NSObject, EngineCore {
                                         sampleCount: 1, sampleTimingEntryCount: 0, sampleTimingArray: nil,
                                         sampleSizeEntryCount: 1, sampleSizeArray: &size, sampleBufferOut: &sample) == noErr,
               let sample else { return false }
-        final class Result: @unchecked Sendable { var ok = false }
+        final class Result: @unchecked Sendable { var ok = false; var status: OSStatus = noErr }
         let result = Result()
-        let status = VTDecompressionSessionDecodeFrame(session, sampleBuffer: sample, flags: [], infoFlagsOut: nil) { status, _, image, _, _ in
-            result.ok = status == noErr && image != nil
+        // Apple's decoder occasionally stalls on a file it doesn't like instead of refusing it. Give it 3 seconds;
+        // a stall counts as "can't show this" so mpv takes over instead of the player freezing.
+        let done = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) let s = session, smp = sample
+        DispatchQueue.global(qos: .userInitiated).async {
+            result.status = VTDecompressionSessionDecodeFrame(s, sampleBuffer: smp, flags: [], infoFlagsOut: nil) { status, _, image, _, _ in
+                result.ok = status == noErr && image != nil
+            }
+            VTDecompressionSessionWaitForAsynchronousFrames(s)
+            done.signal()
         }
-        VTDecompressionSessionWaitForAsynchronousFrames(session)
+        guard done.wait(timeout: .now() + 3) == .success else { return false }
         // kVTInvalidSessionErr happens when the app is in the background; don't blame the file for that.
-        if status == kVTInvalidSessionErr { return true }
-        return status == noErr && result.ok
+        if result.status == kVTInvalidSessionErr { return true }
+        return result.status == noErr && result.ok
     }
 
     private static func cmTime(_ v: Int64, _ tb: AVRational) -> CMTime {
