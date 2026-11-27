@@ -337,6 +337,10 @@ final class EnginePlayerModel {
         stopped = true
         player.stop()
         player.destroy()
+        // Smart downloads: fetch the next episodes and clear the one you just finished.
+        #if os(iOS)
+        if item.type == "Episode" { Task { await DownloadManager.shared.runSmartDownloads(force: true) } }
+        #endif
     }
 
     private func report(_ path: String) async {
