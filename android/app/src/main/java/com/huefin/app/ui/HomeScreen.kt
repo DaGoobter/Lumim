@@ -150,7 +150,7 @@ private fun FeaturedPager(items: List<BaseItem>, onPlay: (BaseItem) -> Unit, onI
         // Huefin look: the picture is a sticker card; Night: it melts into the page.
         val card = Hue.light
         val shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)
-        Box(Modifier.fillMaxSize().then(if (card) Modifier.padding(16.dp).sticker(24.dp, 6.dp).clip(shape).border(2.5.dp, Hue.ink, shape) else Modifier)) {
+        Box(Modifier.fillMaxSize().then(if (card) Modifier.padding(16.dp).outlined(24.dp, 1.75.dp) else Modifier)) {
           androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides Color.White) {
             AsyncImage(c?.backdropURL(item, 1600), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color.Black.copy(alpha = 0.35f), 0.35f to Color.Transparent,

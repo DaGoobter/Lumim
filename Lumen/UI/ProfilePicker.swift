@@ -111,8 +111,8 @@ struct ProfileTile: View {
             }
             .frame(width: 108, height: 108)
             .clipShape(Circle())
-            .overlay(Circle().strokeBorder(current ? AnyShapeStyle(Theme.spectrum) : AnyShapeStyle(Theme.outline),
-                                           lineWidth: current ? 3 : 2.5))
+            .overlay(Circle().strokeBorder(current ? AnyShapeStyle(Theme.spectrum) : AnyShapeStyle(Theme.outline.opacity(0.9)),
+                                           lineWidth: current ? 3 : 1.5))
             .overlay(alignment: .topTrailing) {
                 if editing {
                     Image(systemName: "minus.circle.fill").font(.title).foregroundStyle(.white, .red)

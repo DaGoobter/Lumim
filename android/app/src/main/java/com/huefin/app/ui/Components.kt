@@ -81,7 +81,7 @@ fun PosterCard(item: BaseItem, onClick: () -> Unit, width: Dp = 120.dp) {
     val c = AppState.client
     val w = width * cardScale()
     Column(Modifier.width(w).clickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).sticker(16.dp).clip(CardShape).border(if (Hue.light) 2.5.dp else 1.dp, if (Hue.light) Hue.ink else Hue.hairline, CardShape)) {
+        Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).outlined(16.dp)) {
             RemoteImage(c?.posterURL(item, 400), Modifier.fillMaxSize())
             WatchedBadge(item, Modifier.align(Alignment.TopEnd))
             item.progress?.let { ProgressBar(it, Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(8.dp)) }
@@ -96,7 +96,7 @@ fun LandscapeCard(item: BaseItem, onClick: () -> Unit, width: Dp = 240.dp, subti
     val c = AppState.client
     val w = width * cardScale()
     Column(Modifier.width(w).clickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).sticker(16.dp).clip(CardShape).border(if (Hue.light) 2.5.dp else 1.dp, if (Hue.light) Hue.ink else Hue.hairline, CardShape)) {
+        Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).outlined(16.dp)) {
             RemoteImage(c?.landscapeURL(item), Modifier.fillMaxSize())
             item.progress?.let { ProgressBar(it, Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(10.dp)) }
         }

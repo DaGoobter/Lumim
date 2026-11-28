@@ -69,15 +69,13 @@ enum HuefinFont {
     }()
 }
 
-// MARK: - Sticker
+// MARK: - Outline & sticker
 
-/// The Huefin look's signature: an ink outline and a hard ink shadow, like a sticker you can press.
-/// At night it's a faint line and a soft shadow instead.
-struct Sticker: ViewModifier {
+/// Cards, posters and tiles on the Huefin look: a fine ink line and a soft shadow. At night: a faint line.
+struct Outlined: ViewModifier {
     @Environment(\.colorScheme) private var scheme
     var radius: CGFloat = 16
-    var depth: CGFloat = 4
-    var pressed = false
+    var line: CGFloat = 1.5
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         if scheme == .dark {
@@ -86,15 +84,34 @@ struct Sticker: ViewModifier {
                 .shadow(color: .black.opacity(0.45), radius: 12, y: 6)
         } else {
             content
-                .overlay(shape.strokeBorder(Theme.ink, lineWidth: 2.5))
-                .background(shape.fill(Theme.ink).offset(x: pressed ? 0 : depth, y: pressed ? 0 : depth))
+                .overlay(shape.strokeBorder(Theme.ink.opacity(0.9), lineWidth: line))
+                .shadow(color: Theme.ink.opacity(0.12), radius: 10, y: 5)
+        }
+    }
+}
+
+/// Buttons on the Huefin look: a fine ink line on a small, crisp ink offset that closes when pressed.
+struct Sticker: ViewModifier {
+    @Environment(\.colorScheme) private var scheme
+    var radius: CGFloat = 16
+    var depth: CGFloat = 2
+    var pressed = false
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        if scheme == .dark {
+            content.overlay(shape.strokeBorder(Theme.hairline, lineWidth: 1))
+        } else {
+            content
+                .overlay(shape.strokeBorder(Theme.ink.opacity(0.9), lineWidth: 1.75))
+                .background(shape.fill(Theme.ink.opacity(0.9)).offset(x: pressed ? 0 : depth, y: pressed ? 0 : depth))
                 .offset(x: pressed ? depth / 2 : 0, y: pressed ? depth / 2 : 0)
         }
     }
 }
 
 extension View {
-    func sticker(_ radius: CGFloat = 16, depth: CGFloat = 4, pressed: Bool = false) -> some View {
+    func outlined(_ radius: CGFloat = 16, line: CGFloat = 1.5) -> some View { modifier(Outlined(radius: radius, line: line)) }
+    func sticker(_ radius: CGFloat = 16, depth: CGFloat = 2, pressed: Bool = false) -> some View {
         modifier(Sticker(radius: radius, depth: depth, pressed: pressed))
     }
 }
@@ -129,7 +146,7 @@ struct HueLift: ViewModifier {
                     .offset(x: pressed ? 0 : 3, y: pressed ? 0 : 3))
                 .offset(x: pressed ? 2 : 0, y: pressed ? 2 : 0)
         } else {
-            content.sticker(16, depth: 3, pressed: pressed)
+            content.sticker(16, pressed: pressed)
         }
     }
 }
@@ -249,7 +266,7 @@ struct PosterCard: View {
                 .overlay { RemoteImage(url: app.client?.posterURL(for: item)) }
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(alignment: .topTrailing) { WatchedBadge(item: item) }
-                .sticker(16)
+                .outlined(16)
             Text(item.displayTitle).font(.caption.weight(.semibold)).lineLimit(1)
             Text(item.productionYear.map(String.init) ?? " ").font(.caption2).foregroundStyle(.secondary)
         }
@@ -277,7 +294,7 @@ struct LandscapeCard: View {
                     }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .sticker(16)
+                .outlined(16)
                 .padding(.bottom, 8)
             if let top = item.episodeLabel ?? item.productionYear.map(String.init) {
                 Text(top).font(.caption.weight(.semibold)).foregroundStyle(.secondary).lineLimit(1)
@@ -434,7 +451,7 @@ struct SecondaryButtonStyle: ButtonStyle {
             .padding(.horizontal, 18).padding(.vertical, 12)
             .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .foregroundStyle(.primary)
-            .sticker(16, depth: 3, pressed: configuration.isPressed)
+            .sticker(16, pressed: configuration.isPressed)
             .animation(.spring(response: 0.25, dampingFraction: 0.7), value: configuration.isPressed)
     }
 }

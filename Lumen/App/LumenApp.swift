@@ -201,7 +201,7 @@ struct AccountButton: View {
                 .font(.headline.weight(.heavy)).foregroundStyle(.white)
                 .frame(width: 34, height: 34)
                 .background(Circle().fill(Theme.gradient))
-                .sticker(17, depth: 2)
+                .outlined(17, line: 1.25)
         }
         .contextMenu {
             Button { AppRouter.shared.showProfiles = true } label: { Label("Who's watching?", systemImage: "person.2.crop.square.stack") }

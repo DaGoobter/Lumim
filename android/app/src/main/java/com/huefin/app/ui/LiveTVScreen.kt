@@ -115,7 +115,7 @@ private fun ChannelLogo(ch: BaseItem, modifier: Modifier) {
 
 @Composable
 private fun ChannelRow(ch: BaseItem, now: ProgramInfo?, next: ProgramInfo?, at: Instant, onClick: () -> Unit) {
-    Row(Modifier.widthIn(max = 900.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Hue.card).border(if (Hue.light) 2.dp else 0.dp, Hue.ink, RoundedCornerShape(18.dp)).clickable(onClick = onClick).padding(12.dp),
+    Row(Modifier.widthIn(max = 900.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Hue.card).border(if (Hue.light) 1.25.dp else 0.dp, Hue.ink.copy(alpha = 0.9f), RoundedCornerShape(18.dp)).clickable(onClick = onClick).padding(12.dp),
         verticalAlignment = Alignment.CenterVertically) {
         ChannelLogo(ch, Modifier.size(96.dp, 60.dp))
         Column(Modifier.weight(1f).padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {

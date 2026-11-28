@@ -69,7 +69,7 @@ struct PINPad: View {
             Text(d).font(font).frame(width: key, height: key)
                 #if !os(tvOS)
                 .background(Theme.card, in: Circle())
-                .overlay(Circle().strokeBorder(Theme.outline, lineWidth: 2))
+                .overlay(Circle().strokeBorder(Theme.outline.opacity(0.9), lineWidth: 1.25))
                 #endif
         }
         #if os(tvOS)

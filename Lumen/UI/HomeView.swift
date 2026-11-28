@@ -310,7 +310,7 @@ struct HeroView: View {
             }
             .frame(width: width - 32, height: artHeight - 24)
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .sticker(24, depth: 6)
+            .outlined(24, line: 1.75)
             .frame(width: width, height: artHeight, alignment: .center)
         } else {
             ZStack(alignment: .bottomLeading) {

@@ -403,7 +403,7 @@ fun LiveTVScreen() {
             else -> LazyVerticalGrid(GridCells.Adaptive(460.dp), contentPadding = PaddingValues(24.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 gridItems(list, key = { it.id }) { ch ->
                     val n = nowOn(ch); val next = nextOn(ch)
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Hue.card).border(if (Hue.light) 2.dp else 0.dp, Hue.ink, RoundedCornerShape(18.dp)).clickable { Nav.play(ch) }.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Hue.card).border(if (Hue.light) 1.25.dp else 0.dp, Hue.ink.copy(alpha = 0.9f), RoundedCornerShape(18.dp)).clickable { Nav.play(ch) }.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(104.dp, 64.dp).clip(RoundedCornerShape(12.dp)).background(Hue.wash), Alignment.Center) {
                             Text((ch.name ?: "TV").take(3).uppercase(), fontWeight = FontWeight.Black, color = Hue.secondaryText)
                             if (ch.imageTag("Primary") != null) RemoteImage(AppState.client?.imageURL(ch.id, maxWidth = 240, tag = ch.imageTag("Primary")), Modifier.fillMaxSize().padding(8.dp).background(Color.Transparent), ContentScale.Fit)

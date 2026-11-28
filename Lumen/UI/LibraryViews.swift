@@ -75,7 +75,7 @@ struct LibraryTile: View {
                     .shadow(color: .black.opacity(0.4), radius: 6)
             }
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .sticker(20)
+            .outlined(20)
             .artColor(from: url, into: $color)
     }
 }

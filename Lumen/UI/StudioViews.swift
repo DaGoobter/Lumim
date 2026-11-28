@@ -102,7 +102,7 @@ struct StudioTile: View {
         }
         .frame(height: 104)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .sticker(18)
+        .outlined(18)
         .accessibilityElement(children: .combine)
     }
 }

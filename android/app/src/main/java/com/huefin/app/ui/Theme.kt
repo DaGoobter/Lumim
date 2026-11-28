@@ -20,6 +20,8 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
@@ -134,13 +136,13 @@ fun HueButton(
     val pressed by interaction.collectIsPressedAsState()
     val bg = fill ?: hue
     Box(modifier.defaultMinSize(minHeight = 48.dp)) {
-        val shadow = if (Hue.light) Hue.ink.copy(alpha = if (enabled) 1f else 0.3f) else hue.copy(alpha = if (enabled) 0.55f else 0.2f)
-        Box(Modifier.matchParentSize().offset(3.dp, 3.dp).background(shadow, ButtonShape))
+        val shadow = if (Hue.light) Hue.ink.copy(alpha = if (enabled) 0.9f else 0.3f) else hue.copy(alpha = if (enabled) 0.55f else 0.2f)
+        Box(Modifier.matchParentSize().offset(if (Hue.light) 2.dp else 3.dp, if (Hue.light) 2.dp else 3.dp).background(shadow, ButtonShape))
         Row(
             Modifier
                 .offset(if (pressed) 2.dp else 0.dp, if (pressed) 2.dp else 0.dp)
                 .background(if (enabled) bg else bg.copy(alpha = 0.4f), ButtonShape)
-                .then(if (Hue.light) Modifier.border(2.5.dp, Hue.ink, ButtonShape) else Modifier)
+                .then(if (Hue.light) Modifier.border(1.75.dp, Hue.ink.copy(alpha = 0.9f), ButtonShape) else Modifier)
                 .clickable(interaction, null, enabled = enabled, role = Role.Button, onClick = onClick)
                 .padding(horizontal = 22.dp, vertical = 13.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -163,9 +165,9 @@ fun SoftButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Bool
     Row(
         modifier
             .defaultMinSize(minHeight = 48.dp)
-            .sticker(16.dp, 3.dp)
+            .sticker(16.dp, 2.dp)
             .background(Hue.card, ButtonShape)
-            .border(if (Hue.light) 2.5.dp else 1.5.dp, if (Hue.light) Hue.ink else Hue.hairline, ButtonShape)
+            .border(if (Hue.light) 1.75.dp else 1.5.dp, if (Hue.light) Hue.ink.copy(alpha = 0.9f) else Hue.hairline, ButtonShape)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(padding),
         verticalAlignment = Alignment.CenterVertically,
@@ -179,31 +181,19 @@ fun Eyebrow(text: String, color: Color = LocalHue.current) =
     Text(text.uppercase(), color = color, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.4.sp)
 
 
-/** The Huefin look's signature: a hard ink shadow under a card or button (pair it with an ink border).
- *  Does nothing at night. */
-fun Modifier.sticker(radius: androidx.compose.ui.unit.Dp = 16.dp, depth: androidx.compose.ui.unit.Dp = 4.dp, outline: Boolean = false): Modifier =
+/** The Huefin look's button: a small, crisp ink offset under it (pair it with a fine ink border). Nothing at night. */
+fun Modifier.sticker(radius: androidx.compose.ui.unit.Dp = 16.dp, depth: androidx.compose.ui.unit.Dp = 2.dp, outline: Boolean = false): Modifier =
     if (!Hue.light) this else this
         .drawBehind {
-            drawRoundRect(Hue.ink, topLeft = androidx.compose.ui.geometry.Offset(depth.toPx(), depth.toPx()), size = size,
+            drawRoundRect(Hue.ink.copy(alpha = 0.9f), topLeft = androidx.compose.ui.geometry.Offset(depth.toPx(), depth.toPx()), size = size,
                 cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius.toPx()))
         }
-        .then(if (outline) Modifier.border(2.5.dp, Hue.ink, RoundedCornerShape(radius)) else Modifier)
+        .then(if (outline) Modifier.border(1.75.dp, Hue.ink.copy(alpha = 0.9f), RoundedCornerShape(radius)) else Modifier)
 
-
-/** Headings in Bricolage Grotesque (added when the app is built), everything else in the system font. */
-@OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
-private fun huefinTypography(assets: android.content.res.AssetManager): androidx.compose.material3.Typography {
-    val t = androidx.compose.material3.Typography()
-    val path = "fonts/BricolageGrotesque.ttf"
-    val present = runCatching { assets.list("fonts")?.contains("BricolageGrotesque.ttf") == true }.getOrDefault(false)
-    if (!present) return t
-    val family = androidx.compose.ui.text.font.FontFamily(
-        listOf(FontWeight.SemiBold, FontWeight.Bold, FontWeight.ExtraBold, FontWeight.Black).map { w ->
-            androidx.compose.ui.text.font.Font(path, assets, w,
-                variationSettings = androidx.compose.ui.text.font.FontVariation.Settings(androidx.compose.ui.text.font.FontVariation.weight(w.weight)))
-        })
-    fun f(s: androidx.compose.ui.text.TextStyle) = s.copy(fontFamily = family)
-    return t.copy(displayLarge = f(t.displayLarge), displayMedium = f(t.displayMedium), displaySmall = f(t.displaySmall),
-        headlineLarge = f(t.headlineLarge), headlineMedium = f(t.headlineMedium), headlineSmall = f(t.headlineSmall),
-        titleLarge = f(t.titleLarge))
+/** Cards and posters on the Huefin look: a fine ink line and a soft shadow. At night: the faint hairline. */
+fun Modifier.outlined(radius: androidx.compose.ui.unit.Dp = 16.dp, line: androidx.compose.ui.unit.Dp = 1.5.dp): Modifier {
+    val shape = RoundedCornerShape(radius)
+    return if (!Hue.light) this.clip(shape).border(1.dp, Hue.hairline, shape)
+    else this.shadow(10.dp, shape, ambientColor = Hue.ink.copy(alpha = 0.25f), spotColor = Hue.ink.copy(alpha = 0.25f))
+        .clip(shape).border(line, Hue.ink.copy(alpha = 0.9f), shape)
 }

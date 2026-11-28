@@ -237,7 +237,7 @@ struct ItemDetailView: View {
                         .font(.subheadline.weight(.semibold))
                         .padding(.horizontal, 14).padding(.vertical, 8)
                         .background(selected ? AnyShapeStyle(Theme.gradient) : AnyShapeStyle(Theme.card), in: Capsule())
-                        .overlay(Capsule().strokeBorder(Theme.outline, lineWidth: 2))
+                        .overlay(Capsule().strokeBorder(Theme.outline.opacity(0.9), lineWidth: 1.25))
                         .foregroundStyle(selected ? Color.white : Color.primary)
                     }
                 }

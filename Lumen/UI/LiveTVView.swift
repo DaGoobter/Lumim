@@ -152,7 +152,7 @@ struct ChannelRow: View {
         }
         .padding(12)
         .background(Theme.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .sticker(18, depth: 3)
+        .outlined(18)
         .foregroundStyle(.primary)
     }
 }

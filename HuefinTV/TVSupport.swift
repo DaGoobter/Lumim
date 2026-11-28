@@ -73,8 +73,8 @@ struct Sticker: ViewModifier {
             content
         } else {
             content
-                .overlay(shape.strokeBorder(Theme.ink, lineWidth: 4))
-                .background(shape.fill(Theme.ink).offset(x: depth, y: depth))
+                .overlay(shape.strokeBorder(Theme.ink.opacity(0.9), lineWidth: 2))
+                .shadow(color: Theme.ink.opacity(0.15), radius: 14, y: 8)
         }
     }
 }
