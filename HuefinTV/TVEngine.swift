@@ -10,6 +10,8 @@ final class EngineUIState {
     /// Which button's menu is open, and the highlighted row in it.
     var menu: Int?
     var row = 0
+    /// Where the playhead is being dragged to with a swipe on the remote (nil = not scrubbing).
+    var scrubTime: Double?
 }
 
 /// The small buttons next to the progress bar, like Apple's own player.
@@ -70,7 +72,7 @@ enum EngineMenus {
 /// It is a plain UIKit screen (not SwiftUI) so every Siri Remote click, swipe and button press reaches it.
 /// Remote: click or ▶︎❚❚ = play/pause (or Skip Intro when offered), swipe or press ◀︎ ▶︎ = skip,
 /// swipe up = show controls, swipe down = the Subtitles / Audio / Speed buttons, Menu = back out, then exit.
-final class TVEngineViewController: UIViewController {
+final class TVEngineViewController: UIViewController, UIGestureRecognizerDelegate {
     private let model: EnginePlayerModel
     private let ui = EngineUIState()
     private let videoView = UIView()
@@ -113,10 +115,18 @@ final class TVEngineViewController: UIViewController {
         root.addSubview(overlay.view)
         overlay.didMove(toParent: self)
 
+        // Sliding a finger left/right on the touch surface drags the playhead along the progress bar
+        // (like Apple's player). Clicking the left/right edge of the remote still skips by the set amount.
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(panned(_:)))
+        pan.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.indirect.rawValue)]
+        pan.delegate = self
+        root.addGestureRecognizer(pan)
+        scrubPan = pan
         for (dir, action) in [(UISwipeGestureRecognizer.Direction.left, #selector(swipeLeft)), (.right, #selector(swipeRight)),
                               (.down, #selector(swipeDown)), (.up, #selector(swipeUp))] {
             let g = UISwipeGestureRecognizer(target: self, action: action)
             g.direction = dir
+            if dir == .left || dir == .right { g.require(toFail: pan) }   // a swipe on the bar scrubs instead
             root.addGestureRecognizer(g)
         }
         // Menu / Back through a gesture recognizer: these see the button before tvOS's own "Back leaves
@@ -126,6 +136,67 @@ final class TVEngineViewController: UIViewController {
         root.addGestureRecognizer(back)
     }
     @objc private func menuTapped() { onMenu() }
+
+    // MARK: Scrubbing
+
+    private weak var scrubPan: UIPanGestureRecognizer?
+    private var scrubStart: Double = 0
+
+    func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
+        guard let pan = g as? UIPanGestureRecognizer, pan === scrubPan else { return true }
+        // Only on the progress bar itself (not while a button or its menu is highlighted), and only sideways.
+        guard ui.menu == nil, ui.button == nil, model.duration > 0, model.errorMessage == nil else { return false }
+        let v = pan.velocity(in: view)
+        return abs(v.x) > abs(v.y) * 1.5
+    }
+
+    @objc private func panned(_ g: UIPanGestureRecognizer) {
+        let d = model.duration
+        guard d > 0 else { return }
+        switch g.state {
+        case .began:
+            scrubStart = ui.scrubTime ?? model.currentTime
+            ui.scrubTime = scrubStart
+            ui.showControls = true
+            hideTask?.cancel()
+        case .changed:
+            // One full swipe across the touch surface covers about a third of the video (at least 5 minutes);
+            // slow movements are finer still, so you can land on an exact moment.
+            let width = max(view.bounds.width, 1)
+            let span = max(300, d / 3)
+            let dx = g.translation(in: view).x
+            let speed = abs(g.velocity(in: view).x)
+            let fine = speed < 250 ? 0.35 : 1
+            let target = scrubStart + Double(dx / width) * span * fine
+            ui.scrubTime = min(max(0, target), d)
+            if fine < 1 { scrubStart = ui.scrubTime!; g.setTranslation(.zero, in: view) }
+        case .ended, .cancelled, .failed:
+            scrubStart = ui.scrubTime ?? model.currentTime
+            scheduleScrubTimeout()
+        default: break
+        }
+    }
+
+    /// Jump to the scrubbed spot.
+    private func commitScrub() {
+        guard let t = ui.scrubTime else { return }
+        ui.scrubTime = nil
+        model.seek(to: t)
+        reveal()
+    }
+    private func cancelScrub() {
+        ui.scrubTime = nil
+        reveal()
+    }
+    /// If you scrub and then leave the remote alone, the marker goes back to where it was.
+    private func scheduleScrubTimeout() {
+        hideTask?.cancel()
+        hideTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(8))
+            guard !Task.isCancelled, let self, self.ui.scrubTime != nil else { return }
+            self.cancelScrub()
+        }
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -178,7 +249,10 @@ final class TVEngineViewController: UIViewController {
         for p in presses {
             switch p.type {
             case .select: onSelect(); handled = true
-            case .playPause: model.togglePlay(); reveal(); handled = true
+            case .playPause:
+                if ui.scrubTime != nil { commitScrub(); if !model.isPlaying { model.togglePlay() } }
+                else { model.togglePlay(); reveal() }
+                handled = true
             case .menu: handled = true   // acted on by the Back gesture above
             case .leftArrow: swipeLeft(); handled = true
             case .rightArrow: swipeRight(); handled = true
@@ -200,6 +274,7 @@ final class TVEngineViewController: UIViewController {
     }
 
     private func onSelect() {
+        if ui.scrubTime != nil { commitScrub(); return }
         if let menu = ui.menu {
             let keep = EngineMenus.keepsOpen(menu, ui.row, model)
             EngineMenus.choose(menu, ui.row, model)
@@ -217,6 +292,7 @@ final class TVEngineViewController: UIViewController {
         reveal()
     }
     private func onMenu() {
+        if ui.scrubTime != nil { cancelScrub(); return }
         if ui.menu != nil { ui.menu = nil; reveal() }
         else if ui.button != nil { ui.button = nil; reveal() }
         else if model.upNextCountdown != nil { model.dismissUpNext() }
@@ -225,21 +301,25 @@ final class TVEngineViewController: UIViewController {
     }
     @objc private func swipeLeft() {
         if ui.menu != nil { return }
+        if let t = ui.scrubTime { ui.scrubTime = max(0, t - Double(PlaybackPrefs.skipBack)); scheduleScrubTimeout(); return }
         if let b = ui.button, ui.showControls { ui.button = max(0, b - 1); reveal(); return }
         model.skip(by: -Double(PlaybackPrefs.skipBack)); reveal()
     }
     @objc private func swipeRight() {
         if ui.menu != nil { return }
+        if let t = ui.scrubTime { ui.scrubTime = min(model.duration, t + Double(PlaybackPrefs.skipForward)); scheduleScrubTimeout(); return }
         if let b = ui.button, ui.showControls { ui.button = min(EngineMenus.buttons.count - 1, b + 1); reveal(); return }
         model.skip(by: Double(PlaybackPrefs.skipForward)); reveal()
     }
     @objc private func swipeUp() {
         if ui.menu != nil { ui.row = max(0, ui.row - 1); return }
+        if ui.scrubTime != nil { return }
         ui.button = nil
         reveal()
     }
     @objc private func swipeDown() {
         if let menu = ui.menu { ui.row = min(EngineMenus.options(menu, model).count - 1, ui.row + 1); return }
+        if ui.scrubTime != nil { return }
         if ui.showControls { ui.button = ui.button ?? 0 }
         reveal()
     }
@@ -249,7 +329,7 @@ final class TVEngineViewController: UIViewController {
         hideTask?.cancel()
         hideTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(5))
-            guard !Task.isCancelled, let self, self.model.isPlaying, self.ui.menu == nil else { return }
+            guard !Task.isCancelled, let self, self.model.isPlaying, self.ui.menu == nil, self.ui.scrubTime == nil else { return }
             self.ui.button = nil
             self.ui.showControls = false
         }
@@ -358,16 +438,30 @@ private struct EngineOverlay: View {
                     }
                 }
                 GeometryReader { g in
+                    let w = g.size.width
+                    let frac = { (t: Double) in m.duration > 0 ? CGFloat(min(1, max(0, t / m.duration))) : 0 }
                     ZStack(alignment: .leading) {
                         Capsule().fill(Color.white.opacity(0.25))
-                        Capsule().fill(Color.white).frame(width: m.duration > 0 ? g.size.width * min(1, m.currentTime / m.duration) : 0)
+                        Capsule().fill(Color.white.opacity(ui.scrubTime == nil ? 1 : 0.5)).frame(width: w * frac(m.currentTime))
+                        if let t = ui.scrubTime {
+                            Capsule().fill(Color.white).frame(width: 4, height: 30)
+                                .offset(x: w * frac(t) - 2)
+                            Text(clock(t)).font(.headline.monospacedDigit())
+                                .padding(.horizontal, 14).padding(.vertical, 6)
+                                .background(.ultraThinMaterial, in: Capsule())
+                                .fixedSize()
+                                .offset(x: min(max(0, w * frac(t) - 45), w - 90), y: -46)
+                        }
                     }
                 }.frame(height: 8)
                 HStack {
                     Image(systemName: m.isPlaying ? "pause.fill" : "play.fill")
                     Text(clock(m.currentTime)).monospacedDigit()
                     Spacer()
-                    if let b = ui.button, ui.menu == nil {
+                    if ui.scrubTime != nil {
+                        Text("Click to jump here · Back to cancel").font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                    } else if let b = ui.button, ui.menu == nil {
                         Text(EngineMenus.buttons[b].title).font(.caption).foregroundStyle(.secondary)
                         Spacer()
                     }
