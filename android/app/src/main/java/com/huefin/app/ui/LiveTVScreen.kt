@@ -106,8 +106,8 @@ fun LiveTVScreen(nav: NavHostController) {
 
 @Composable
 private fun ChannelLogo(ch: BaseItem, modifier: Modifier) {
-    Box(modifier.clip(RoundedCornerShape(12.dp)).background(Color.White.copy(alpha = 0.08f)), Alignment.Center) {
-        Text((ch.name ?: "TV").take(3).uppercase(), fontWeight = FontWeight.Black, color = Color.White.copy(alpha = 0.5f))
+    Box(modifier.clip(RoundedCornerShape(12.dp)).background(Hue.wash), Alignment.Center) {
+        Text((ch.name ?: "TV").take(3).uppercase(), fontWeight = FontWeight.Black, color = Hue.secondaryText)
         if (ch.imageTag("Primary") != null) RemoteImage(AppState.client?.imageURL(ch.id, maxWidth = 240, tag = ch.imageTag("Primary")),
             Modifier.fillMaxSize().padding(8.dp), ContentScale.Fit)
     }
@@ -115,7 +115,7 @@ private fun ChannelLogo(ch: BaseItem, modifier: Modifier) {
 
 @Composable
 private fun ChannelRow(ch: BaseItem, now: ProgramInfo?, next: ProgramInfo?, at: Instant, onClick: () -> Unit) {
-    Row(Modifier.widthIn(max = 900.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color.White.copy(alpha = 0.06f)).clickable(onClick = onClick).padding(12.dp),
+    Row(Modifier.widthIn(max = 900.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Hue.card).border(if (Hue.light) 2.dp else 0.dp, Hue.ink, RoundedCornerShape(18.dp)).clickable(onClick = onClick).padding(12.dp),
         verticalAlignment = Alignment.CenterVertically) {
         ChannelLogo(ch, Modifier.size(96.dp, 60.dp))
         Column(Modifier.weight(1f).padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {

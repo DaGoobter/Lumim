@@ -1,6 +1,8 @@
 package com.huefin.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -145,9 +147,14 @@ private fun FeaturedPager(items: List<BaseItem>, onPlay: (BaseItem) -> Unit, onI
     HorizontalPager(pager, Modifier.fillMaxWidth().heightIn(min = if (wide) 420.dp else 520.dp).height(if (wide) 460.dp else 560.dp)) { page ->
         val item = items[page]
         val c = AppState.client
-        Box(Modifier.fillMaxSize()) {
+        // Huefin look: the picture is a sticker card; Night: it melts into the page.
+        val card = Hue.light
+        val shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)
+        Box(Modifier.fillMaxSize().then(if (card) Modifier.padding(16.dp).sticker(24.dp, 6.dp).clip(shape).border(2.5.dp, Hue.ink, shape) else Modifier)) {
+          androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides Color.White) {
             AsyncImage(c?.backdropURL(item, 1600), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color.Black.copy(alpha = 0.35f), 0.35f to Color.Transparent, 1f to Hue.night)))
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color.Black.copy(alpha = 0.35f), 0.35f to Color.Transparent,
+                1f to (if (card) Color.Black.copy(alpha = 0.8f) else Hue.night))))
             Column(Modifier.align(Alignment.BottomStart).padding(20.dp).widthIn(max = 560.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (item.progress != null) Eyebrow(item.episodeLabel?.let { "Continue · $it" } ?: "Continue watching", Hue.sun)
                 val logo = c?.logoURL(item)
@@ -165,5 +172,6 @@ private fun FeaturedPager(items: List<BaseItem>, onPlay: (BaseItem) -> Unit, onI
                 }
             }
         }
+          }
     }
 }

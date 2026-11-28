@@ -128,7 +128,7 @@ private fun Hero(items: List<BaseItem>) {
                     if (logo != null) RemoteImage(logo, Modifier.height(110.dp).widthIn(max = 420.dp).background(Color.Transparent), ContentScale.Fit)
                     else Text(item.displayTitle, style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Black)
                     Text(listOfNotNull(item.episodeLabel, item.productionYear?.toString(), item.officialRating, item.runtimeText).joinToString("  ·  "), color = Hue.secondaryText)
-                    item.overview?.let { Text(it, maxLines = 3, overflow = TextOverflow.Ellipsis, color = Color.White.copy(alpha = 0.85f)) }
+                    item.overview?.let { Text(it, maxLines = 3, overflow = TextOverflow.Ellipsis, color = Hue.text.copy(alpha = 0.85f)) }
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         PlayButton({ playOrResume(item) }) { Icon(Icons.Filled.PlayArrow, null); Text(if ((item.progress ?: 0.0) > 0) " Resume" else " Play") }
                         SoftButton({ Nav.open(item) }) { Icon(Icons.Filled.Info, null); Text(" Details") }
@@ -137,7 +137,7 @@ private fun Hero(items: List<BaseItem>) {
             }
         }
         Row(Modifier.align(Alignment.BottomEnd).padding(40.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            items.indices.forEach { i -> Box(Modifier.size(if (i == index) 22.dp else 8.dp, 8.dp).clip(CircleShape).background(if (i == index) LocalHue.current else Color.White.copy(alpha = 0.3f)).clickable { index = i }) }
+            items.indices.forEach { i -> Box(Modifier.size(if (i == index) 22.dp else 8.dp, 8.dp).clip(CircleShape).background(if (i == index) LocalHue.current else Hue.text.copy(alpha = 0.3f)).clickable { index = i }) }
         }
     }
 }
@@ -302,7 +302,7 @@ private fun DetailScreen(start: BaseItem) {
                             listOfNotNull(v.height?.let { h -> if (h >= 2000) "4K" else if (h >= 1000) "HD" else null }, v.videoRangeType?.takeIf { it != "SDR" }).forEach { Chip(it, LocalHue.current.copy(alpha = 0.25f)) } } }
                     }
                     item.genres?.takeIf { it.isNotEmpty() }?.let { Text(it.take(4).joinToString(" · "), color = Hue.secondaryText) }
-                    item.overview?.let { Text(it, maxLines = 5, overflow = TextOverflow.Ellipsis, color = Color.White.copy(alpha = 0.88f)) }
+                    item.overview?.let { Text(it, maxLines = 5, overflow = TextOverflow.Ellipsis, color = Hue.text.copy(alpha = 0.88f)) }
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (item.isPlayable || item.isSeries || item.isAudio) PlayButton({ playOrResume(item) }) {
                             Icon(Icons.Filled.PlayArrow, null); Text(if ((item.progress ?: 0.0) > 0) " Resume ${item.runTimeTicks?.let { formatLeft(it - item.resumeTicks) } ?: ""}" else " Play")
@@ -310,12 +310,12 @@ private fun DetailScreen(start: BaseItem) {
                         if ((item.progress ?: 0.0) > 0) SoftButton({ Nav.play(item, 0) }) { Icon(Icons.Filled.Replay, null); Text(" From start") }
                         val played = item.userData?.played == true
                         SoftButton({ scope.launch { c?.markPlayed(item.id, !played); refresh() } }, padding = PaddingValues(12.dp)) {
-                            Icon(if (played) Icons.Filled.CheckCircle else Icons.Filled.CheckCircleOutline, if (played) "Mark unwatched" else "Mark watched", tint = if (played) LocalHue.current else Color.White)
+                            Icon(if (played) Icons.Filled.CheckCircle else Icons.Filled.CheckCircleOutline, if (played) "Mark unwatched" else "Mark watched", tint = if (played) LocalHue.current else Hue.text)
                         }
                         if (item.isPlayable && !item.isLiveChannel) DesktopDownloadButton(item)
                         val fav = item.userData?.isFavorite == true
                         SoftButton({ scope.launch { c?.setFavorite(item.id, !fav); refresh() } }, padding = PaddingValues(12.dp)) {
-                            Icon(if (fav) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, if (fav) "Remove from My List" else "Add to My List", tint = if (fav) Hue.coral else Color.White)
+                            Icon(if (fav) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, if (fav) "Remove from My List" else "Add to My List", tint = if (fav) Hue.coral else Hue.text)
                         }
                     }
                     item.progress?.let { ProgressBar(it, Modifier.width(320.dp)) }
@@ -342,7 +342,7 @@ private fun DetailScreen(start: BaseItem) {
                     items(seasons, key = { it.id }) { s ->
                         val sel = s.id == season?.id
                         Text(s.name ?: "Season", Modifier.clip(RoundedCornerShape(12.dp)).background(if (sel) LocalHue.current else Hue.card).clickable { season = s }.padding(horizontal = 16.dp, vertical = 9.dp),
-                            color = if (sel) Hue.ink else Color.White, fontWeight = FontWeight.SemiBold)
+                            color = if (sel) Hue.ink else Hue.text, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
@@ -403,9 +403,9 @@ fun LiveTVScreen() {
             else -> LazyVerticalGrid(GridCells.Adaptive(460.dp), contentPadding = PaddingValues(24.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 gridItems(list, key = { it.id }) { ch ->
                     val n = nowOn(ch); val next = nextOn(ch)
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color.White.copy(alpha = 0.06f)).clickable { Nav.play(ch) }.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(104.dp, 64.dp).clip(RoundedCornerShape(12.dp)).background(Color.White.copy(alpha = 0.08f)), Alignment.Center) {
-                            Text((ch.name ?: "TV").take(3).uppercase(), fontWeight = FontWeight.Black, color = Color.White.copy(alpha = 0.5f))
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Hue.card).border(if (Hue.light) 2.dp else 0.dp, Hue.ink, RoundedCornerShape(18.dp)).clickable { Nav.play(ch) }.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(104.dp, 64.dp).clip(RoundedCornerShape(12.dp)).background(Hue.wash), Alignment.Center) {
+                            Text((ch.name ?: "TV").take(3).uppercase(), fontWeight = FontWeight.Black, color = Hue.secondaryText)
                             if (ch.imageTag("Primary") != null) RemoteImage(AppState.client?.imageURL(ch.id, maxWidth = 240, tag = ch.imageTag("Primary")), Modifier.fillMaxSize().padding(8.dp).background(Color.Transparent), ContentScale.Fit)
                         }
                         Column(Modifier.weight(1f).padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {

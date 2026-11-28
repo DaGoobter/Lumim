@@ -70,7 +70,7 @@ private val spectrum = listOf(Hue.coral, Hue.amber, Hue.sun, Hue.mint, Hue.sky, 
 @Composable
 fun BrowseModeRow(mode: String, onMode: (String) -> Unit) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp).clip(RoundedCornerShape(22.dp))
-        .background(Color.White.copy(alpha = 0.07f)).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        .background(Hue.wash).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         listOf("libraries" to "Libraries", "studios" to "Studios", "networks" to "Networks").forEach { (tag, label) ->
             val on = mode == tag
             Box(Modifier.weight(1f).heightIn(min = 40.dp).clip(RoundedCornerShape(18.dp))
@@ -187,7 +187,7 @@ fun StudioBrandScreen(id: String, nav: NavHostController) {
             horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(if (brand.kind == StudioBrand.Kind.Studio) "STUDIO" else "NETWORK", color = Color.White.copy(alpha = 0.75f),
+                    Text(if (brand.kind == StudioBrand.Kind.Studio) "STUDIO" else "NETWORK", color = Hue.secondaryText,
                         fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium, letterSpacing = 1.2.sp)
                     Text(brand.name, fontWeight = FontWeight.ExtraBold, fontSize = 42.sp, lineHeight = 44.sp)
                     Text(brand.countText, color = Hue.secondaryText, fontWeight = FontWeight.SemiBold)
@@ -200,7 +200,7 @@ fun StudioBrandScreen(id: String, nav: NavHostController) {
                 }
             }
             if (both) item(span = { GridItemSpan(maxLineSpan) }) {
-                Row(Modifier.clip(RoundedCornerShape(18.dp)).background(Color.White.copy(alpha = 0.07f)).padding(3.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(Modifier.clip(RoundedCornerShape(18.dp)).background(Hue.wash).padding(3.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                     listOf("All", "Movies", "Shows").forEachIndexed { i, t ->
                         Box(Modifier.heightIn(min = 36.dp).clip(RoundedCornerShape(15.dp)).background(if (show == i) Hue.library else Color.Transparent)
                             .clickable { show = i }.padding(horizontal = 16.dp), Alignment.Center) {
@@ -217,9 +217,9 @@ fun StudioBrandScreen(id: String, nav: NavHostController) {
 
 @Composable
 private fun BrandChip(text: String, on: Boolean, onClick: () -> Unit) {
-    Box(Modifier.heightIn(min = 40.dp).clip(RoundedCornerShape(20.dp)).background(if (on) Color.White else Color.Transparent)
-        .border(1.dp, if (on) Color.Transparent else Color.White.copy(alpha = 0.16f), RoundedCornerShape(20.dp))
+    Box(Modifier.heightIn(min = 40.dp).clip(RoundedCornerShape(20.dp)).background(if (on) Hue.text else Color.Transparent)
+        .border(1.dp, if (on) Color.Transparent else Hue.hairline, RoundedCornerShape(20.dp))
         .clickable(onClick = onClick).padding(horizontal = 14.dp), Alignment.Center) {
-        Text(text, color = if (on) Hue.ink else Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+        Text(text, color = if (on) Hue.night else Hue.text, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge, maxLines = 1)
     }
 }

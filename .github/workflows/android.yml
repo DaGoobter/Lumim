@@ -28,6 +28,15 @@ jobs:
         with:
           gradle-version: "8.14.3"
 
+      - name: Fetch Huefin's font (Bricolage Grotesque, SIL Open Font License)
+        run: |
+          mkdir -p app/src/main/assets/fonts
+          base="https://raw.githubusercontent.com/google/fonts/main/ofl/bricolagegrotesque"
+          for name in "BricolageGrotesque%5Bopsz%2Cwdth%2Cwght%5D.ttf" "BricolageGrotesque%5Bopsz%2Cwght%5D.ttf"; do
+            curl -fsSL -o app/src/main/assets/fonts/BricolageGrotesque.ttf "$base/$name" && break
+          done
+          [ -s app/src/main/assets/fonts/BricolageGrotesque.ttf ] || { rm -f app/src/main/assets/fonts/BricolageGrotesque.ttf; echo "Font not available; using system type."; }
+
       - name: Build APK
         run: gradle :app:assembleRelease --stacktrace --console=plain
 

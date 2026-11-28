@@ -80,7 +80,7 @@ private fun OverlayWindow(owner: java.awt.Window, content: @Composable () -> Uni
         d.isResizable = false
         d.title = "Huefin"
         d.setContent {
-            HuefinTheme { CompositionLocalProvider(LocalWidthClass provides WidthClass.Expanded) {
+            HuefinTheme(dark = true) { CompositionLocalProvider(LocalWidthClass provides WidthClass.Expanded) {
                 // The player's keyboard shortcuts work while this window has focus, same as in the main window.
                 val focus = remember { androidx.compose.ui.focus.FocusRequester() }
                 Box(Modifier.fillMaxSize().focusRequester(focus).focusable()
@@ -132,10 +132,10 @@ private fun PlayerControls(p: PlayerController) {
         }
         if (p.loading && p.error == null) CircularProgressIndicator(Modifier.align(Alignment.Center).size(56.dp), color = Color.White)
         p.error?.let { e ->
-            Column(Modifier.align(Alignment.Center).clip(RoundedCornerShape(22.dp)).background(Hue.card).padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(Modifier.align(Alignment.Center).clip(RoundedCornerShape(22.dp)).background(HueNight.card).padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(Icons.Filled.Warning, null, Modifier.size(40.dp), tint = Hue.sun)
                 Text("Couldn't play this", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
-                Text(e, color = Hue.secondaryText, modifier = Modifier.padding(vertical = 8.dp).widthIn(max = 420.dp))
+                Text(e, color = HueNight.secondaryText, modifier = Modifier.padding(vertical = 8.dp).widthIn(max = 420.dp))
                 SoftButton({ p.close() }) { Text("Close") }
             }
         }
@@ -146,7 +146,7 @@ private fun PlayerControls(p: PlayerController) {
             if (skip != null) SectionHue(Hue.coral) { HueButton({ p.skipSegment() }) { Text(p.skipLabel); Icon(Icons.Filled.SkipNext, null) } }
             val next = p.nextEpisode
             if (p.upNextIn != null && next != null) {
-                Row(Modifier.clip(RoundedCornerShape(18.dp)).background(Hue.card.copy(alpha = 0.95f)).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.clip(RoundedCornerShape(18.dp)).background(HueNight.card.copy(alpha = 0.95f)).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     RemoteImage(AppState.client?.landscapeURL(next, 400), Modifier.size(160.dp, 90.dp).clip(RoundedCornerShape(10.dp)))
                     Column(Modifier.padding(horizontal = 14.dp).widthIn(max = 260.dp)) {
                         Eyebrow("Up next in ${p.upNextIn}", Hue.coral)
@@ -168,11 +168,11 @@ private fun PlayerControls(p: PlayerController) {
                     IconButton({ p.close() }) { Icon(Icons.Filled.Close, "Close (Esc)") }
                     Column(Modifier.weight(1f).padding(start = 8.dp)) {
                         Text(p.item.displayTitle, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                        (p.item.episodeLabel ?: p.item.artistLine)?.let { Text(it, color = Hue.secondaryText) }
+                        (p.item.episodeLabel ?: p.item.artistLine)?.let { Text(it, color = HueNight.secondaryText) }
                     }
                     Column(Modifier.padding(end = 12.dp), horizontalAlignment = Alignment.End) {
-                        Text(p.method, style = MaterialTheme.typography.labelMedium, color = Hue.secondaryText)
-                        if (p.pictureInfo.isNotEmpty()) Text(p.pictureInfo, style = MaterialTheme.typography.labelSmall, color = Hue.secondaryText)
+                        Text(p.method, style = MaterialTheme.typography.labelMedium, color = HueNight.secondaryText)
+                        if (p.pictureInfo.isNotEmpty()) Text(p.pictureInfo, style = MaterialTheme.typography.labelSmall, color = HueNight.secondaryText)
                     }
                     TrackMenu(p) { menuOpen = it }
                     IconButton({ Nav.toggleFullscreen() }) { Icon(Icons.Filled.Fullscreen, "Full screen (F)") }
@@ -213,7 +213,7 @@ private fun PlayerControls(p: PlayerController) {
                         IconButton({ p.toggleMute() }) { Icon(if (p.muted || p.volume == 0) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp, "Mute (M)") }
                         Slider(p.volume.toFloat(), { p.changeVolume(it.toInt()) }, Modifier.width(140.dp), valueRange = 0f..200f,
                             colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White, inactiveTrackColor = Color.White.copy(alpha = 0.25f)))
-                        Text("${p.volume}%", style = MaterialTheme.typography.labelSmall, color = Hue.secondaryText, modifier = Modifier.width(44.dp))
+                        Text("${p.volume}%", style = MaterialTheme.typography.labelSmall, color = HueNight.secondaryText, modifier = Modifier.width(44.dp))
                     }
                 }
             }
@@ -227,32 +227,32 @@ private fun TrackMenu(p: PlayerController, onOpen: (Boolean) -> Unit) {
     Box {
         IconButton({ open = true; onOpen(true) }) { Icon(Icons.Filled.ClosedCaption, "Audio and subtitles") }
         DropdownMenu(open, { open = false; onOpen(false) }, Modifier.heightIn(max = 520.dp)) {
-            Text("Audio", Modifier.padding(horizontal = 14.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium, color = Hue.secondaryText)
+            Text("Audio", Modifier.padding(horizontal = 14.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium, color = HueNight.secondaryText)
             p.audioTracks.forEach { t -> DropdownMenuItem({ Text((if (t.id == p.audioTrack) "✓  " else "     ") + t.label) }, { p.selectAudio(t.id); com.huefin.desktop.core.TrackPrefs.rememberAudio(p.item.seriesId, t.label); open = false; onOpen(false) }) }
             HorizontalDivider()
             DropdownMenuItem({ Text((if (p.nightMode) "✓  " else "     ") + "Night mode (dialogue boost)") }, { p.toggleNightMode() })
             Text("Audio sync · " + syncLabel(p.audioDelay), Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                style = MaterialTheme.typography.labelMedium, color = Hue.secondaryText)
+                style = MaterialTheme.typography.labelMedium, color = HueNight.secondaryText)
             Row(Modifier.padding(horizontal = 10.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf(-0.25, -0.05).forEach { d -> OutlinedButton({ p.changeAudioDelay(p.audioDelay + d) }) { Text("%.2f".format(d).replace("-", "−")) } }
                 OutlinedButton({ p.changeAudioDelay(0.0) }, enabled = p.audioDelay != 0.0) { Text("Reset") }
                 listOf(0.05, 0.25).forEach { d -> OutlinedButton({ p.changeAudioDelay(p.audioDelay + d) }) { Text("+%.2f".format(d)) } }
             }
             HorizontalDivider()
-            Text("Subtitles", Modifier.padding(horizontal = 14.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium, color = Hue.secondaryText)
+            Text("Subtitles", Modifier.padding(horizontal = 14.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium, color = HueNight.secondaryText)
             DropdownMenuItem({ Text((if (p.subtitleTrack < 0) "✓  " else "     ") + "Off") }, { p.selectSubtitle(-1); com.huefin.desktop.core.TrackPrefs.rememberSubtitle(p.item.seriesId, null); open = false; onOpen(false) })
             p.subtitleTracks.forEach { t -> DropdownMenuItem({ Text((if (t.id == p.subtitleTrack) "✓  " else "     ") + t.label) }, { p.selectSubtitle(t.id); com.huefin.desktop.core.TrackPrefs.rememberSubtitle(p.item.seriesId, t.label); open = false; onOpen(false) }) }
             HorizontalDivider()
             // Subtitle timing: the menu stays open so you can keep nudging while the video plays.
             Text("Subtitle timing · " + syncLabel(p.subtitleDelay) + "   (G / H keys)", Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                style = MaterialTheme.typography.labelMedium, color = Hue.secondaryText)
+                style = MaterialTheme.typography.labelMedium, color = HueNight.secondaryText)
             Row(Modifier.padding(horizontal = 10.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf(-0.5, -0.1).forEach { d -> OutlinedButton({ p.changeSubtitleDelay(p.subtitleDelay + d) }) { Text("%.1f".format(d).replace("-", "−")) } }
                 OutlinedButton({ p.changeSubtitleDelay(0.0) }, enabled = p.subtitleDelay != 0.0) { Text("Reset") }
                 listOf(0.1, 0.5).forEach { d -> OutlinedButton({ p.changeSubtitleDelay(p.subtitleDelay + d) }) { Text("+%.1f".format(d)) } }
             }
             Text("Too early? Press +. Too late? Press −.", Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
-                style = MaterialTheme.typography.labelSmall, color = Hue.secondaryText)
+                style = MaterialTheme.typography.labelSmall, color = HueNight.secondaryText)
         }
     }
 }

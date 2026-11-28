@@ -110,6 +110,11 @@ fun SettingsScreen(nav: NavHostController) {
             }
         }
         item {
+            FormSection("Appearance", "Huefin is the bright, outlined look. Night is dark, easier on the eyes in a dark room. Videos always play on black.") {
+                FormPicker("Look", if (Hue.light) "huefin" else "night", listOf("huefin" to "Huefin", "night" to "Night")) { Hue.setLook(night = it == "night") }
+            }
+        }
+        item {
             FormSection("Subtitles", "How text subtitles look in the Huefin Engine. Styled anime subtitles keep their own look. Takes effect the next time a video starts.") {
                 val st = com.huefin.app.core.SubtitleStyle
                 FormPicker("Size", st.size, st.sizes) { st.size = it; tick++ }
@@ -255,7 +260,7 @@ fun ProfilePickerDialog(atLaunch: Boolean = false, onDismiss: () -> Unit) {
                         val hue = hues[kotlin.math.abs(a.key.hashCode()) % hues.size]
                         Column(Modifier.clip(RoundedCornerShape(18.dp)).clickable { com.huefin.app.core.ProfileLock.open(a, force = atLaunch) { onDismiss() } }.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                             Box(Modifier.size(96.dp).clip(RoundedCornerShape(26.dp)).background(hue)
-                                .then(if (a.key == AppState.session?.key) Modifier.border(3.dp, Color.White, RoundedCornerShape(26.dp)) else Modifier), Alignment.Center) {
+                                .then(if (a.key == AppState.session?.key) Modifier.border(3.dp, Hue.text, RoundedCornerShape(26.dp)) else Modifier), Alignment.Center) {
                                 Text(a.userName.take(1).uppercase(), fontSize = 40.sp, fontWeight = FontWeight.Black, color = Hue.ink)
                                 RemoteImage(JellyfinClient(a.serverURL, a.token, a.userId).userImageURL(a.userId), Modifier.fillMaxSize())
                             }

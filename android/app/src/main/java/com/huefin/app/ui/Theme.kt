@@ -16,6 +16,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
@@ -40,17 +44,36 @@ object Hue {
     val sky = Color(0xFF3DA9FF)
     val violet = Color(0xFF9B5CFF)
 
-    val night = Color(0xFF0E0D14)
-    val card = Color(0xFF191724)
-    val ink = Color(0xFF14111F)
+    /** The Huefin look (paper, ink outlines, sticker buttons) — or Night, the dark option. */
+    var light by mutableStateOf(com.huefin.app.core.Prefs.string("huefin.appearance") != "night")
+    fun setLook(night: Boolean) { light = !night; com.huefin.app.core.Prefs.set("huefin.appearance", if (night) "night" else "huefin") }
+
+    val ink = Color(0xFF1B1530)
     val paper = Color(0xFFFFF8EE)
-    val hairline = Color.White.copy(alpha = 0.09f)
-    val secondaryText = Color(0xFFA9A4BA)
+    /** The page background: paper, or warm night. */
+    val night get() = if (light) paper else Color(0xFF0E0D14)
+    val card get() = if (light) Color.White else Color(0xFF191724)
+    val hairline get() = if (light) ink.copy(alpha = 0.85f) else Color.White.copy(alpha = 0.09f)
+    val secondaryText get() = if (light) Color(0xFF5C5670) else Color(0xFFA9A4BA)
+    /** Main text on the page. */
+    val text get() = if (light) ink else Color(0xFFF5F3FA)
+    /** Quiet fills behind rows and chips. */
+    val wash get() = if (light) ink.copy(alpha = 0.06f) else Color.White.copy(alpha = 0.07f)
 
     val home = coral; val library = sky; val live = amber; val downloads = mint; val search = violet
 
     val spectrum = Brush.horizontalGradient(listOf(coral, amber, sun, mint, sky, violet))
     val gradient = Brush.linearGradient(listOf(sky, violet, coral))
+}
+
+/** Night's colours, for screens that always stay dark (the video player). */
+object HueNight {
+    val night = Color(0xFF0E0D14)
+    val card = Color(0xFF191724)
+    val hairline = Color.White.copy(alpha = 0.09f)
+    val secondaryText = Color(0xFFA9A4BA)
+    val text = Color(0xFFF5F3FA)
+    val wash = Color.White.copy(alpha = 0.07f)
 }
 
 /** The hue of the section you're in. */
@@ -65,16 +88,33 @@ fun SectionHue(color: Color, content: @Composable () -> Unit) {
     }
 }
 
+/** [dark] keeps a screen dark whatever the look (the video player). */
 @Composable
-fun HuefinTheme(content: @Composable () -> Unit) {
-    val scheme = darkColorScheme(
+fun HuefinTheme(dark: Boolean = false, content: @Composable () -> Unit) {
+    val scheme = if (Hue.light && !dark) lightColorScheme(
+        primary = Hue.coral, onPrimary = Hue.ink, secondary = Hue.coral,
+        background = Hue.night, surface = Hue.night, surfaceVariant = Hue.card, surfaceContainer = Hue.card,
+        surfaceContainerHigh = Color(0xFFF3EADB), onSurface = Hue.ink, onSurfaceVariant = Hue.secondaryText,
+        onBackground = Hue.ink, outline = Hue.hairline,
+    ) else darkColorScheme(
         primary = Hue.coral, onPrimary = Hue.ink, secondary = Hue.coral,
         background = Hue.night, surface = Hue.night, surfaceVariant = Hue.card, surfaceContainer = Hue.card,
         surfaceContainerHigh = Color(0xFF221F2F), onSurface = Color(0xFFF5F3FA), onSurfaceVariant = Hue.secondaryText,
         outline = Hue.hairline,
     )
-    MaterialTheme(colorScheme = scheme) {
-        Surface(color = Hue.night, contentColor = Color(0xFFF5F3FA)) { content() }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val view = androidx.compose.ui.platform.LocalView.current
+    val lightBars = Hue.light && !dark
+    androidx.compose.runtime.SideEffect {
+        (view.context as? android.app.Activity)?.window?.let { w ->
+            androidx.core.view.WindowCompat.getInsetsController(w, view).apply {
+                isAppearanceLightStatusBars = lightBars; isAppearanceLightNavigationBars = lightBars
+            }
+        }
+    }
+    val typography = remember { huefinTypography(context.assets) }
+    MaterialTheme(colorScheme = scheme, typography = typography) {
+        Surface(color = if (dark) HueNight.night else Hue.night, contentColor = if (dark) HueNight.text else Hue.text) { content() }
     }
 }
 
@@ -94,11 +134,13 @@ fun HueButton(
     val pressed by interaction.collectIsPressedAsState()
     val bg = fill ?: hue
     Box(modifier.defaultMinSize(minHeight = 48.dp)) {
-        Box(Modifier.matchParentSize().offset(3.dp, 3.dp).background(hue.copy(alpha = if (enabled) 0.55f else 0.2f), ButtonShape))
+        val shadow = if (Hue.light) Hue.ink.copy(alpha = if (enabled) 1f else 0.3f) else hue.copy(alpha = if (enabled) 0.55f else 0.2f)
+        Box(Modifier.matchParentSize().offset(3.dp, 3.dp).background(shadow, ButtonShape))
         Row(
             Modifier
                 .offset(if (pressed) 2.dp else 0.dp, if (pressed) 2.dp else 0.dp)
                 .background(if (enabled) bg else bg.copy(alpha = 0.4f), ButtonShape)
+                .then(if (Hue.light) Modifier.border(2.5.dp, Hue.ink, ButtonShape) else Modifier)
                 .clickable(interaction, null, enabled = enabled, role = Role.Button, onClick = onClick)
                 .padding(horizontal = 22.dp, vertical = 13.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -121,8 +163,9 @@ fun SoftButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Bool
     Row(
         modifier
             .defaultMinSize(minHeight = 48.dp)
+            .sticker(16.dp, 3.dp)
             .background(Hue.card, ButtonShape)
-            .border(1.5.dp, Hue.hairline, ButtonShape)
+            .border(if (Hue.light) 2.5.dp else 1.5.dp, if (Hue.light) Hue.ink else Hue.hairline, ButtonShape)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(padding),
         verticalAlignment = Alignment.CenterVertically,
@@ -134,3 +177,33 @@ fun SoftButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Bool
 @Composable
 fun Eyebrow(text: String, color: Color = LocalHue.current) =
     Text(text.uppercase(), color = color, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.4.sp)
+
+
+/** The Huefin look's signature: a hard ink shadow under a card or button (pair it with an ink border).
+ *  Does nothing at night. */
+fun Modifier.sticker(radius: androidx.compose.ui.unit.Dp = 16.dp, depth: androidx.compose.ui.unit.Dp = 4.dp, outline: Boolean = false): Modifier =
+    if (!Hue.light) this else this
+        .drawBehind {
+            drawRoundRect(Hue.ink, topLeft = androidx.compose.ui.geometry.Offset(depth.toPx(), depth.toPx()), size = size,
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius.toPx()))
+        }
+        .then(if (outline) Modifier.border(2.5.dp, Hue.ink, RoundedCornerShape(radius)) else Modifier)
+
+
+/** Headings in Bricolage Grotesque (added when the app is built), everything else in the system font. */
+@OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
+private fun huefinTypography(assets: android.content.res.AssetManager): androidx.compose.material3.Typography {
+    val t = androidx.compose.material3.Typography()
+    val path = "fonts/BricolageGrotesque.ttf"
+    val present = runCatching { assets.list("fonts")?.contains("BricolageGrotesque.ttf") == true }.getOrDefault(false)
+    if (!present) return t
+    val family = androidx.compose.ui.text.font.FontFamily(
+        listOf(FontWeight.SemiBold, FontWeight.Bold, FontWeight.ExtraBold, FontWeight.Black).map { w ->
+            androidx.compose.ui.text.font.Font(path, assets, w,
+                variationSettings = androidx.compose.ui.text.font.FontVariation.Settings(androidx.compose.ui.text.font.FontVariation.weight(w.weight)))
+        })
+    fun f(s: androidx.compose.ui.text.TextStyle) = s.copy(fontFamily = family)
+    return t.copy(displayLarge = f(t.displayLarge), displayMedium = f(t.displayMedium), displaySmall = f(t.displaySmall),
+        headlineLarge = f(t.headlineLarge), headlineMedium = f(t.headlineMedium), headlineSmall = f(t.headlineSmall),
+        titleLarge = f(t.titleLarge))
+}

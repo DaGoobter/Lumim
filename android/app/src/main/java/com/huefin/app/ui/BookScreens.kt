@@ -143,7 +143,7 @@ fun BookScreen(id: String, nav: NavHostController) {
                     }
                     b.progress?.let { ProgressBar(it, Modifier.width(220.dp)) }
                     error?.let { Text(it, color = Hue.coral, style = MaterialTheme.typography.bodySmall) }
-                    b.overview?.let { Text(it, color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodyMedium) }
+                    b.overview?.let { Text(it, color = Hue.text.copy(alpha = 0.85f), style = MaterialTheme.typography.bodyMedium) }
                 }
             }
         }

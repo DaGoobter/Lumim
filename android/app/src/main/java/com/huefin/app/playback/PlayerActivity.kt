@@ -86,6 +86,7 @@ import com.huefin.app.core.AppState
 import com.huefin.app.core.Prefs
 import com.huefin.app.ui.Hue
 import com.huefin.app.ui.HuefinTheme
+import com.huefin.app.ui.HueNight
 import com.huefin.app.ui.WatchTogetherDialog
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -128,7 +129,7 @@ class PlayerActivity : ComponentActivity() {
             SyncPlay.playerOpened(m)
         }
         setContent {
-            HuefinTheme {
+            HuefinTheme(dark = true) {
                 val m = model
                 if (m == null) Box(Modifier.fillMaxSize().background(Color.Black), Alignment.Center) { CircularProgressIndicator(color = Color.White) }
                 else PlayerScreen(m, inPip, tabletopHinge, onClose = { finish() }, onPip = { enterPip() })
@@ -207,9 +208,9 @@ private fun PlayerScreen(m: PlayerModel, inPip: Boolean, tabletopHinge: Int?, on
             }
         }
         m.error?.let { e ->
-            Column(Modifier.align(Alignment.Center).background(Hue.card, RoundedCornerShape(20.dp)).padding(24.dp),
+            Column(Modifier.align(Alignment.Center).background(HueNight.card, RoundedCornerShape(20.dp)).padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Can't play this", fontWeight = FontWeight.Bold); Text(e, color = Hue.secondaryText)
+                Text("Can't play this", fontWeight = FontWeight.Bold); Text(e, color = HueNight.secondaryText)
                 com.huefin.app.ui.SoftButton(onClose) { Text("Close") }
             }
         }
@@ -226,7 +227,7 @@ private fun PlayerScreen(m: PlayerModel, inPip: Boolean, tabletopHinge: Int?, on
             }
         }
         Cast.deviceName?.let { tv ->
-            Column(Modifier.align(Alignment.Center).background(Hue.card, RoundedCornerShape(22.dp)).padding(24.dp),
+            Column(Modifier.align(Alignment.Center).background(HueNight.card, RoundedCornerShape(22.dp)).padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Playing on $tv", fontWeight = FontWeight.Bold)
                 val c = androidx.compose.ui.platform.LocalContext.current
@@ -311,10 +312,10 @@ private fun TopBar(m: PlayerModel, onClose: () -> Unit, onPip: () -> Unit, onSyn
         Box {
             RoundIcon(Icons.Filled.ClosedCaption, "Audio and subtitles") { tracks = true; onTouch() }
             DropdownMenu(tracks, { tracks = false }) {
-                Text("Audio", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), color = Hue.secondaryText)
+                Text("Audio", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), color = HueNight.secondaryText)
                 m.backend.audioTracks().forEach { t -> DropdownMenuItem({ Text((if (t.selected) "✓ " else "") + t.label) }, { m.backend.selectAudio(t.id); com.huefin.app.core.TrackPrefs.rememberAudio(m.item.seriesId, t.label); tracks = false }) }
                 HorizontalDivider()
-                Text("Subtitles", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), color = Hue.secondaryText)
+                Text("Subtitles", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), color = HueNight.secondaryText)
                 val subs = m.backend.subtitleTracks()
                 DropdownMenuItem({ Text((if (subs.none { it.selected }) "✓ " else "") + "Off") }, { m.backend.selectSubtitle(null); com.huefin.app.core.TrackPrefs.rememberSubtitle(m.item.seriesId, null); tracks = false })
                 subs.forEach { t -> DropdownMenuItem({ Text((if (t.selected) "✓ " else "") + t.label) }, { m.backend.selectSubtitle(t.id); com.huefin.app.core.TrackPrefs.rememberSubtitle(m.item.seriesId, t.label); tracks = false }) }
@@ -333,25 +334,25 @@ private fun TopBar(m: PlayerModel, onClose: () -> Unit, onPip: () -> Unit, onSyn
             RoundIcon(Icons.Filled.MoreVert, "More options") { more = true; onTouch() }
             DropdownMenu(more, { more = false }) {
                 if (!m.isLive) {
-                    Text("Speed", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), color = Hue.secondaryText)
+                    Text("Speed", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), color = HueNight.secondaryText)
                     listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f).forEach { s ->
                         DropdownMenuItem({ Text((if (s == m.speed) "✓ " else "") + if (s == 1f) "Normal" else "${s}×") }, { m.changeSpeed(s); more = false })
                     }
                     HorizontalDivider()
                 }
-                Text("Sleep timer", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), color = Hue.secondaryText)
+                Text("Sleep timer", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), color = HueNight.secondaryText)
                 DropdownMenuItem({ Text((if (m.sleepAt == null && !m.sleepAtEnd) "✓ " else "") + "Off") }, { m.setSleepTimer(null); more = false })
                 listOf(15, 30, 45, 60, 90).forEach { n -> DropdownMenuItem({ Text("$n minutes") }, { m.setSleepTimer(n); more = false }) }
                 if (!m.isLive) DropdownMenuItem({ Text((if (m.sleepAtEnd) "✓ " else "") + "End of this ${if (m.item.type == "Episode") "episode" else "video"}") }, { m.setSleepAtEnd(); more = false })
                 if (m.backend.supportsSubtitleDelay) {
                     HorizontalDivider()
-                    Text("Sound", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), color = Hue.secondaryText)
+                    Text("Sound", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), color = HueNight.secondaryText)
                     DropdownMenuItem({ Text((if (m.nightMode) "✓ " else "") + "Night mode (dialogue boost)") }, { m.toggleNightMode(); more = false })
                     DropdownMenuItem({ Text("Audio sync" + if (m.audioDelay != 0.0) " (${syncLabel(m.audioDelay)})" else "") }, { more = false; audioSync = true })
                 }
                 if (m.backend.supportsBoost) {
                     HorizontalDivider()
-                    Text("Volume boost", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), color = Hue.secondaryText)
+                    Text("Volume boost", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), color = HueNight.secondaryText)
                     listOf(100, 125, 150, 200).forEach { v -> DropdownMenuItem({ Text((if (v == m.volumeBoost) "✓ " else "") + if (v == 100) "Normal" else "$v%") }, { m.setBoost(v); more = false }) }
                 }
                 HorizontalDivider()
@@ -429,7 +430,7 @@ private fun SkipAndUpNext(m: PlayerModel, controlsShown: Boolean, modifier: Modi
     Column(modifier, horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         val next = m.nextEpisode
         if (m.upNextCountdown != null && next != null) {
-            Column(Modifier.width(300.dp).background(Hue.card.copy(alpha = 0.95f), RoundedCornerShape(18.dp)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.width(300.dp).background(HueNight.card.copy(alpha = 0.95f), RoundedCornerShape(18.dp)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Up next in ${m.upNextCountdown}", color = Hue.sun, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
                 Text(next.episodeLabel ?: next.displayTitle, color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 2)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

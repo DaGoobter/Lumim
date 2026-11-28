@@ -160,7 +160,7 @@ fun DetailScreen(initial: BaseItem, nav: NavHostController) {
                             scope.launch { if (c?.setFavorite(item.id, on) != true) favorite = !on }
                         }, padding = androidx.compose.foundation.layout.PaddingValues(12.dp)) {
                             Icon(if (favorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, if (favorite) "Remove from My List" else "Add to My List",
-                                tint = if (favorite) Hue.coral else Color.White)
+                                tint = if (favorite) Hue.coral else Hue.text)
                         }
                     }
                     item.progress?.let { ProgressBar(it, Modifier.widthIn(max = 260.dp).fillMaxWidth()) }
@@ -186,7 +186,7 @@ fun DetailScreen(initial: BaseItem, nav: NavHostController) {
                 LazyRow(contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(seasons, key = { it.id }) { s ->
                         val on = s.id == season?.id
-                        Text(s.name ?: "Season", fontWeight = FontWeight.SemiBold, color = if (on) Hue.ink else Color.White,
+                        Text(s.name ?: "Season", fontWeight = FontWeight.SemiBold, color = if (on) Hue.ink else Hue.text,
                             modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(if (on) LocalHue.current else Hue.card)
                                 .clickable { season = s }.padding(horizontal = 14.dp, vertical = 9.dp))
                     }

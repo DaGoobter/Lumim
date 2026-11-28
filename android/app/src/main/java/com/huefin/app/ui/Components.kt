@@ -52,7 +52,7 @@ fun cardScale(): Float = when (LocalWidthClass.current) { WidthClass.Compact -> 
 
 @Composable
 fun RemoteImage(url: String?, modifier: Modifier = Modifier, contentScale: ContentScale = ContentScale.Crop) {
-    Box(modifier.background(Color.White.copy(alpha = 0.06f))) {
+    Box(modifier.background(Hue.wash)) {
         if (url != null) AsyncImage(model = url, contentDescription = null, contentScale = contentScale, modifier = Modifier.fillMaxSize())
     }
 }
@@ -81,7 +81,7 @@ fun PosterCard(item: BaseItem, onClick: () -> Unit, width: Dp = 120.dp) {
     val c = AppState.client
     val w = width * cardScale()
     Column(Modifier.width(w).clickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(CardShape).border(1.dp, Hue.hairline, CardShape)) {
+        Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).sticker(16.dp).clip(CardShape).border(if (Hue.light) 2.5.dp else 1.dp, if (Hue.light) Hue.ink else Hue.hairline, CardShape)) {
             RemoteImage(c?.posterURL(item, 400), Modifier.fillMaxSize())
             WatchedBadge(item, Modifier.align(Alignment.TopEnd))
             item.progress?.let { ProgressBar(it, Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(8.dp)) }
@@ -96,7 +96,7 @@ fun LandscapeCard(item: BaseItem, onClick: () -> Unit, width: Dp = 240.dp, subti
     val c = AppState.client
     val w = width * cardScale()
     Column(Modifier.width(w).clickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(CardShape).border(1.dp, Hue.hairline, CardShape)) {
+        Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).sticker(16.dp).clip(CardShape).border(if (Hue.light) 2.5.dp else 1.dp, if (Hue.light) Hue.ink else Hue.hairline, CardShape)) {
             RemoteImage(c?.landscapeURL(item), Modifier.fillMaxSize())
             item.progress?.let { ProgressBar(it, Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(10.dp)) }
         }
@@ -151,7 +151,7 @@ fun ErrorBanner(message: String, retry: (() -> Unit)? = null) {
 }
 
 @Composable
-fun Chip(text: String, color: Color = Color.White.copy(alpha = 0.12f), textColor: Color = Color.White) {
+fun Chip(text: String, color: Color = Hue.wash, textColor: Color = Hue.text) {
     Text(text, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = textColor,
         modifier = Modifier.background(color, RoundedCornerShape(8.dp)).padding(horizontal = 8.dp, vertical = 4.dp))
 }
