@@ -381,11 +381,46 @@ final class PlayerModel {
 
 /// Apple TV's own full-screen player (Siri Remote scrubbing, audio and subtitle menus, the info panel)
 /// with Huefin's Skip Intro and Next Episode buttons on top.
+/// Apple's player, shown the standard tvOS way (presented full screen) so the Menu / Back button
+/// first closes whatever is open inside it (Subtitles, Audio, info panels) and only then leaves the movie.
+/// Placed inside a SwiftUI screen instead, Menu went straight to that screen and quit playback.
+final class TVPlayerHost: UIViewController {
+    let player = HuefinAVPlayerController()
+    private var presentedOnce = false
+    override func viewDidLoad() { super.viewDidLoad(); view.backgroundColor = .black }
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        guard !presentedOnce else { return }
+        presentedOnce = true
+        player.modalPresentationStyle = .fullScreen
+        present(player, animated: false)
+    }
+    /// Takes the player away without leaving (to show an error underneath).
+    func hidePlayer() {
+        guard player.presentingViewController != nil else { return }
+        player.closingOnPurpose = true
+        player.dismiss(animated: false)
+    }
+}
+
+final class HuefinAVPlayerController: AVPlayerViewController {
+    /// Called when tvOS closes the player because Menu was pressed with nothing open.
+    var onGone: (() -> Void)?
+    var closingOnPurpose = false
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        if isBeingDismissed && !closingOnPurpose { onGone?() }
+    }
+}
+
 struct TVPlayerView: UIViewControllerRepresentable {
     let model: PlayerModel
 
-    func makeUIViewController(context: Context) -> AVPlayerViewController {
-        let vc = AVPlayerViewController()
+    func makeUIViewController(context: Context) -> TVPlayerHost {
+        let host = TVPlayerHost()
+        let vc = host.player
+        let model = model
+        vc.onGone = { model.onClose?() }
         vc.player = model.player
         vc.appliesPreferredDisplayCriteriaAutomatically = true   // match frame rate and HDR / Dolby Vision
         model.onActionsChanged = { [weak vc] in
@@ -406,10 +441,12 @@ struct TVPlayerView: UIViewControllerRepresentable {
             context.coordinator.host = host
         }
         update(vc)
-        return vc
+        return host
     }
 
-    func updateUIViewController(_ vc: AVPlayerViewController, context: Context) {}
+    func updateUIViewController(_ host: TVPlayerHost, context: Context) {
+        if model.errorMessage != nil { host.hidePlayer() }
+    }
 
     final class Coordinator { var host: UIViewController? }
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -481,7 +518,8 @@ struct TVApplePlayerScreen: View {
         .task {
             AudioPlayer.shared.pause()
             let m = PlayerModel(request: request, app: app)
-            m.onClose = { dismiss() }
+            var closed = false
+            m.onClose = { if !closed { closed = true; dismiss() } }
             model = m
             await m.start()
         }
