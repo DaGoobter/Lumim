@@ -119,7 +119,13 @@ final class TVEngineViewController: UIViewController {
             g.direction = dir
             root.addGestureRecognizer(g)
         }
+        // Menu / Back through a gesture recognizer: these see the button before tvOS's own "Back leaves
+        // the screen" handling, so an open Subtitles / Audio panel closes first instead of playback ending.
+        let back = UITapGestureRecognizer(target: self, action: #selector(menuTapped))
+        back.allowedPressTypes = [NSNumber(value: UIPress.PressType.menu.rawValue)]
+        root.addGestureRecognizer(back)
     }
+    @objc private func menuTapped() { onMenu() }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -173,7 +179,7 @@ final class TVEngineViewController: UIViewController {
             switch p.type {
             case .select: onSelect(); handled = true
             case .playPause: model.togglePlay(); reveal(); handled = true
-            case .menu: onMenu(); handled = true
+            case .menu: handled = true   // acted on by the Back gesture above
             case .leftArrow: swipeLeft(); handled = true
             case .rightArrow: swipeRight(); handled = true
             case .downArrow: swipeDown(); handled = true
@@ -187,6 +193,10 @@ final class TVEngineViewController: UIViewController {
     override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         let ours: Set<UIPress.PressType> = [.select, .playPause, .menu, .leftArrow, .rightArrow, .upArrow, .downArrow]
         if !presses.contains(where: { ours.contains($0.type) }) { super.pressesEnded(presses, with: event) }
+    }
+    override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        let ours: Set<UIPress.PressType> = [.select, .playPause, .menu, .leftArrow, .rightArrow, .upArrow, .downArrow]
+        if !presses.contains(where: { ours.contains($0.type) }) { super.pressesCancelled(presses, with: event) }
     }
 
     private func onSelect() {
