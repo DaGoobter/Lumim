@@ -230,6 +230,7 @@ struct PageDots: View {
 
 struct HeroView: View {
     @Environment(AppState.self) private var app
+    @Environment(\.colorScheme) private var scheme
     let item: BaseItem
     let width: CGFloat
     let artHeight: CGFloat
@@ -253,10 +254,10 @@ struct HeroView: View {
             LogoOrTitle(url: app.client?.logoURL(for: item), title: item.displayTitle, maxHeight: landscape ? 70 : 96)
                 .padding(.bottom, 4)
             if let meta {
-                Text(meta).font(.subheadline.weight(.semibold)).foregroundStyle(.white.opacity(0.75)).lineLimit(1)
+                Text(meta).font(.subheadline.weight(.semibold)).foregroundStyle(onArt.opacity(0.75)).lineLimit(1)
             }
             if let overview = item.overview, !overview.isEmpty {
-                Text(overview).font(.subheadline).foregroundStyle(.white.opacity(0.85))
+                Text(overview).font(.subheadline).foregroundStyle(onArt.opacity(0.85))
                     .lineLimit(landscape ? 3 : 2).fixedSize(horizontal: false, vertical: true)
             }
             HStack(spacing: 12) {
@@ -271,11 +272,15 @@ struct HeroView: View {
         }
     }
 
+    /// Text sits on the picture (white) except beside it on the paper look's landscape layout.
+    private var onArt: Color { landscape && scheme == .light ? .primary : .white }
+
     var body: some View {
         if landscape {
             // Phone landscape: info on the left, artwork on the right — everything fits on one screen.
             HStack(alignment: .center, spacing: 24) {
                 info.frame(maxWidth: .infinity, alignment: .leading)
+                    .foregroundStyle(onArt)
                 NavigationLink(value: item) {
                     ArtHeader(url: app.client?.backdropURL(for: item, width: 1920), width: width * 0.56, maxHeight: artHeight)
                 }
@@ -284,6 +289,29 @@ struct HeroView: View {
             .padding(.leading, 24)
             .padding(.top, 12)
             .frame(width: width, height: artHeight + 16, alignment: .leading)
+        } else if scheme == .light {
+            // Huefin look: the picture is a big sticker card with the title on it.
+            ZStack(alignment: .bottomLeading) {
+                NavigationLink(value: item) {
+                    Color.clear
+                        .overlay { RemoteImage(url: app.client?.backdropURL(for: item, width: 1920)) }
+                        .overlay {
+                            LinearGradient(stops: [
+                                .init(color: .clear, location: 0.3),
+                                .init(color: .black.opacity(0.6), location: 0.75),
+                                .init(color: .black.opacity(0.8), location: 1),
+                            ], startPoint: .top, endPoint: .bottom)
+                        }
+                }
+                .buttonStyle(.plain)
+                info
+                    .foregroundStyle(.white)
+                    .padding(18)
+            }
+            .frame(width: width - 32, height: artHeight - 24)
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .sticker(24, depth: 6)
+            .frame(width: width, height: artHeight, alignment: .center)
         } else {
             ZStack(alignment: .bottomLeading) {
                 // Edge-to-edge picture that melts into the page; tap it for details.

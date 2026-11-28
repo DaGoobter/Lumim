@@ -70,13 +70,12 @@ struct LibraryTile: View {
                                startPoint: .center, endPoint: .bottom)
             }
             .overlay(alignment: .bottomLeading) {
-                Text(library.name ?? "").font(.title2.weight(.heavy)).padding(16)
+                Text(library.name ?? "").font(Theme.display(24, .heavy, relativeTo: .title2)).padding(16)
+                    .foregroundStyle(.white)
                     .shadow(color: .black.opacity(0.4), radius: 6)
             }
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .strokeBorder((color?.accent ?? .white).opacity(0.35), lineWidth: 1))
-            .shadow(color: (color?.background ?? .black).opacity(0.6), radius: 16, y: 8)
+            .sticker(20)
             .artColor(from: url, into: $color)
     }
 }

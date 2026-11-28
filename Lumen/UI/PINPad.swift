@@ -27,7 +27,7 @@ struct PINPad: View {
             HStack(spacing: 18) {
                 ForEach(0..<4, id: \.self) { i in
                     Circle()
-                        .fill(i < digits.count ? Color.white : Color.white.opacity(0.18))
+                        .fill(i < digits.count ? Color.primary : Color.primary.opacity(0.18))
                         .frame(width: 16, height: 16)
                 }
             }
@@ -45,7 +45,7 @@ struct PINPad: View {
                 }
             }
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(.primary)
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.background.ignoresSafeArea())
@@ -68,7 +68,8 @@ struct PINPad: View {
         Button { press(d) } label: {
             Text(d).font(font).frame(width: key, height: key)
                 #if !os(tvOS)
-                .background(Color.white.opacity(0.12), in: Circle())
+                .background(Theme.card, in: Circle())
+                .overlay(Circle().strokeBorder(Theme.outline, lineWidth: 2))
                 #endif
         }
         #if os(tvOS)

@@ -1,7 +1,9 @@
 import SwiftUI
+import CoreText
 
 enum Theme {
-    // Huefin palette: six hues on a deep, warm night. Each part of the app owns one hue.
+    // Huefin palette: six hues. On paper (the Huefin look) everything is outlined in ink with a hard
+    // sticker shadow; on night (the dark option) the same hues glow on a deep, warm background.
     static let red = Color(red: 1.0, green: 0.30, blue: 0.43)        // #FF4D6D
     static let orange = Color(red: 1.0, green: 0.65, blue: 0.17)     // #FFA62B
     static let yellow = Color(red: 1.0, green: 0.89, blue: 0.36)     // #FFE45C
@@ -11,12 +13,27 @@ enum Theme {
 
     static let accent = red                                             // default when no section hue applies
     static let accent2 = red
-    static let midnight = Color(red: 0.098, green: 0.090, blue: 0.141) // #191724, raised surfaces
-    static let background = Color(red: 0.055, green: 0.051, blue: 0.078) // #0E0D14, warm night
-    static let card = Color(red: 0.098, green: 0.090, blue: 0.141)      // #191724
-    static let ink = Color(red: 0.078, green: 0.067, blue: 0.122)       // #14111F, text on bright hues
-    static let paper = Color(red: 1.0, green: 0.973, blue: 0.933)       // #FFF8EE, the light button
-    static let hairline = Color.white.opacity(0.09)
+
+    /// Light value for the Huefin look, dark value for Night.
+    static func look(_ light: UIColor, _ dark: UIColor) -> Color {
+        Color(UIColor { $0.userInterfaceStyle == .dark ? dark : light })
+    }
+    private static func hex(_ v: UInt32, _ a: CGFloat = 1) -> UIColor {
+        UIColor(red: CGFloat((v >> 16) & 0xFF) / 255, green: CGFloat((v >> 8) & 0xFF) / 255, blue: CGFloat(v & 0xFF) / 255, alpha: a)
+    }
+
+    static let background = look(hex(0xFFF8EE), hex(0x0E0D14))          // paper / warm night
+    static let card = look(hex(0xFFFFFF), hex(0x191724))
+    static let midnight = card                                            // raised surfaces
+    static let ink = Color(red: 0.106, green: 0.082, blue: 0.188)        // #1B1530, text on bright hues
+    static let paper = Color(red: 1.0, green: 0.973, blue: 0.933)        // #FFF8EE, the light button
+    /// Thin borders: ink on paper, a faint line at night.
+    static let hairline = look(hex(0x1B1530, 0.85), UIColor.white.withAlphaComponent(0.09))
+    /// Thick sticker outline (paper) or nothing visible (night).
+    static let outline = look(hex(0x1B1530), .clear)
+    /// Quiet fills behind rows and chips.
+    static let wash = look(hex(0x1B1530, 0.06), UIColor.white.withAlphaComponent(0.07))
+    static let secondaryText = look(hex(0x5C5670), UIColor.white.withAlphaComponent(0.6))
 
     /// Each section's hue.
     static let home = red, library = blue, live = orange, downloads = green, search = violet
@@ -27,6 +44,59 @@ enum Theme {
     /// Cool side of the spectrum: fills that carry white text stay readable.
     static let gradient = LinearGradient(colors: [blue, violet, red],
                                          startPoint: .topLeading, endPoint: .bottomTrailing)
+
+    /// Huefin's display type: Bricolage Grotesque when it's bundled, rounded system type otherwise.
+    static func display(_ size: CGFloat, _ weight: Font.Weight = .heavy, relativeTo style: Font.TextStyle = .title) -> Font {
+        HuefinFont.available ? .custom(HuefinFont.family, size: size, relativeTo: style).weight(weight)
+            : .system(size: size, weight: weight, design: .rounded)
+    }
+}
+
+/// The chosen look: "huefin" (paper, the default) or "night".
+enum Appearance {
+    static let key = "huefin.appearance"
+    static var isNight: Bool { UserDefaults.standard.string(forKey: key) == "night" }
+}
+
+/// Registers Bricolage Grotesque (added to the app when it's built) so headings can use it.
+enum HuefinFont {
+    static let family = "Bricolage Grotesque"
+    static let available: Bool = {
+        guard let url = Bundle.main.url(forResource: "BricolageGrotesque", withExtension: "ttf") else { return false }
+        CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+        return UIFont(name: "BricolageGrotesque-Regular", size: 12) != nil
+            || UIFont.fontNames(forFamilyName: family).isEmpty == false
+    }()
+}
+
+// MARK: - Sticker
+
+/// The Huefin look's signature: an ink outline and a hard ink shadow, like a sticker you can press.
+/// At night it's a faint line and a soft shadow instead.
+struct Sticker: ViewModifier {
+    @Environment(\.colorScheme) private var scheme
+    var radius: CGFloat = 16
+    var depth: CGFloat = 4
+    var pressed = false
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        if scheme == .dark {
+            content
+                .overlay(shape.strokeBorder(Theme.hairline, lineWidth: 1))
+                .shadow(color: .black.opacity(0.45), radius: 12, y: 6)
+        } else {
+            content
+                .overlay(shape.strokeBorder(Theme.ink, lineWidth: 2.5))
+                .background(shape.fill(Theme.ink).offset(x: pressed ? 0 : depth, y: pressed ? 0 : depth))
+                .offset(x: pressed ? depth / 2 : 0, y: pressed ? depth / 2 : 0)
+        }
+    }
+}
+
+extension View {
+    func sticker(_ radius: CGFloat = 16, depth: CGFloat = 4, pressed: Bool = false) -> some View {
+        modifier(Sticker(radius: radius, depth: depth, pressed: pressed))
+    }
 }
 
 // MARK: - Section hue
@@ -47,15 +117,20 @@ extension View {
     }
 }
 
-/// Huefin's signature: a hard little shadow in the section's hue under the main buttons.
+/// The main buttons' press: an ink sticker on paper, a hard shadow in the section's hue at night.
 struct HueLift: ViewModifier {
     @Environment(\.hue) private var hue
+    @Environment(\.colorScheme) private var scheme
     var pressed: Bool
     func body(content: Content) -> some View {
-        content
-            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(hue.opacity(0.55))
-                .offset(x: pressed ? 0 : 3, y: pressed ? 0 : 3))
-            .offset(x: pressed ? 2 : 0, y: pressed ? 2 : 0)
+        if scheme == .dark {
+            content
+                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(hue.opacity(0.55))
+                    .offset(x: pressed ? 0 : 3, y: pressed ? 0 : 3))
+                .offset(x: pressed ? 2 : 0, y: pressed ? 2 : 0)
+        } else {
+            content.sticker(16, depth: 3, pressed: pressed)
+        }
     }
 }
 
@@ -173,9 +248,8 @@ struct PosterCard: View {
                 .aspectRatio(2 / 3, contentMode: .fit)
                 .overlay { RemoteImage(url: app.client?.posterURL(for: item)) }
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 1))
                 .overlay(alignment: .topTrailing) { WatchedBadge(item: item) }
-                .shadow(color: .black.opacity(0.5), radius: 12, y: 6)
+                .sticker(16)
             Text(item.displayTitle).font(.caption.weight(.semibold)).lineLimit(1)
             Text(item.productionYear.map(String.init) ?? " ").font(.caption2).foregroundStyle(.secondary)
         }
@@ -203,8 +277,7 @@ struct LandscapeCard: View {
                     }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 1))
-                .shadow(color: .black.opacity(0.5), radius: 12, y: 6)
+                .sticker(16)
                 .padding(.bottom, 8)
             if let top = item.episodeLabel ?? item.productionYear.map(String.init) {
                 Text(top).font(.caption.weight(.semibold)).foregroundStyle(.secondary).lineLimit(1)
@@ -288,7 +361,7 @@ struct ShelfTitle: View {
     var body: some View {
         HStack(spacing: 9) {
             RoundedRectangle(cornerRadius: 3, style: .continuous).fill(hue).frame(width: 10, height: 10)
-            Text(title).font(.title2.weight(.bold))
+            Text(title).font(Theme.display(24, .heavy, relativeTo: .title2))
         }
         .accessibilityElement(children: .combine)
     }
@@ -321,7 +394,7 @@ struct PrimaryButtonStyle: ButtonStyle {
         let configuration: Configuration
         var body: some View {
             configuration.label
-                .font(.headline)
+                .font(Theme.display(17, .heavy, relativeTo: .headline))
                 .padding(.horizontal, 22).padding(.vertical, 13)
                 .background(hue, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .foregroundStyle(Theme.ink)
@@ -335,7 +408,7 @@ struct PrimaryButtonStyle: ButtonStyle {
 struct PlayButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.headline)
+            .font(Theme.display(17, .heavy, relativeTo: .headline))
             .padding(.horizontal, 26).padding(.vertical, 13)
             .background(Theme.paper, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .foregroundStyle(Theme.ink)
@@ -357,12 +430,11 @@ struct CardPressStyle: ButtonStyle {
 struct SecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.headline)
+            .font(Theme.display(17, .heavy, relativeTo: .headline))
             .padding(.horizontal, 18).padding(.vertical, 12)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 1.5))
-            .foregroundStyle(.white)
-            .scaleEffect(configuration.isPressed ? 0.95 : 1)
+            .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .foregroundStyle(.primary)
+            .sticker(16, depth: 3, pressed: configuration.isPressed)
             .animation(.spring(response: 0.25, dampingFraction: 0.7), value: configuration.isPressed)
     }
 }

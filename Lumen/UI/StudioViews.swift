@@ -102,6 +102,7 @@ struct StudioTile: View {
         }
         .frame(height: 104)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .sticker(18)
         .accessibilityElement(children: .combine)
     }
 }
@@ -136,7 +137,7 @@ struct StudioBrandView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 6) {
                 Text(brand.kind == .studio ? "STUDIO" : "NETWORK")
-                    .font(.footnote.weight(.bold)).tracking(1.2).foregroundStyle(.white.opacity(0.75))
+                    .font(.footnote.weight(.bold)).tracking(1.2).foregroundStyle(.secondary)
                 Text(brand.name).font(.system(size: 44, weight: .heavy)).lineLimit(2).minimumScaleFactor(0.6)
                 Text(brand.countText).font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
             }
@@ -212,9 +213,9 @@ struct StudioBrandView: View {
         Button(action: action) {
             Text(title).font(.footnote.weight(.bold)).lineLimit(1)
                 .padding(.horizontal, 14).frame(height: 36)
-                .background(on ? Color.white : Color.clear, in: Capsule())
-                .overlay(Capsule().strokeBorder(on ? Color.clear : Color.white.opacity(0.16)))
-                .foregroundStyle(on ? Theme.ink : .white)
+                .background(on ? Color.primary : Color.clear, in: Capsule())
+                .overlay(Capsule().strokeBorder(on ? Color.clear : Theme.hairline))
+                .foregroundStyle(on ? Theme.background : Color.primary)
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(on ? .isSelected : [])

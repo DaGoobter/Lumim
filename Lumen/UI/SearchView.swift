@@ -194,7 +194,7 @@ struct SeerrInlineConnect: View {
                 SecureField("Password", text: $password)
                     .textContentType(.password)
                     .padding(10)
-                    .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .background(Theme.wash, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     .onSubmit(connect)
                 Button(action: connect) {
                     if busy { ProgressView() } else { Text("Turn on") }

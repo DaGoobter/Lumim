@@ -118,13 +118,13 @@ struct ChannelRow: View {
         HStack(spacing: 14) {
             // Channel logo
             ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous).fill(.white.opacity(0.08))
+                RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.wash)
                 AsyncImage(url: app.client?.imageURL(channel.id, maxWidth: 240, tag: channel.imageTag("primary"))) { phase in
                     if case .success(let image) = phase {
                         image.resizable().scaledToFit().padding(8)
                     } else {
                         Text(String((channel.name ?? "TV").prefix(3)).uppercased())
-                            .font(.headline.weight(.heavy)).foregroundStyle(.white.opacity(0.6))
+                            .font(.headline.weight(.heavy)).foregroundStyle(.secondary)
                     }
                 }
             }
@@ -148,10 +148,11 @@ struct ChannelRow: View {
                 }
             }
             Spacer(minLength: 0)
-            Image(systemName: "play.circle.fill").font(.title2).foregroundStyle(.white.opacity(0.9))
+            Image(systemName: "play.circle.fill").font(.title2).foregroundStyle(.primary)
         }
         .padding(12)
-        .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .foregroundStyle(.white)
+        .background(Theme.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .sticker(18, depth: 3)
+        .foregroundStyle(.primary)
     }
 }

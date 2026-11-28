@@ -33,6 +33,7 @@ struct PlayerScreen: View {
                 AppleVideoPlayerScreen(request: request)
             }
         }
+        .environment(\.colorScheme, .dark)   // video always plays on black, whatever the app's look
         .task {
             guard useEngine == nil else { return }
             // Starting something new closes any video floating in Picture in Picture.

@@ -34,10 +34,10 @@ struct ProfilePickerView: View {
                                 Image(systemName: "plus")
                                     .font(.system(size: 34, weight: .semibold))
                                     .frame(width: 108, height: 108)
-                                    .background(Circle().strokeBorder(.white.opacity(0.35), style: StrokeStyle(lineWidth: 2, dash: [6])))
+                                    .background(Circle().strokeBorder(Color.primary.opacity(0.35), style: StrokeStyle(lineWidth: 2, dash: [6])))
                                 Text("Add profile").font(.subheadline.weight(.semibold))
                             }
-                            .foregroundStyle(.white.opacity(0.8))
+                            .foregroundStyle(.primary.opacity(0.8))
                         }
                         .buttonStyle(CardPressStyle())
                     }
@@ -111,8 +111,8 @@ struct ProfileTile: View {
             }
             .frame(width: 108, height: 108)
             .clipShape(Circle())
-            .overlay(Circle().strokeBorder(current ? AnyShapeStyle(Theme.spectrum) : AnyShapeStyle(Color.white.opacity(0.15)),
-                                           lineWidth: current ? 3 : 1))
+            .overlay(Circle().strokeBorder(current ? AnyShapeStyle(Theme.spectrum) : AnyShapeStyle(Theme.outline),
+                                           lineWidth: current ? 3 : 2.5))
             .overlay(alignment: .topTrailing) {
                 if editing {
                     Image(systemName: "minus.circle.fill").font(.title).foregroundStyle(.white, .red)
@@ -132,6 +132,6 @@ struct ProfileTile: View {
             Text(account.serverName ?? URL(string: account.serverURL)?.host ?? "")
                 .font(.caption).foregroundStyle(.secondary).lineLimit(1)
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(.primary)
     }
 }

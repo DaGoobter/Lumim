@@ -207,6 +207,8 @@ struct SettingsView: View {
                 }
             }
 
+            AppearanceSection()
+
             SubtitleStyleSection()
 
             Section {
@@ -479,3 +481,22 @@ struct SubtitleStyleSection: View {
     }
 }
 
+
+
+/// Huefin (paper, ink outlines, sticker buttons) or Night (dark).
+struct AppearanceSection: View {
+    @AppStorage(Appearance.key) private var appearance = "huefin"
+    var body: some View {
+        Section {
+            Picker("Look", selection: $appearance) {
+                Text("Huefin").tag("huefin")
+                Text("Night").tag("night")
+            }
+            .pickerStyle(.segmented)
+        } header: {
+            Text("Appearance")
+        } footer: {
+            Text("Huefin is the bright, outlined look. Night is dark, easier on the eyes in a dark room. Videos always play on black.")
+        }
+    }
+}

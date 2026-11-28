@@ -159,7 +159,7 @@ struct DownloadRow: View {
             Spacer()
             if record.state == .completed { Image(systemName: record.item.isBook ? "book.circle.fill" : "play.circle.fill").font(.title2).foregroundStyle(Color.accentColor) }
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(.primary)
     }
 
     @ViewBuilder private var status: some View {

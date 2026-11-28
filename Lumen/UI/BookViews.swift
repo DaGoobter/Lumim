@@ -118,7 +118,7 @@ struct BookDetailView: View {
                 if let p = book.progress { ProgressBar(value: p).frame(maxWidth: 220) }
                 if let error { Text(error).font(.footnote).foregroundStyle(.red).padding(.horizontal) }
                 if let overview = book.overview {
-                    Text(overview).font(.callout).foregroundStyle(.white.opacity(0.85)).padding(.horizontal)
+                    Text(overview).font(.callout).foregroundStyle(.primary.opacity(0.85)).padding(.horizontal)
                 }
             }
             .frame(maxWidth: 700)

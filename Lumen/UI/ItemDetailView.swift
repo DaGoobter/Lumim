@@ -61,7 +61,7 @@ struct ItemDetailView: View {
                             }
                             if let error { Text(error).font(.footnote).foregroundStyle(.red) }
                             if let overview = it.overview {
-                                Text(overview).font(.callout).foregroundStyle(.white.opacity(0.85))
+                                Text(overview).font(.callout).foregroundStyle(.primary.opacity(0.85))
                             }
                             if let genres = it.genres, !genres.isEmpty {
                                 Text(genres.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
@@ -178,7 +178,7 @@ struct ItemDetailView: View {
                 } label: {
                     Image(systemName: on ? "heart.fill" : "heart")
                         .font(.title3).frame(width: 22, height: 22)
-                        .foregroundStyle(on ? Theme.red : .white)
+                        .foregroundStyle(on ? Theme.red : .primary)
                         .contentTransition(.symbolEffect(.replace))
                 }
                 .buttonStyle(SecondaryButtonStyle())
@@ -237,7 +237,8 @@ struct ItemDetailView: View {
                         .font(.subheadline.weight(.semibold))
                         .padding(.horizontal, 14).padding(.vertical, 8)
                         .background(selected ? AnyShapeStyle(Theme.gradient) : AnyShapeStyle(Theme.card), in: Capsule())
-                        .foregroundStyle(.white)
+                        .overlay(Capsule().strokeBorder(Theme.outline, lineWidth: 2))
+                        .foregroundStyle(selected ? Color.white : Color.primary)
                     }
                 }
             }
@@ -423,7 +424,7 @@ struct DownloadButton: View {
                 Image(systemName: "checkmark.circle.fill")
             case .downloading?:
                 ZStack {
-                    Circle().stroke(.white.opacity(0.2), lineWidth: 3)
+                    Circle().stroke(Color.primary.opacity(0.2), lineWidth: 3)
                     Circle().trim(from: 0, to: record?.progress ?? 0)
                         .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                         .rotationEffect(.degrees(-90))

@@ -34,6 +34,17 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
+      - name: Fetch Huefin's font (Bricolage Grotesque, SIL Open Font License)
+        run: |
+          mkdir -p Lumen/Fonts
+          base="https://raw.githubusercontent.com/google/fonts/main/ofl/bricolagegrotesque"
+          for name in "BricolageGrotesque%5Bopsz%2Cwdth%2Cwght%5D.ttf" "BricolageGrotesque%5Bopsz%2Cwght%5D.ttf"; do
+            curl -fsSL -o Lumen/Fonts/BricolageGrotesque.ttf "$base/$name" && break
+          done
+          curl -fsSL -o Lumen/Fonts/OFL.txt "$base/OFL.txt" || true
+          ls -la Lumen/Fonts || true
+          [ -s Lumen/Fonts/BricolageGrotesque.ttf ] || { rm -f Lumen/Fonts/BricolageGrotesque.ttf; echo "Font not available; the app falls back to system type."; }
+
       - name: Generate Xcode project
         run: xcodegen generate
 

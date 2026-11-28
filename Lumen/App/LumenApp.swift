@@ -32,8 +32,22 @@ struct LumenApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var app = AppState()
     @State private var downloads = DownloadManager.shared
+    @AppStorage(Appearance.key) private var appearance = "huefin"
 
-    init() { EngineGuard.checkLastRun() }
+    init() {
+        EngineGuard.checkLastRun()
+        // Page titles in Huefin's display type.
+        if HuefinFont.available {
+            func font(_ size: CGFloat, _ weight: UIFont.Weight) -> UIFont {
+                let d = UIFontDescriptor(fontAttributes: [.family: HuefinFont.family,
+                                                          .traits: [UIFontDescriptor.TraitKey.weight: weight]])
+                return UIFont(descriptor: d, size: size)
+            }
+            let bar = UINavigationBar.appearance()
+            bar.largeTitleTextAttributes = [.font: font(34, .heavy)]
+            bar.titleTextAttributes = [.font: font(17, .bold)]
+        }
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -41,7 +55,7 @@ struct LumenApp: App {
                 .environment(app)
                 .environment(downloads)
                 .environment(AudioPlayer.shared)
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(appearance == "night" ? .dark : .light)
                 .tint(Color.accentColor)
         }
     }
@@ -187,8 +201,7 @@ struct AccountButton: View {
                 .font(.headline.weight(.heavy)).foregroundStyle(.white)
                 .frame(width: 34, height: 34)
                 .background(Circle().fill(Theme.gradient))
-                .overlay(Circle().strokeBorder(.white.opacity(0.35), lineWidth: 1))
-                .shadow(color: .black.opacity(0.4), radius: 6)
+                .sticker(17, depth: 2)
         }
         .contextMenu {
             Button { AppRouter.shared.showProfiles = true } label: { Label("Who's watching?", systemImage: "person.2.crop.square.stack") }

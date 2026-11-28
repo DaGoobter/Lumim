@@ -141,6 +141,7 @@ struct ForYouView: View {
                                                 Image(systemName: "dot.radiowaves.left.and.right")
                                                     .font(.caption.bold()).padding(6)
                                                     .background(Theme.gradient, in: Circle())
+                                                    .foregroundStyle(.white)
                                             }
                                         Text(artist.name ?? "").font(.caption.weight(.semibold)).lineLimit(1).frame(width: 96)
                                     }
@@ -163,6 +164,7 @@ struct ForYouView: View {
                                         .font(.subheadline.weight(.bold))
                                         .padding(.horizontal, 16).padding(.vertical, 12)
                                         .background(genreGradient(genre.name ?? ""), in: RoundedRectangle(cornerRadius: 14))
+                                        .foregroundStyle(.white)
                                 }
                                 .buttonStyle(CardPressStyle())
                             }
@@ -171,7 +173,7 @@ struct ForYouView: View {
                 }
             }
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(.primary)
         .padding()
         .task { await load() }
     }

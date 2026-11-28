@@ -197,7 +197,7 @@ struct TrackRow: View {
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(track.name ?? "Track").font(.body)
-                        .foregroundStyle(audio.current?.id == track.id ? Color.accentColor : .white).lineLimit(1)
+                        .foregroundStyle(audio.current?.id == track.id ? Color.accentColor : .primary).lineLimit(1)
                     if showArt, let artist = track.artistLine {
                         Text(artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
@@ -410,7 +410,7 @@ struct MiniPlayer: View {
             .frame(height: 56)
             .frame(maxWidth: 640)
             .background(.regularMaterial, in: Capsule())
-            .overlay(Capsule().strokeBorder(.white.opacity(0.12), lineWidth: 0.5))
+            .overlay(Capsule().strokeBorder(Theme.hairline, lineWidth: 0.5))
             .shadow(color: .black.opacity(0.35), radius: 16, y: 6)
             .padding(.horizontal, 14)
             .padding(.top, 4)
@@ -710,6 +710,7 @@ struct NowPlayingPresenter: ViewModifier {
         @Bindable var audio = audio
         content.sheet(isPresented: $audio.showNowPlaying) {
             NowPlayingView()
+                .environment(\.colorScheme, .dark)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.hidden)
                 .presentationBackground(.black)

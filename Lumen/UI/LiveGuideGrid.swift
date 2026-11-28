@@ -79,7 +79,7 @@ struct LiveGuideGrid: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 30 * pointsPerMinute, alignment: .leading)
                     .padding(.leading, 6)
-                    .overlay(alignment: .leading) { Rectangle().fill(.white.opacity(0.2)).frame(width: 1) }
+                    .overlay(alignment: .leading) { Rectangle().fill(Color.primary.opacity(0.2)).frame(width: 1) }
             }
         }
         .frame(height: 30)
@@ -88,7 +88,7 @@ struct LiveGuideGrid: View {
     private func row(_ ch: BaseItem, origin: Date, end: Date, now: Date) -> some View {
         let programs = (guide[ch.id] ?? []).filter { ($0.end ?? .distantPast) > origin && ($0.start ?? .distantFuture) < end }
         return ZStack(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.white.opacity(0.03))
+            RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.primary.opacity(0.03))
             if programs.isEmpty {
                 Button { onPlay(ch) } label: {
                     Text(ch.name ?? "Live").font(.subheadline.weight(.semibold)).padding(.horizontal, 12)
@@ -110,18 +110,18 @@ struct LiveGuideGrid: View {
                         Text(p.name ?? "Program").font(.subheadline.weight(.semibold)).lineLimit(1)
                         Text([p.start?.formatted(date: .omitted, time: .shortened), p.episodeTitle]
                             .compactMap { $0 }.joined(separator: " · "))
-                            .font(.caption2).foregroundStyle(.white.opacity(0.65)).lineLimit(1)
+                            .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                     }
                     .padding(.horizontal, 10)
                     .frame(width: w, height: rowHeight, alignment: .leading)
                     .background {
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(airing ? AnyShapeStyle(Theme.gradient) : AnyShapeStyle(Color.white.opacity(0.08)))
+                            .fill(airing ? AnyShapeStyle(Theme.gradient) : AnyShapeStyle(Theme.wash))
                             .opacity(airing ? 0.6 : 1)
                     }
                     .overlay(alignment: .bottomLeading) {
                         if airing, let prog = p.progress(at: now) {
-                            Capsule().fill(.white.opacity(0.85))
+                            Capsule().fill(Color.primary.opacity(0.85))
                                 .frame(width: max(2, (w - 16) * prog), height: 3)
                                 .padding(.horizontal, 8).padding(.bottom, 6)
                         }
@@ -140,7 +140,7 @@ struct LiveGuideGrid: View {
 
     private func logo(_ ch: BaseItem) -> some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.white.opacity(0.08))
+            RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.wash)
             AsyncImage(url: app.client?.imageURL(ch.id, maxWidth: 200, tag: ch.imageTag("primary"))) { phase in
                 if case .success(let image) = phase {
                     image.resizable().scaledToFit().padding(8)
@@ -148,7 +148,7 @@ struct LiveGuideGrid: View {
                     VStack(spacing: 2) {
                         if let n = ch.channelNumber { Text(n).font(.caption2.weight(.bold)).foregroundStyle(Color.accentColor) }
                         Text(String((ch.name ?? "TV").prefix(4)).uppercased())
-                            .font(.caption.weight(.heavy)).foregroundStyle(.white.opacity(0.7))
+                            .font(.caption.weight(.heavy)).foregroundStyle(.secondary)
                     }
                 }
             }
