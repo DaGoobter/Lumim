@@ -6,7 +6,7 @@ struct TVImage: View {
     let url: URL?
     var contentMode: ContentMode = .fill
     var body: some View {
-        Rectangle().fill(contentMode == .fill ? Color.white.opacity(0.06) : .clear)
+        Rectangle().fill(contentMode == .fill ? Theme.wash : .clear)
             .overlay {
                 AsyncImage(url: url, transaction: Transaction(animation: .easeOut(duration: 0.25))) { phase in
                     if let img = phase.image { img.resizable().aspectRatio(contentMode: contentMode) }
@@ -94,7 +94,7 @@ struct TVShelf<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.headline).padding(.horizontal, 80)
+            Text(title).font(Theme.display(31, .heavy, relativeTo: .headline)).padding(.horizontal, 80)
             ScrollView(.horizontal) {
                 LazyHStack(alignment: .top, spacing: 40) { content }.padding(.horizontal, 80).padding(.vertical, 24)
             }.scrollClipDisabled()
@@ -125,17 +125,23 @@ struct TVHueButtonStyle: ButtonStyle {
         let expand: Bool
         @Environment(\.isFocused) private var focused
         @Environment(\.isEnabled) private var enabled
+        @Environment(\.colorScheme) private var scheme
         var body: some View {
+            let paper = scheme == .light
             configuration.label
-                .font(expand ? .headline : .callout.weight(.semibold))
-                .foregroundStyle(filled || focused ? Theme.ink : Color.white)
+                .font(expand ? Theme.display(29, .heavy, relativeTo: .headline) : Theme.display(25, .bold, relativeTo: .callout))
+                .foregroundStyle(filled || focused || paper ? Theme.ink : Color.white)
                 .padding(.horizontal, expand ? 36 : 26).padding(.vertical, expand ? 18 : 13)
                 .frame(maxWidth: expand ? .infinity : nil)
                 .background(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(focused ? (filled ? hue : Theme.paper) : (filled ? hue.opacity(0.85) : Color.white.opacity(0.12)))
+                        .fill(focused ? (filled ? hue : (paper ? hue : Theme.paper))
+                              : (filled ? hue.opacity(0.85) : (paper ? Color.white : Color.white.opacity(0.12))))
                 )
-                .shadow(color: focused ? hue.opacity(0.6) : .clear, radius: 24, y: 8)
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(paper ? Theme.ink : .clear, lineWidth: 3))
+                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(paper ? Theme.ink : .clear)
+                    .offset(x: focused ? 6 : 4, y: focused ? 6 : 4))
+                .shadow(color: focused && !paper ? hue.opacity(0.6) : .clear, radius: 24, y: 8)
                 .scaleEffect(configuration.isPressed ? 0.97 : (focused ? 1.05 : 1))
                 .opacity(enabled ? 1 : 0.45)
                 .animation(.easeOut(duration: 0.18), value: focused)

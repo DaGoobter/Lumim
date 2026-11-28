@@ -121,6 +121,8 @@ targets:
       - path: Lumen/Playback/AppSubtitles.swift
       - path: Lumen/Playback/AssRenderer.swift
       - path: Lumen/UI/PINPad.swift
+      - path: Lumen/Fonts
+        optional: true
       - path: Lumen/Playback/MPVCore.swift
       - path: Lumen/Playback/NativeCore.swift
       - path: Lumen/Playback/EngineCore.swift
@@ -136,7 +138,7 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UIBackgroundModes: [audio]
-        UIUserInterfaceStyle: Dark
+        UIUserInterfaceStyle: Automatic
         NSLocalNetworkUsageDescription: Huefin connects to Jellyfin servers on your local network.
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true

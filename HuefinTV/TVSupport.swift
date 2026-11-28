@@ -1,5 +1,6 @@
 import SwiftUI
 import AVFoundation
+import CoreText
 
 // Pieces the shared iPhone code expects that work differently on Apple TV.
 
@@ -14,12 +15,27 @@ enum Theme {
 
     static let accent = red                                             // default when no section hue applies
     static let accent2 = red
-    static let midnight = Color(red: 0.098, green: 0.090, blue: 0.141) // #191724, raised surfaces
-    static let background = Color(red: 0.055, green: 0.051, blue: 0.078) // #0E0D14, warm night
-    static let card = Color(red: 0.098, green: 0.090, blue: 0.141)      // #191724
-    static let ink = Color(red: 0.078, green: 0.067, blue: 0.122)       // #14111F, text on bright hues
-    static let paper = Color(red: 1.0, green: 0.973, blue: 0.933)       // #FFF8EE, the light button
-    static let hairline = Color.white.opacity(0.09)
+    /// Light value for the Huefin look, dark value for Night.
+    static func look(_ light: UIColor, _ dark: UIColor) -> Color {
+        Color(UIColor { $0.userInterfaceStyle == .dark ? dark : light })
+    }
+    private static func hex(_ v: UInt32, _ a: CGFloat = 1) -> UIColor {
+        UIColor(red: CGFloat((v >> 16) & 0xFF) / 255, green: CGFloat((v >> 8) & 0xFF) / 255, blue: CGFloat(v & 0xFF) / 255, alpha: a)
+    }
+    static let background = look(hex(0xFFF8EE), hex(0x0E0D14))          // paper / warm night
+    static let card = look(hex(0xFFFFFF), hex(0x191724))
+    static let midnight = card
+    static let ink = Color(red: 0.106, green: 0.082, blue: 0.188)        // #1B1530, text on bright hues
+    static let paper = Color(red: 1.0, green: 0.973, blue: 0.933)        // #FFF8EE, the light button
+    static let hairline = look(hex(0x1B1530, 0.85), UIColor.white.withAlphaComponent(0.09))
+    static let outline = look(hex(0x1B1530), .clear)
+    static let wash = look(hex(0x1B1530, 0.06), UIColor.white.withAlphaComponent(0.07))
+
+    /// Huefin's display type: Bricolage Grotesque when it's bundled, rounded system type otherwise.
+    static func display(_ size: CGFloat, _ weight: Font.Weight = .heavy, relativeTo style: Font.TextStyle = .title) -> Font {
+        HuefinFont.available ? .custom(HuefinFont.family, size: size, relativeTo: style).weight(weight)
+            : .system(size: size, weight: weight, design: .rounded)
+    }
 
     /// Each section's hue.
     static let home = red, library = blue, live = orange, downloads = green, search = violet
@@ -30,6 +46,41 @@ enum Theme {
     /// Cool side of the spectrum: fills that carry white text stay readable.
     static let gradient = LinearGradient(colors: [blue, violet, red],
                                          startPoint: .topLeading, endPoint: .bottomTrailing)
+}
+
+/// The chosen look: "huefin" (paper, the default) or "night".
+enum Appearance {
+    static let key = "huefin.appearance"
+}
+
+enum HuefinFont {
+    static let family = "Bricolage Grotesque"
+    static let available: Bool = {
+        guard let url = Bundle.main.url(forResource: "BricolageGrotesque", withExtension: "ttf") else { return false }
+        CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+        return !UIFont.fontNames(forFamilyName: family).isEmpty
+    }()
+}
+
+/// Ink outline and hard ink shadow on the Huefin look; nothing extra at night.
+struct Sticker: ViewModifier {
+    @Environment(\.colorScheme) private var scheme
+    var radius: CGFloat = 16
+    var depth: CGFloat = 6
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        if scheme == .dark {
+            content
+        } else {
+            content
+                .overlay(shape.strokeBorder(Theme.ink, lineWidth: 4))
+                .background(shape.fill(Theme.ink).offset(x: depth, y: depth))
+        }
+    }
+}
+
+extension View {
+    func sticker(_ radius: CGFloat = 16, depth: CGFloat = 6) -> some View { modifier(Sticker(radius: radius, depth: depth)) }
 }
 
 /// Something to play full screen.

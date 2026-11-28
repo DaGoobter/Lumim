@@ -512,7 +512,7 @@ struct TVLiveView: View {
                     Button { AppRouter.shared.playRequest = PlaybackRequest(item: ch, startTicks: 0) } label: {
                         HStack(spacing: 22) {
                             ZStack {
-                                RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.08))
+                                RoundedRectangle(cornerRadius: 14).fill(Theme.wash)
                                 Text(String((ch.name ?? "TV").prefix(3)).uppercased()).font(.headline).foregroundStyle(.secondary)
                                 if ch.imageTag("Primary") != nil { TVImage(url: app.client?.imageURL(ch.id, maxWidth: 300, tag: ch.imageTag("Primary")), contentMode: .fit).padding(10) }
                             }.frame(width: 150, height: 90)

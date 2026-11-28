@@ -52,7 +52,7 @@ struct TVMusicView: View {
             }.padding(.vertical, 40)
         }
         .itemDestinations()
-        .fullScreenCover(isPresented: $nowPlaying) { TVNowPlaying() }
+        .fullScreenCover(isPresented: $nowPlaying) { TVNowPlaying().environment(\.colorScheme, .dark) }
         .task {
             guard let c = app.client, albums.isEmpty else { return }
             let views = (try? await c.userViews()) ?? []
@@ -182,6 +182,7 @@ struct TVNowPlaying: View {
 struct TVSettingsView: View {
     @Environment(AppState.self) private var app
     @State private var adding = false
+    @AppStorage(Appearance.key) private var appearance = "huefin"
     @State private var pinTask: ProfilePINTask?
     @State private var pinTick = 0
     @State private var groups: [SyncPlayManager.GroupInfo] = []
@@ -241,6 +242,14 @@ struct TVSettingsView: View {
                     Text("Someone starts a group from Huefin on their phone or PC (or Jellyfin's web app); join it here and play, pause and seeking are shared.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+            }
+            Section {
+                Picker("Look", selection: $appearance) {
+                    Text("Huefin").tag("huefin")
+                    Text("Night").tag("night")
+                }
+            } header: { Text("Appearance") } footer: {
+                Text("Huefin is the bright, outlined look. Night is dark, easier on the eyes in a dark room. Videos always play on black.")
             }
             Section("Subtitles") {
                 Picker("Size", selection: $subSize) { ForEach(SubtitleStyle.sizes, id: \.id) { Text($0.name).tag($0.id) } }

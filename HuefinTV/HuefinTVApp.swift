@@ -4,6 +4,7 @@ import AVFoundation
 @main
 struct HuefinTVApp: App {
     @State private var app = AppState()
+    @AppStorage(Appearance.key) private var appearance = "huefin"
 
     init() {
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
@@ -15,7 +16,7 @@ struct HuefinTVApp: App {
             TVRoot()
                 .environment(app)
                 .environment(AudioPlayer.shared)
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(appearance == "night" ? .dark : .light)
                 // Continue Watching on the Top Shelf opens huefin://play/<id>.
                 .onOpenURL { url in Task { await AppRouter.shared.open(url, client: app.client) } }
         }
@@ -63,7 +64,7 @@ struct TVRoot: View {
             else if askOnLaunch, app.accounts.count > 1, app.client != nil { showProfiles = true }
         }
         .fullScreenCover(isPresented: $showProfiles, onDismiss: { launchLocked = false }) { TVProfilePicker(atLaunch: launchLocked) }
-        .fullScreenCover(item: $appleRequest, onDismiss: { router.playerClosedAt = Date() }) { TVApplePlayerScreen(request: $0) }
+        .fullScreenCover(item: $appleRequest, onDismiss: { router.playerClosedAt = Date() }) { TVApplePlayerScreen(request: $0).environment(\.colorScheme, .dark) }
         // Every play request lands here: Apple's player for files the Apple TV plays natively,
         // the Huefin Engine (a UIKit screen, so the Siri Remote always works) for everything else.
         .onChange(of: router.playRequest?.id) { _, id in
