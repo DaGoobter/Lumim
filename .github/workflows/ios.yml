@@ -71,7 +71,7 @@ jobs:
           find "$APP/Frameworks" -maxdepth 1 \( -name '*.framework' -o -name '*.dylib' \) -exec codesign --force --sign - {} \; 2>/dev/null || true
           [ -d "$APP/PlugIns/PrismActivity.appex" ] && codesign --force --sign - --entitlements PrismActivity/PrismActivity.entitlements "$APP/PlugIns/PrismActivity.appex"
           codesign --force --sign - --entitlements Lumen/Lumen.entitlements "$APP"
-          codesign -d --entitlements - "$APP" 2>/dev/null | grep -A3 application-groups || true
+          codesign -d --entitlements - "$APP" 2>/dev/null | grep -A3 -E "application-groups|keychain-access-groups" || true
           zip -qry Lumen.ipa Payload
           # Make sure the Huefin Engine (mpv) really made it into the app.
           if strings Payload/Lumen.app/Lumen | grep -q "target-colorspace-hint"; then echo "Huefin Engine: included"; else echo "::error::Huefin Engine (mpv) is missing from the app"; exit 1; fi

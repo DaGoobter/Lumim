@@ -6,5 +6,9 @@
 	<array>
 		<string>group.app.huefin.phone</string>
 	</array>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>HUEFINTEAM.com.huefin.shelf</string>
+	</array>
 </dict>
 </plist>
