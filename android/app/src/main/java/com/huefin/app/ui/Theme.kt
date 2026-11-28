@@ -197,3 +197,21 @@ fun Modifier.outlined(radius: androidx.compose.ui.unit.Dp = 16.dp, line: android
     else this.shadow(10.dp, shape, ambientColor = Hue.ink.copy(alpha = 0.25f), spotColor = Hue.ink.copy(alpha = 0.25f))
         .clip(shape).border(line, Hue.ink.copy(alpha = 0.9f), shape)
 }
+
+/** Headings in Bricolage Grotesque (added when the app is built), everything else in the system font. */
+@OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
+private fun huefinTypography(assets: android.content.res.AssetManager): androidx.compose.material3.Typography {
+    val t = androidx.compose.material3.Typography()
+    val path = "fonts/BricolageGrotesque.ttf"
+    val present = runCatching { assets.list("fonts")?.contains("BricolageGrotesque.ttf") == true }.getOrDefault(false)
+    if (!present) return t
+    val family = androidx.compose.ui.text.font.FontFamily(
+        listOf(FontWeight.SemiBold, FontWeight.Bold, FontWeight.ExtraBold, FontWeight.Black).map { w ->
+            androidx.compose.ui.text.font.Font(path, assets, w,
+                variationSettings = androidx.compose.ui.text.font.FontVariation.Settings(androidx.compose.ui.text.font.FontVariation.weight(w.weight)))
+        })
+    fun f(s: androidx.compose.ui.text.TextStyle) = s.copy(fontFamily = family)
+    return t.copy(displayLarge = f(t.displayLarge), displayMedium = f(t.displayMedium), displaySmall = f(t.displaySmall),
+        headlineLarge = f(t.headlineLarge), headlineMedium = f(t.headlineMedium), headlineSmall = f(t.headlineSmall),
+        titleLarge = f(t.titleLarge))
+}
