@@ -174,7 +174,7 @@ struct TVHomeView: View {
                 if !loaded { ProgressView().frame(maxWidth: .infinity).padding(100) }
             }.padding(.bottom, 80)
         }
-        .ignoresSafeArea(edges: .horizontal)
+        .ignoresSafeArea(edges: [.horizontal, .top])   // the artwork runs up behind the tabs
         .itemDestinations()
         .task { if !loaded { await load() } }
         // After watching something, quietly refresh Continue Watching and Up Next (your place on screen stays).
@@ -183,7 +183,7 @@ struct TVHomeView: View {
 
     private func hero(_ f: BaseItem) -> some View {
         ZStack(alignment: .bottomLeading) {
-            TVImage(url: app.client?.backdropURL(for: f, width: 1920)).frame(maxWidth: .infinity).frame(height: 520)
+            TVImage(url: app.client?.backdropURL(for: f, width: 1920)).frame(maxWidth: .infinity).frame(height: 680)
             LinearGradient(colors: [.clear, Theme.background], startPoint: .center, endPoint: .bottom)
             LinearGradient(colors: [Theme.background.opacity(0.9), .clear], startPoint: .leading, endPoint: .center)
             VStack(alignment: .leading, spacing: 18) {
@@ -348,7 +348,7 @@ struct TVDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 50) {
                 ZStack(alignment: .bottomLeading) {
-                    TVImage(url: app.client?.backdropURL(for: i, width: 1920)).frame(maxWidth: .infinity).frame(height: 640)
+                    TVImage(url: app.client?.backdropURL(for: i, width: 1920)).frame(maxWidth: .infinity).frame(height: 720)
                     LinearGradient(colors: [.clear, Theme.background], startPoint: .center, endPoint: .bottom)
                     LinearGradient(colors: [Theme.background.opacity(0.92), .clear], startPoint: .leading, endPoint: .center)
                     VStack(alignment: .leading, spacing: 18) {
@@ -397,7 +397,7 @@ struct TVDetailView: View {
                 if !similar.isEmpty { TVShelf(title: "More Like This") { ForEach(similar) { TVPosterCard(item: $0) } } }
             }.padding(.bottom, 80)
         }
-        .ignoresSafeArea(edges: .horizontal)
+        .ignoresSafeArea(edges: [.horizontal, .top])
         .task(id: start.id) { if item == nil { await reload() } }
         .onChange(of: AppRouter.shared.playerClosedAt) { _, _ in
             do { Task { await reload(); if let s = season, let sid = showId { episodes = (try? await app.client?.episodes(seriesId: sid, seasonId: s.id)) ?? episodes } } }
