@@ -1278,6 +1278,13 @@ private final class AudioPipe {
     /// gaps between frames, which the speakers play as crackles. Frames that land within 40 ms of where the
     /// previous one ended are placed exactly there instead, so the sound is seamless.
     private var nextSample: Int64?
+    /// Decoded sound waiting to be handed over. Some formats (Dolby TrueHD: 40 samples a frame, 1,200 frames a
+    /// second) come in pieces far too small for the speakers' queue, so pieces are gathered into ~20 ms blocks.
+    private var pending = Data()
+    private var pendingStart: Int64 = 0
+    private var pendingFrames = 0
+    private var pendingFormat: CMAudioFormatDescription?
+    private var pendingRate: Int32 = 48_000
 
     init?(stream st: UnsafeMutablePointer<AVStream>, allowPassthrough: Bool, delay: Double = 0, night: Bool = false) {
         self.delay = delay
@@ -1306,7 +1313,29 @@ private final class AudioPipe {
             : "\(name) → PCM \(ch == 8 ? "7.1" : ch == 6 ? "5.1" : "\(ch)ch")"
     }
 
-    func flush() { if let dec { avcodec_flush_buffers(dec) }; nextSample = nil }
+    func flush() {
+        if let dec { avcodec_flush_buffers(dec) }
+        nextSample = nil
+        pending.removeAll(keepingCapacity: true); pendingFrames = 0; pendingFormat = nil
+    }
+
+    /// Hands over the gathered sound as one sample buffer.
+    private func takePending() -> CMSampleBuffer? {
+        guard pendingFrames > 0, let fd = pendingFormat else { return nil }
+        defer { pending.removeAll(keepingCapacity: true); pendingFrames = 0 }
+        let count = pending.count
+        let bb: CMBlockBuffer? = pending.withUnsafeBytes { raw in
+            guard let base = raw.baseAddress else { return nil }
+            return NativeCore.block(UnsafeMutableRawPointer(mutating: base).assumingMemoryBound(to: UInt8.self), count)
+        }
+        guard let bb else { return nil }
+        let pts = CMTime(value: pendingStart + Int64((delay * Double(pendingRate)).rounded()), timescale: pendingRate)
+        var sb: CMSampleBuffer?
+        CMAudioSampleBufferCreateReadyWithPacketDescriptions(allocator: kCFAllocatorDefault, dataBuffer: bb, formatDescription: fd,
+                                                             sampleCount: CMItemCount(pendingFrames), presentationTimeStamp: pts,
+                                                             packetDescriptions: nil, sampleBufferOut: &sb)
+        return sb
+    }
 
     func close() {
         var d = dec; avcodec_free_context(&d); dec = nil
@@ -1351,17 +1380,18 @@ private final class AudioPipe {
             if night {
                 buf.withMemoryRebound(to: Float.self, capacity: Int(got) * ch) { compressor.process($0, frames: Int(got), channels: ch, rate: Double(rate)) }
             }
-            guard let bb = NativeCore.block(buf, Int(got) * ch * 4) else { continue }
             var at: Int64? = start.isFinite ? Int64((start * Double(rate)).rounded()) : nil
             if let expected = nextSample, at == nil || abs(at! - expected) < Int64(rate) / 25 { at = expected }
             guard let first = at else { continue }
+            // A jump in time or a change of format ends the current block.
+            if pendingFrames > 0 && (first != pendingStart + Int64(pendingFrames) || pendingFormat !== fd || pendingRate != rate) {
+                if let sb = takePending() { out.append(sb) }
+            }
+            if pendingFrames == 0 { pendingStart = first; pendingFormat = fd; pendingRate = rate }
+            pending.append(buf, count: Int(got) * ch * 4)
+            pendingFrames += Int(got)
             nextSample = first + Int64(got)
-            let pts = CMTime(value: first + Int64((delay * Double(rate)).rounded()), timescale: rate)
-            var sb: CMSampleBuffer?
-            CMAudioSampleBufferCreateReadyWithPacketDescriptions(allocator: kCFAllocatorDefault, dataBuffer: bb, formatDescription: fd,
-                                                                 sampleCount: CMItemCount(got), presentationTimeStamp: pts,
-                                                                 packetDescriptions: nil, sampleBufferOut: &sb)
-            if let sb { out.append(sb) }
+            if pendingFrames >= Int(rate) / 50, let sb = takePending() { out.append(sb) }
         }
         return out
     }
