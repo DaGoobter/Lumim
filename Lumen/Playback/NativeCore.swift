@@ -1273,6 +1273,11 @@ private final class AudioPipe {
     /// Night mode: stereo mix with dialogue up front, plus a compressor.
     private let night: Bool
     private var compressor = NightCompressor()
+    /// Where the next decoded sound should start, in samples. Containers like MKV store times rounded to the
+    /// millisecond while an AAC frame lasts 21.33 ms, so trusting each frame's own time leaves tiny overlaps and
+    /// gaps between frames, which the speakers play as crackles. Frames that land within 40 ms of where the
+    /// previous one ended are placed exactly there instead, so the sound is seamless.
+    private var nextSample: Int64?
 
     init?(stream st: UnsafeMutablePointer<AVStream>, allowPassthrough: Bool, delay: Double = 0, night: Bool = false) {
         self.delay = delay
@@ -1301,7 +1306,7 @@ private final class AudioPipe {
             : "\(name) → PCM \(ch == 8 ? "7.1" : ch == 6 ? "5.1" : "\(ch)ch")"
     }
 
-    func flush() { if let dec { avcodec_flush_buffers(dec) } }
+    func flush() { if let dec { avcodec_flush_buffers(dec) }; nextSample = nil }
 
     func close() {
         var d = dec; avcodec_free_context(&d); dec = nil
@@ -1347,7 +1352,11 @@ private final class AudioPipe {
                 buf.withMemoryRebound(to: Float.self, capacity: Int(got) * ch) { compressor.process($0, frames: Int(got), channels: ch, rate: Double(rate)) }
             }
             guard let bb = NativeCore.block(buf, Int(got) * ch * 4) else { continue }
-            let pts = start.isFinite ? CMTime(seconds: start + delay, preferredTimescale: rate) : .invalid
+            var at: Int64? = start.isFinite ? Int64((start * Double(rate)).rounded()) : nil
+            if let expected = nextSample, at == nil || abs(at! - expected) < Int64(rate) / 25 { at = expected }
+            guard let first = at else { continue }
+            nextSample = first + Int64(got)
+            let pts = CMTime(value: first + Int64((delay * Double(rate)).rounded()), timescale: rate)
             var sb: CMSampleBuffer?
             CMAudioSampleBufferCreateReadyWithPacketDescriptions(allocator: kCFAllocatorDefault, dataBuffer: bb, formatDescription: fd,
                                                                  sampleCount: CMItemCount(got), presentationTimeStamp: pts,
