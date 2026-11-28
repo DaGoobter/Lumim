@@ -367,8 +367,9 @@ struct SettingsView: View {
 
             Section("This device") {
                 LabeledContent("Home Screen widget", value: WatchShelf.folder != nil ? "Connected"
-                               : WatchShelf.grantedGroups.isEmpty ? "Not set up (install gave no shared space)"
-                               : "Not set up (\(WatchShelf.grantedGroups.joined(separator: ", ")))")
+                               : WatchShelf.keychainWorks ? "Connected (keychain)"
+                               : WatchShelf.profile == nil ? "Not set up (no install profile found)"
+                               : "Not set up (keychain: \(WatchShelf.keychainGroups.first ?? "none allowed"))")
                 capability("Dolby Vision", DeviceCapabilities.dolbyVision)
                 capability("HDR10", DeviceCapabilities.hdr10)
                 capability("HLG", DeviceCapabilities.hlg)

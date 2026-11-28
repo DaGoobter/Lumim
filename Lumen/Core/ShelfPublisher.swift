@@ -6,7 +6,7 @@ import WidgetKit
 /// Hands Continue Watching to the iPhone widget / Apple TV Top Shelf (see Shared/WatchShelf.swift).
 enum ShelfPublisher {
     static func publish(resume: [BaseItem], nextUp: [BaseItem], client: JellyfinClient) async {
-        guard let folder = WatchShelf.folder else { return }
+        let folder = WatchShelf.folder
         var seen = Set<String>()
         let picks = (resume + nextUp).filter { seen.insert($0.id).inserted }.prefix(8)
         var items: [WatchShelf.Item] = []
@@ -15,7 +15,7 @@ enum ShelfPublisher {
             var file: String? = nil
             #if !os(tvOS)
             // The widget can't count on the network, so its pictures are saved next to the list.
-            if let (data, resp) = try? await URLSession.shared.data(from: art), (resp as? HTTPURLResponse)?.statusCode == 200 {
+            if let folder, let (data, resp) = try? await URLSession.shared.data(from: art), (resp as? HTTPURLResponse)?.statusCode == 200 {
                 let name = "shelf-\(n).jpg"
                 if (try? data.write(to: folder.appendingPathComponent(name), options: .atomic)) != nil { file = name }
             }
@@ -25,7 +25,7 @@ enum ShelfPublisher {
             items.append(WatchShelf.Item(id: it.id, title: it.displayTitle, subtitle: sub,
                                          progress: (it.progress ?? 0), imageFile: file, imageURL: art.absoluteString))
         }
-        guard items != WatchShelf.load() else { return }
+        guard items != WatchShelf.load() || (folder == nil && !WatchShelf.keychainWorks) else { return }
         WatchShelf.save(items)
         #if canImport(WidgetKit) && !os(tvOS)
         WidgetCenter.shared.reloadAllTimelines()

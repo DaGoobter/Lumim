@@ -17,6 +17,8 @@ struct ContinueWatchingWidget: Widget {
 struct ShelfEntry: TimelineEntry {
     let date: Date
     let items: [WatchShelf.Item]
+    /// Pictures fetched from the server when there's no shared folder to read them from.
+    var pictures: [String: UIImage] = [:]
 }
 
 struct ShelfProvider: TimelineProvider {
@@ -26,7 +28,19 @@ struct ShelfProvider: TimelineProvider {
     }
     func getTimeline(in context: Context, completion: @escaping (Timeline<ShelfEntry>) -> Void) {
         // The app refreshes the widget whenever Home loads; this is just a safety net.
-        completion(Timeline(entries: [ShelfEntry(date: .now, items: WatchShelf.load())], policy: .after(.now.addingTimeInterval(3600))))
+        let items = WatchShelf.load()
+        Task {
+            var pics: [String: UIImage] = [:]
+            if WatchShelf.folder == nil {
+                for it in items.prefix(4) {
+                    guard let s = it.imageURL, let url = URL(string: s),
+                          let (data, _) = try? await URLSession.shared.data(from: url),
+                          let img = UIImage(data: data) else { continue }
+                    pics[it.id] = img.preparingThumbnail(of: CGSize(width: 400, height: 225)) ?? img
+                }
+            }
+            completion(Timeline(entries: [ShelfEntry(date: .now, items: items, pictures: pics)], policy: .after(.now.addingTimeInterval(3600))))
+        }
     }
 }
 
@@ -62,7 +76,9 @@ struct ContinueWatchingView: View {
     private func image(_ it: WatchShelf.Item) -> some View {
         ZStack {
             Color.white.opacity(0.08)
-            if let name = it.imageFile, let folder = WatchShelf.folder,
+            if let ui = entry.pictures[it.id] {
+                Image(uiImage: ui).resizable().aspectRatio(contentMode: .fill)
+            } else if let name = it.imageFile, let folder = WatchShelf.folder,
                let ui = UIImage(contentsOfFile: folder.appendingPathComponent(name).path) {
                 Image(uiImage: ui).resizable().aspectRatio(contentMode: .fill)
             }
