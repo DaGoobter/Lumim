@@ -7,7 +7,7 @@ enum WatchShelf {
     #if os(tvOS)
     static let groupID = "group.app.huefin.tvshelf"
     #else
-    static let groupID = "group.com.lumenplayer.app"
+    static let groupID = "group.app.huefin.phone"
     #endif
 
     struct Item: Codable, Hashable {
